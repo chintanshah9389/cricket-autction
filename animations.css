@@ -1,308 +1,124 @@
-/* =========================================================
-   ANIMATIONS.CSS — Adds professional transitions & motion
-   ========================================================= */
+/* Broadcast-desk motion — punchy but controlled */
 
-/* === GLOBAL TRANSITIONS === */
-* {
-  transition: all 0.25s ease-in-out;
+@keyframes pageEnter {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-/* === PAGE FADE-IN === */
-body {
-  animation: pageFadeIn 0.6s ease-out;
+@keyframes brandIn {
+    from { opacity: 0; transform: translateY(-14px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-@keyframes pageFadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes stageIn {
+    from { opacity: 0; transform: translateX(-16px); }
+    to { opacity: 1; transform: translateX(0); }
 }
 
-/* === PLAYER SECTION === */
-#player-image {
-  transition: transform 0.4s ease-in-out, opacity 0.4s ease-in-out;
+@keyframes teamsIn {
+    from { opacity: 0; transform: translateX(16px); }
+    to { opacity: 1; transform: translateX(0); }
 }
 
-#player-image:hover {
-  transform: scale(1.05);
+@keyframes footerIn {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-.player-info, #player-name, #player-role, #player-category {
-  animation: fadeSlideIn 0.5s ease-out;
+@keyframes shimmer {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 100% 50%; }
 }
 
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes floatSoft {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
 }
 
-/* === CURRENT BID INFO === */
-#current-bid, #current-bid-team {
-  transition: transform 0.3s ease, background-color 0.3s ease;
+.big-container {
+    animation: pageEnter 0.5s ease-out;
 }
 
-.current-bid-team {
-  animation: pulseHighlight 1.5s ease-in-out infinite alternate;
+.brand-bar {
+    animation: brandIn 0.55s ease-out;
 }
 
-@keyframes pulseHighlight {
-  0% { transform: scale(1); }
-  100% { transform: scale(1.03); }
+#header-section {
+    background-size: 180% 180%;
+    animation: brandIn 0.55s ease-out, shimmer 8s ease-in-out infinite alternate;
 }
 
-/* === BUTTONS === */
-button, .auction-controls button {
-  transition: background-color 0.3s ease, transform 0.15s ease;
+.player-stage {
+    animation: stageIn 0.6s ease-out 0.05s both;
 }
 
-button:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
+.teams-rail {
+    animation: teamsIn 0.6s ease-out 0.1s both;
 }
 
-button:active {
-  transform: scale(0.96);
+#footer-section {
+    animation: footerIn 0.55s ease-out 0.15s both;
 }
 
-/* === SEALS (SOLD/UNSOLD) === */
-#sold-seal,
-#unsold-seal {
-  opacity: 0;
-  transform: scale(0.8) rotate(-10deg);
-  transition: all 0.4s ease-out;
-  transform-origin: center;
-}
-
-/* Visible state */
-#sold-seal.show,
-#unsold-seal.show {
-  opacity: 1;
-  transform: scale(1) rotate(-15deg);
-}
-
-/* Keyframe animation for a stamp-like pop */
-@keyframes stampAppear {
-  0% {
-    transform: scale(2) rotate(10deg);
-    opacity: 0;
-  }
-  40% {
-    transform: scale(0.9) rotate(-18deg);
-    opacity: 1;
-  }
-  60% {
-    transform: scale(1.05) rotate(-12deg);
-  }
-  100% {
-    transform: scale(1) rotate(-15deg);
-    opacity: 1;
-  }
-}
-
-/* Apply distinct stamp feel for sold and unsold */
-#sold-seal.show {
-  animation: stampAppear 0.5s cubic-bezier(0.25, 1.5, 0.5, 1);
-  color: #00ff73;
-}
-
-#unsold-seal.show {
-  animation: stampAppear 0.5s cubic-bezier(0.25, 1.5, 0.5, 1);
-  color: #ff4d4d;
-}
-
-#sold-seal.show,
-#unsold-seal.show {
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  filter: drop-shadow(0 0 6px rgba(0,0,0,0.2));
-}
-
-
-/* === TEAMS PANEL === */
-.team-container {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.team-container:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 0 12px rgba(255,255,255,0.1);
-}
-
-#teams-data-section {
-  animation: fadeIn 0.5s ease-in-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* === MODAL ANIMATIONS === */
-#budget-modal {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease, transform 0.3s ease;
-  transform: scale(0.95);
-}
-
-#budget-modal[style*="display: flex"] {
-  opacity: 1;
-  pointer-events: all;
-  transform: scale(1);
-  animation: modalSlideUp 0.3s ease-out;
-}
-
-@keyframes modalSlideUp {
-  from { transform: translateY(30px) scale(0.95); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
-}
-
-/* === TOURNAMENT HEADER === */
 .tournament-logo {
-  animation: logoAppear 0.6s ease-in-out;
+    animation: floatSoft 3.5s ease-in-out infinite;
 }
 
-@keyframes logoAppear {
-  from { transform: scale(0.6) rotate(-10deg); opacity: 0; }
-  to { transform: scale(1) rotate(0deg); opacity: 1; }
+.command-button,
+.welcome-btn,
+.custom-bid-button,
+.team-container,
+.modal-submit-btn {
+    transition:
+        transform 0.18s ease,
+        filter 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease;
 }
 
-.headline {
-  animation: fadeSlideIn 0.8s ease-out;
+.command-button:hover:not(:disabled),
+.welcome-btn:hover,
+.custom-bid-button:hover,
+.modal-submit-btn:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.06);
 }
 
-/* === SCROLL SMOOTHNESS === */
-html {
-  scroll-behavior: smooth;
+.command-button:active:not(:disabled),
+.welcome-btn:active,
+.custom-bid-button:active,
+.modal-submit-btn:active,
+.team-container:active {
+    transform: scale(0.98);
 }
 
-
-/* =====================================
-   TEXT ANIMATIONS
-   ===================================== */
-
-/* === Headline Slide-In === */
-.headline {
-  opacity: 0;
-  transform: translateY(-20px);
-  animation: headlineFadeIn 1s ease-out forwards;
+.team-container {
+    animation: teamsIn 0.45s ease both;
 }
 
-@keyframes headlineFadeIn {
-  0% {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.team-container:nth-child(1) { animation-delay: 0.05s; }
+.team-container:nth-child(2) { animation-delay: 0.08s; }
+.team-container:nth-child(3) { animation-delay: 0.11s; }
+.team-container:nth-child(4) { animation-delay: 0.14s; }
+.team-container:nth-child(5) { animation-delay: 0.17s; }
+.team-container:nth-child(6) { animation-delay: 0.2s; }
+.team-container:nth-child(7) { animation-delay: 0.23s; }
+.team-container:nth-child(8) { animation-delay: 0.26s; }
+.team-container:nth-child(9) { animation-delay: 0.29s; }
+.team-container:nth-child(10) { animation-delay: 0.32s; }
+.team-container:nth-child(11) { animation-delay: 0.35s; }
+.team-container:nth-child(12) { animation-delay: 0.38s; }
+
+.welcome-modal-content,
+.modal-content {
+    animation: pageEnter 0.35s ease-out;
 }
 
-
-/* === Player Data Fade-Up === */
-.player-data-info {
-  opacity: 0;
-  transform: translateY(6px);
-  animation: playerDataIn 0.6s ease-out forwards;
-  animation-delay: 0.8s;
-}
-
-@keyframes playerDataIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* === Bid Value Pop === */
-#current-bid, #base-price {
-  display: inline-block;
-  transition: all 0.25s ease;
-}
-
-#current-bid.updated, #base-price.updated {
-  animation: bidPulse 0.4s ease-out;
-  color: #00ffcc; /* Slight highlight glow */
-}
-
-@keyframes bidPulse {
-  0% { transform: scale(1); color: inherit; }
-  30% { transform: scale(1.15); color: #00ffcc; }
-  100% { transform: scale(1); color: inherit; }
-}
-
-/* === Team Name Entrance === */
-#current-bid-team {
-  opacity: 0;
-  transform: translateX(-15px);
-  animation: teamSlideIn 0.7s ease-out forwards;
-  animation-delay: 0.6s;
-}
-
-@keyframes teamSlideIn {
-  from { opacity: 0; transform: translateX(-15px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-/* === Button Hover (Text Pop) === */
-.command-button {
-  transition: transform 0.2s ease, background-color 0.3s ease, color 0.3s ease;
-}
-
-.command-button:hover {
-  transform: scale(1.08);
-  letter-spacing: 0.5px;
-}
-
-/* === Modal Title Fade === */
-.modal-content h2 {
-  opacity: 0;
-  animation: modalTitleFade 0.6s ease-out forwards;
-}
-
-@keyframes modalTitleFade {
-  from { opacity: 0; transform: translateY(-5px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* === Player Name Reveal (safe version) === */
-.player-name {
-  display: inline-block;
-  opacity: 1; /* Ensure visible even if animation fails */
-  transform: translateY(0);
-  animation: playerNameIn 0.8s ease-out forwards;
-  animation-delay: 0.2s;
-}
-
-@keyframes playerNameIn {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.98);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* === Player Role & Data Fade-Up (safe version) === */
-.player-data-info {
-  opacity: 1; /* Keep visible by default */
-  transform: translateY(0);
-  animation: playerDataIn 0.6s ease-out forwards;
-  animation-delay: 0.4s;
-}
-
-@keyframes playerDataIn {
-  0% {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
 }

@@ -2,6 +2,18 @@ let state;
 
 let selectedTeam;
 
+const TEAM_HOTKEYS = [
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=",
+    "q", "w", "e", "r", "t", "y", "o", "a", "d", "f", "g", "h",
+    "j", "k", "l", "z", "x", "c", "v", "n", "m", "b", "p"
+];
+
+function teamFromHotkey(key) {
+    const index = TEAM_HOTKEYS.indexOf(key);
+    if (index < 0 || index >= state.teams.length) return null;
+    return state.teams[index];
+}
+
 //DOM: Team Header
 const header = document.getElementById("header");
 
@@ -36,7 +48,8 @@ function renderTeamsData() {
         newTeam.id = "team-" + teamID;
 
         newTeam.innerHTML = `
-            <div class="logo-container"><img src="../assets/teams-logo/team_${teamID}.png" class="logo-img" id="logo-${teamID}"></div>
+            ${TEAM_HOTKEYS[i] ? `<span class="team-hotkey">${TEAM_HOTKEYS[i]}</span>` : ""}
+            <div class="logo-container"><img src="${getTeamLogoSrc(state.teams[i], "../assets/teams-logo")}" class="logo-img" id="logo-${teamID}" onerror="this.style.visibility='hidden'"></div>
             <div class="name-container" id="name-container-${teamID}"><span id="team-name-${teamID}">${state.teams[i].team_name}</span></div>
             `;
 
@@ -51,20 +64,7 @@ function renderTeamsData() {
     }
 }
 
-//Showing Price as M and K format. It looks better.
-function showAmount(amount) {
-    if(amount <= 1000){
-        show_amount = amount;
-    } else if(amount >= 1000000){
-        show_amount = (amount / 1000000).toFixed(2) + "M";
-    } else if(amount > 1000){
-        show_amount = Math.floor(amount / 1000) + "K";
-    } else if(amount <= 0) {
-        show_amount = "Error!";
-    }
-
-    return show_amount;
-}
+// showAmount / formatMoney come from ../js/money.js
 
 function showPlayers(teamId) {
     // This updates the URL in the browser bar (e.g., to "?team=11")
@@ -107,7 +107,7 @@ function showPlayers(teamId) {
     //Set the selected teams background color to different
     const selectedTeamCard = document.getElementById(`name-container-${teamId}`);
     selectedTeamCard.style.color = team.color;
-    selectedTeamCard.style.backgroundColor = "#dcdae8ff";
+    selectedTeamCard.style.backgroundColor = "#e8f3ec";
 
     //Team Data Update
     playersSigned.innerText = team.players.length;
@@ -119,9 +119,9 @@ function showPlayers(teamId) {
         <div class="player-card" id="player-${player.id}">
             <div class="image-box"><img src="${player.photo}" alt="${player.name}" class="player-photo"></div>
             <div class="player-name"><span>${player.name}</span></div>
-            <div class="batting-style">🏏&nbsp;<span>${player.battingStyle}</span></div>
-            <div class="bowling-style">⚾&nbsp;<span>${player.bowlingStyle || 'N/A'}</span></div>
-            <div class="final-price">$ &nbsp; <span>${showAmount(player.finalPrice)}</span></div>
+            <div class="batting-style"><span>${player.battingStyle}</span></div>
+            <div class="bowling-style"><span>${player.bowlingStyle || "N/A"}</span></div>
+            <div class="final-price">Rs <span>${showAmount(player.finalPrice)}</span></div>
         </div>`;
         
     batters.forEach(p => batterSection.innerHTML += createCardHTML(p));
@@ -189,6 +189,23 @@ function runSquadsPage() {
         selectedTeam = state.teams[0].team_id;
     }
 
+    // Apply configurable tournament branding when available
+    (async () => {
+        try {
+            const auctionConfig = await getAuctionConfig();
+            state.tournament = buildTournamentState(auctionConfig, state.tournament);
+        } catch (_) {
+            // keep existing tournament from auction save
+        }
+        const logoEl = document.querySelector(".tournament-logo");
+        if (logoEl) {
+            logoEl.src = getTournamentLogoSrc(state.tournament, "../assets/tournament-logo.png");
+            logoEl.onerror = () => {
+                logoEl.src = "../assets/tournament-logo.png";
+            };
+        }
+    })();
+
     //Render teams data
     renderTeamsData();
 
@@ -225,13 +242,9 @@ function runSquadsPage() {
             return;
         }
 
-        // --- Number keys for Team Selection ---
-        const keyNumber = parseInt(event.key);
-        if (!isNaN(keyNumber) && keyNumber >= 1 && keyNumber <= state.teams.length) {
-            const teamId = state.teams[keyNumber - 1].team_id;
-            if (teamId) {
-                showPlayers(teamId);
-            }
+        const selected = teamFromHotkey(event.key);
+        if (selected) {
+            showPlayers(selected.team_id);
         }
     });
 

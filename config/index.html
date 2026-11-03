@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auction Configuration</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="config-page">
+        <header class="config-header">
+            <div>
+                <p class="eyebrow">Auction Desk</p>
+                <h1>Configuration</h1>
+                <p class="subtitle">Set tournament branding, teams, kitty, auction categories, and base prices.</p>
+            </div>
+            <a class="back-link" href="../index.html">← Back to Auction</a>
+        </header>
+
+        <section class="config-card">
+            <h2>Tournament Branding</h2>
+            <p class="help">Shown on the auction screen, squads, and finish page. Example title: <strong>ABCD Super League - 2025</strong>.</p>
+
+            <div class="branding-grid">
+                <div>
+                    <label for="tournament-name">Tournament name</label>
+                    <input id="tournament-name" type="text" placeholder="ABCD Super League">
+                </div>
+                <div>
+                    <label for="tournament-year">Year</label>
+                    <input id="tournament-year" type="text" placeholder="2025">
+                </div>
+            </div>
+
+            <p class="preview branding-title-preview" id="tournament-title-preview">ABCD Super League - 2025</p>
+
+            <div class="branding-logo-row">
+                <img id="tournament-logo-preview" class="tournament-logo-preview is-empty" alt="Tournament logo preview">
+                <div class="branding-logo-actions">
+                    <button type="button" id="tournament-logo-upload-btn" class="team-logo-upload-btn">Upload project logo</button>
+                    <input id="tournament-logo-file" class="team-logo-file" type="file" accept="image/*">
+                    <button type="button" id="tournament-logo-clear-btn" class="team-logo-clear-btn" disabled>Clear logo</button>
+                    <p class="help">Leave blank to use <code>assets/tournament-logo.png</code>.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="config-card">
+            <h2>Team Kitty</h2>
+            <p class="help">Budget given to every team at the start. Example: type <strong>1cr</strong> or <strong>10000000</strong> for 1 Crore.</p>
+
+            <label for="team-kitty">Team kitty (Rs)</label>
+            <div class="input-row">
+                <input id="team-kitty" type="text" placeholder="1cr or 10000000">
+                <span id="team-kitty-preview" class="preview">Rs 0</span>
+            </div>
+
+            <div class="preset-row">
+                <button type="button" data-kitty="5000000">50 L</button>
+                <button type="button" data-kitty="10000000">1 Cr</button>
+                <button type="button" data-kitty="20000000">2 Cr</button>
+                <button type="button" data-kitty="50000000">5 Cr</button>
+            </div>
+        </section>
+
+        <section class="config-card">
+            <h2>Teams</h2>
+            <p class="help">Add or remove teams freely. Upload a logo for each team, or leave blank to use <code>assets/teams-logo/team_&lt;id&gt;.png</code> if present.</p>
+
+            <div class="team-config-list" id="team-config-list"></div>
+
+            <div class="add-category-box">
+                <h3 class="section-subtitle">Add team</h3>
+                <div class="add-category-row add-team-row">
+                    <input id="new-team-name" type="text" placeholder="Team name">
+                    <input id="new-team-color" type="color" value="#3498db" title="Team color">
+                    <button type="button" id="add-team-btn" class="secondary-btn">Add Team</button>
+                </div>
+                <p class="help">Keep at least one team. After saving, use <strong>Reset</strong> / <strong>Start New Auction</strong> to apply the team list.</p>
+            </div>
+        </section>
+
+        <section class="config-card">
+            <h2>Auction Order</h2>
+            <p class="help">Choose random order, or set the exact category sequence for the auction.</p>
+
+            <div class="order-options">
+                <label class="order-option">
+                    <input type="radio" name="auction-order" value="SEQUENCE" checked>
+                    <span>
+                        <strong>Category Sequence</strong>
+                        <small>Auction categories in the order you set below</small>
+                    </span>
+                </label>
+                <label class="order-option">
+                    <input type="radio" name="auction-order" value="RANDOM">
+                    <span>
+                        <strong>Random</strong>
+                        <small>Shuffle all players into one mixed auction order</small>
+                    </span>
+                </label>
+            </div>
+
+            <div id="sequence-editor-wrap">
+                <h3 class="section-subtitle">Category auction sequence</h3>
+                <p class="help">Use ↑ ↓ to set order. Example: 1. Rising Star → 2. Key Player → 3. Evergreen</p>
+                <ol class="sequence-editor" id="sequence-editor"></ol>
+            </div>
+
+            <label class="checkbox-row" id="shuffle-within-wrap">
+                <input id="shuffle-within-category" type="checkbox" checked>
+                <span>Shuffle players randomly inside each category</span>
+            </label>
+
+            <label class="checkbox-row">
+                <input id="player-wheel-enabled" type="checkbox" checked>
+                <span>Show player wheel spin when the next player is revealed</span>
+            </label>
+        </section>
+
+        <section class="config-card">
+            <h2>Auction Categories</h2>
+            <p class="help">Add or remove categories freely. Set base price and max players per team for each one.</p>
+
+            <label class="checkbox-row">
+                <input id="use-category-prices" type="checkbox" checked>
+                <span>Apply category base prices on new auction</span>
+            </label>
+
+            <div class="category-config-grid" id="category-config-grid"></div>
+
+            <div class="add-category-box">
+                <h3 class="section-subtitle">Add auction category</h3>
+                <div class="add-category-row">
+                    <input id="new-category-name" type="text" placeholder="Category name (e.g. ICON)">
+                    <input id="new-category-base" type="text" placeholder="Base price (e.g. 50L)">
+                    <input id="new-category-max" type="number" min="0" step="1" value="2" placeholder="Max players">
+                    <button type="button" id="add-category-btn" class="secondary-btn">Add Category</button>
+                </div>
+                <p class="help">You can add as many categories as you need, and remove any of them. After adding, set the same category name on players in <code>data/players.json</code>.</p>
+            </div>
+        </section>
+
+        <section class="config-actions">
+            <button type="button" id="save-config" class="primary">Save Configuration</button>
+            <p id="save-status" class="status" aria-live="polite"></p>
+            <p class="help">Tip: after saving, open the auction page and use <strong>Reset</strong> / <strong>Start New Auction</strong> so the new rules load.</p>
+        </section>
+    </main>
+
+    <script src="../js/money.js"></script>
+    <script src="../js/config-store.js"></script>
+    <script src="config.js"></script>
+</body>
+</html>

@@ -1,11 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // A helper function you already have
-    const showAmount = (amount) => {
-        if (!amount && amount !== 0) return 'N/A';
-        if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
-        if (amount >= 1000) return `${Math.floor(amount / 1000)}K`;
-        return amount;
-    };
+    // showAmount / formatMoney come from ../../js/money.js
 
     // --- Main Logic ---
     const savedDataJSON = localStorage.getItem('auctionData');
@@ -26,16 +20,33 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // 1. Populate Header
-    document.getElementById('tournament-logo').src = `../${state.tournament.logo}`; // Or from state if available
-    document.getElementById('tournament-name').textContent = state.tournament.name; // Or from state
+    // 1. Populate Header from configurable branding
+    (async () => {
+        try {
+            const auctionConfig = await getAuctionConfig();
+            state.tournament = buildTournamentState(auctionConfig, state.tournament);
+        } catch (_) {
+            // keep saved tournament
+        }
+        const logoEl = document.getElementById('tournament-logo');
+        const nameEl = document.getElementById('tournament-name');
+        if (logoEl) {
+            logoEl.src = getTournamentLogoSrc(state.tournament, "../../assets/tournament-logo.png");
+            logoEl.onerror = () => {
+                logoEl.src = "../../assets/tournament-logo.png";
+            };
+        }
+        if (nameEl) {
+            nameEl.textContent = getTournamentTitle(state.tournament);
+        }
+    })();
 
     // 2. Populate Team Info
     document.getElementById('team-name').textContent = team.team_name;
     document.getElementById('players-signed').textContent = team.player_bought;
-    document.getElementById('total-spend').textContent = showAmount(team.total_cost);
-    document.getElementById('budget-remaining').textContent = showAmount(team.remaining_budget);
-    document.getElementById('total-budget').textContent = showAmount(team.team_budget);
+    document.getElementById('total-spend').textContent = formatMoney(team.total_cost);
+    document.getElementById('budget-remaining').textContent = formatMoney(team.remaining_budget);
+    document.getElementById('total-budget').textContent = formatMoney(team.team_budget);
 
     // 3. Populate Player Table
     const playerListBody = document.getElementById('player-list');
@@ -51,8 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${player.category}</td>
                 <td>${player.name}</td>
                 <td>${player.role}</td>
-                <td>${showAmount(player.basePrice)}</td>
-                <td>${showAmount(player.finalPrice)}</td>
+                <td>${formatMoney(player.basePrice)}</td>
+                <td>${player.finalPrice == null ? 'N/A' : formatMoney(player.finalPrice)}</td>
             `;
             playerListBody.appendChild(row);
         }

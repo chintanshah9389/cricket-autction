@@ -47,8 +47,12 @@ This is a serverless application and requires no build steps.
 
 ### Bidding
 
-  - Click on any team card on the right to place a bid for the current player.
-  - Alternatively, use the number keys **1** through **8** on your keyboard to bid for the corresponding team.
+  - Click on any team card on the right to place the next automatic bid for the current player.
+  - Alternatively, use keys **1** through **9**, then **0**, **-**, and **=** to bid for teams 1 through 12. The same key is shown on each team card.
+  - For a custom amount, click **CUSTOM** (or the CURRENT BID bar), or press **Ctrl + B**. Shift+click a team card to open custom bid with that team already selected.
+  - All amounts are shown in **Rs** (with K / L / Cr). Open **CONFIG** to set team kitty (for example `1cr`), category base prices, and max players per category.
+  - Categories: **Rising Star** (max 3), **Key Players** (max 4), **Evergreen** (max 4). A team cannot buy more than the configured max in any category.
+  - Auction order in CONFIG: **Category Sequence** (reorder with ↑ ↓, default Rising Star → Key Player → Evergreen) or **Random**. You can also add custom auction categories.
 
 ### Auction Controls
 

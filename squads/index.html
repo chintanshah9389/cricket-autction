@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <title>Squad List</title>
 </head>
@@ -26,15 +29,14 @@
             </div>
             <div class="info-box">
                 <div class="info-title">Total Spent</div>
-                <div class="info-data">$&nbsp;<span id="budget-spend">1.8M</span></div>
+                <div class="info-data">Rs&nbsp;<span id="budget-spend">1.8M</span></div>
             </div>
             <div class="info-box">
                 <div class="info-title">Remaining Budget</div>
-                <div class="info-data">$&nbsp; <span id="budget-remaining">200K</span></div>
+                <div class="info-data">Rs&nbsp;<span id="budget-remaining">200K</span></div>
             </div>
             <div class="print-box" id="print-box">
-                <div class="print-icon">🖨️</div>
-                <div class="print-text"><span id="budget-remaining">PRINT</span></div>
+                <div class="print-text"><span>PRINT TEAMSHEET</span></div>
             </div>
         </div>
 
@@ -100,6 +102,8 @@
     </div>
 
 
+    <script src="../js/money.js"></script>
+    <script src="../js/config-store.js"></script>
     <script type="text/javascript" src="script.js"></script>
 </body>
 </html>

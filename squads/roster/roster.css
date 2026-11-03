@@ -3,92 +3,102 @@
     margin: 1.5cm;
 }
 
+:root {
+    --ink: #14231c;
+    --pitch: #1f6b4a;
+    --pitch-deep: #124832;
+    --paper: #f7f3e9;
+    --line: rgba(20, 35, 28, 0.14);
+    --font-display: "Teko", sans-serif;
+    --font-body: "Hind", sans-serif;
+}
+
 body {
-    font-family: 'Arial', sans-serif;
-    color: #333;
+    margin: 0;
+    color: var(--ink);
+    font-family: var(--font-body);
+    background: var(--paper);
 }
+
 .page {
-    width: 100%;
+    width: min(1100px, calc(100% - 32px));
+    margin: 24px auto 48px;
 }
+
 .page-header {
     display: flex;
     align-items: center;
-    border-bottom: 2px solid #000;
-    padding-bottom: 10px;
-    margin-bottom: 20px;
+    gap: 16px;
+    padding-bottom: 14px;
+    margin-bottom: 22px;
+    border-bottom: 2px solid var(--pitch-deep);
 }
+
 .logo {
-    height: 50px;
-    margin-right: 15px;
+    height: 56px;
+    object-fit: contain;
 }
+
 h1 {
     margin: 0;
-    font-size: 22pt;
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    letter-spacing: -0.03em;
+    color: var(--pitch-deep);
 }
+
 h2 {
-    font-size: 16pt;
-    background-color: #f0f0f0;
-    padding: 8px;
-    border-radius: 5px;
+    margin: 24px 0 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #e4efe8;
+    color: var(--pitch-deep);
+    font-family: var(--font-display);
+    font-size: 1.1rem;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     font-size: 10pt;
-    margin-bottom: 25px;
+    margin-bottom: 24px;
+    background: #fff;
 }
-th, td {
-    border: 1px solid #ccc;
+
+th,
+td {
+    border: 1px solid var(--line);
     padding: 8px;
     text-align: left;
     vertical-align: top;
 }
+
 thead tr {
-    background-color: #e9e9e9;
-    font-weight: bold;
+    background: #eef5f0;
+    font-weight: 800;
 }
 
-/* --- Column Widths --- */
 .col-id-cat { width: 12%; }
 .col-photo { width: 100px; }
 .col-player { width: 30%; }
 .col-role { width: 28%; }
 .col-status { width: 20%; }
 
-/* --- Cell Content Styling --- */
 .player-photo img {
-    width: 100px;
-    height: 100px;
+    width: 72px;
+    height: 72px;
     object-fit: cover;
-    border-radius: 5px;
+    border-radius: 8px;
 }
-.player-name {
-    font-size: 1.1rem;
-    font-weight: bold;
-    display: block;
-    margin-bottom: 5px;
-}
-.player-subtext {
-    font-size: 0.9rem;
-    color: #555;
-    display: block;
-}
+
 .status-team {
-    font-weight: bold;
+    display: inline-block;
+    margin-top: 4px;
+    font-weight: 700;
+    color: var(--pitch);
 }
 
-.headline {
-    font-size: 2rem;
-    font-weight: bold;
-    display: flex;
-    justify-content: center;
-}
-
-/* Only apply this when printing */
 @media print {
-    body {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
+    body { background: #fff; }
+    .page { width: 100%; margin: 0; }
 }

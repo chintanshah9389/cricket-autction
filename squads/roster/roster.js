@@ -1,13 +1,4 @@
-/**
- * A helper function to format money values
- * This must be defined in this file to be used here.
- */
-function showAmount(amount) {
-    if (!amount && amount !== 0) return 'N/A';
-    if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
-    if (amount >= 1000) return `${Math.floor(amount / 1000)}K`;
-    return amount;
-};
+// showAmount / formatMoney come from ../../js/money.js
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -24,17 +15,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const allPlayers = state.allPlayers || state.players; 
     const allTeams = state.teams;
 
-    // 2. Populate Header (with path fix)
-    if (state.tournament) {
-        // --- PATH FIX ---
-        // Go up TWO levels (from /squads/roster/ to /)
-        document.getElementById('tournament-logo').src = `../../${state.tournament.logo}`;
-        document.getElementById('tournament-name').textContent = `${state.tournament.name} - ${state.tournament.year}`;
-    } else {
-        // --- PATH FIX ---
-        document.getElementById('tournament-logo').src = '../../assets/tournament-logo.png';
-        document.getElementById('tournament-name').textContent = 'Full Player Roster';
-    }
+    // 2. Populate Header from configurable branding
+    (async () => {
+        try {
+            const auctionConfig = await getAuctionConfig();
+            state.tournament = buildTournamentState(auctionConfig, state.tournament);
+        } catch (_) {
+            // keep saved tournament
+        }
+
+        const logoEl = document.getElementById('tournament-logo');
+        const nameEl = document.getElementById('tournament-name');
+        if (state.tournament) {
+            if (logoEl) {
+                logoEl.src = getTournamentLogoSrc(state.tournament, "../../assets/tournament-logo.png");
+                logoEl.onerror = () => {
+                    logoEl.src = "../../assets/tournament-logo.png";
+                };
+            }
+            if (nameEl) {
+                nameEl.textContent = getTournamentTitle(state.tournament);
+            }
+        } else {
+            if (logoEl) logoEl.src = "../../assets/tournament-logo.png";
+            if (nameEl) nameEl.textContent = "Full Player Roster";
+        }
+    })();
 
     // 3. Define Helper Functions for building the table
 
@@ -55,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const team = allTeams.find(t => t.team_id === player.team);
             statusHTML = `
                 <span class="status-team">${team ? team.team_name : 'N/A'}</span>
-                <span class="player-subtext">(${showAmount(player.finalPrice)})</span>
+                <span class="player-subtext">(${formatMoney(player.finalPrice)})</span>
             `;
         } else if (player.status === 'skipped') {
             statusHTML = '<span class="player-subtext">Skipped</span>';
@@ -72,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
                 <td>
                     <span class="player-name">${player.name}</span>
-                    <span class="player-subtext">(${showAmount(player.basePrice)})</span>
+                    <span class="player-subtext">(${formatMoney(player.basePrice)})</span>
                     <span class="player-subtext">${player.currentClub}</span>
                 </td>
                 <td>

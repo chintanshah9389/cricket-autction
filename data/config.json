@@ -1,0 +1,25 @@
+{
+  "teamKitty": 10000000,
+  "useCategoryBasePrices": true,
+  "auctionOrder": "SEQUENCE",
+  "shuffleWithinCategory": true,
+  "categorySequence": [
+    "RISING STAR",
+    "KEY PLAYERS",
+    "EVERGREEN"
+  ],
+  "categories": {
+    "RISING STAR": {
+      "basePrice": 500000,
+      "maxPlayers": 3
+    },
+    "KEY PLAYERS": {
+      "basePrice": 1000000,
+      "maxPlayers": 4
+    },
+    "EVERGREEN": {
+      "basePrice": 2000000,
+      "maxPlayers": 4
+    }
+  }
+}
