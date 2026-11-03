@@ -17,7 +17,10 @@
                 <h1>Configuration</h1>
                 <p class="subtitle">Set tournament branding, teams, kitty, auction categories, and base prices.</p>
             </div>
-            <a class="back-link" href="../index.html">← Back to Auction</a>
+            <div class="header-links">
+                <a class="back-link" href="players.html">Players / Upload</a>
+                <a class="back-link" href="../index.html">← Back to Auction</a>
+            </div>
         </header>
 
         <section class="config-card">
@@ -140,7 +143,7 @@
                     <input id="new-category-max" type="number" min="0" step="1" value="2" placeholder="Max players">
                     <button type="button" id="add-category-btn" class="secondary-btn">Add Category</button>
                 </div>
-                <p class="help">You can add as many categories as you need, and remove any of them. After adding, set the same category name on players in <code>data/players.json</code>.</p>
+                <p class="help">You can add as many categories as you need. Manage player names/categories via <a href="players.html">Players / Upload</a> (CSV/Excel) or <code>data/players.json</code>.</p>
             </div>
         </section>
 

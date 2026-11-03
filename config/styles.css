@@ -48,6 +48,13 @@ body {
     margin-bottom: 28px;
 }
 
+.header-links {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .eyebrow {
     margin: 0 0 8px;
     color: var(--pitch);

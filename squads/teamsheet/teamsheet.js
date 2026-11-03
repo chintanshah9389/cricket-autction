@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (player) {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${player.id}</td>
+                <td>${getPlayerDisplayCode(player)}</td>
                 <td>${player.category}</td>
                 <td>${player.name}</td>
                 <td>${player.role}</td>

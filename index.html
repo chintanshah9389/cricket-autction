@@ -44,42 +44,38 @@
                         <div class="unsold-seal" id="unsold-seal">UNSOLD</div>
                         <div class="photo-meta">
                             <span class="photo-id-label">ID</span>
-                            <span id="player-id">25101</span>
+                            <span id="player-id">CPL-R-01</span>
+                        </div>
+                        <div class="photo-status-wrap">
+                            <div class="player-status-chip" id="player-status-chip" data-status="live">LIVE</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="player-details">
                     <header class="player-hero" id="players-name-section">
-                        <div class="player-hero-copy">
-                            <p class="player-kicker">Now auctioning</p>
-                            <h2 class="player-name" id="player-name">Player Name</h2>
-                        </div>
+                        <p class="player-kicker">Now auctioning</p>
+                        <h2 class="player-name" id="player-name">Player Name</h2>
                         <div class="player-tags">
                             <div class="category-container">
                                 <span class="tag-label">Category</span>
                                 <span class="player-data-info category-text" id="player-category">RISING STAR</span>
                             </div>
-                            <div class="player-status-chip" id="player-status-chip" data-status="live">LIVE</div>
                         </div>
                     </header>
 
-                    <div class="sections" id="players-data-section">
+                    <div class="sections player-meta-bar" id="players-data-section">
                         <article class="player-stat">
                             <div class="player-data-head"><span>Role</span></div>
                             <span class="player-data-info" id="player-role">Batter</span>
                         </article>
                         <article class="player-stat">
-                            <div class="player-data-head"><span>Club</span></div>
-                            <span class="player-data-info" id="player-club">Pioneer Club</span>
+                            <div class="player-data-head"><span>Location</span></div>
+                            <span class="player-data-info" id="player-location">—</span>
                         </article>
                         <article class="player-stat">
-                            <div class="player-data-head"><span>Batting</span></div>
-                            <span class="player-data-info" id="player-batting-style">Right Handed Bat</span>
-                        </article>
-                        <article class="player-stat">
-                            <div class="player-data-head"><span>Bowling</span></div>
-                            <span class="player-data-info" id="player-bowling-style">Right Arm Off Break</span>
+                            <div class="player-data-head"><span>Mobile</span></div>
+                            <span class="player-data-info" id="player-mobile">—</span>
                         </article>
                     </div>
 
@@ -153,6 +149,7 @@
             </div>
             <button class="command-button" id="reset-button">RESET</button>
             <button class="command-button" id="config-button">CONFIG</button>
+            <button class="command-button" id="players-button" title="Upload / manage players">PLAYERS</button>
             <button class="command-button" id="teams-button">TEAMS</button>
             <button class="command-button" id="skip-button">SKIP</button>
             <button class="command-button" id="spin-button" title="Open player wheel">SPIN</button>
@@ -313,6 +310,7 @@
 
     <script src="js/money.js"></script>
     <script src="js/config-store.js"></script>
+    <script src="js/players-store.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

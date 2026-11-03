@@ -37,7 +37,9 @@ const LEGACY_CATEGORY_MAP = {
     "RISING STAR": "RISING STAR",
     "KEY PLAYER": "KEY PLAYERS",
     "KEY PLAYERS": "KEY PLAYERS",
-    EVERGREEN: "EVERGREEN"
+    EVERGREEN: "EVERGREEN",
+    "EVER GREEN": "EVERGREEN",
+    "EVER-GREEN": "EVERGREEN"
 };
 
 function normalizeCategoryName(rawCategory) {
@@ -49,6 +51,36 @@ function displayCategoryName(categoryName) {
     const name = normalizeCategoryName(categoryName);
     if (name === "KEY PLAYERS") return "KEY PLAYER";
     return name;
+}
+
+function getPlayerDisplayCode(player) {
+    if (!player) return "—";
+    const code = String(player.code || "").trim();
+    // Prefer spreadsheet codes like CPL-R-01; ignore numeric-only "codes"
+    if (code && !/^\d+$/.test(code)) return code;
+
+    const id = Number(player.id);
+    if (Number.isFinite(id)) {
+        if (id >= 1000 && id < 2000) return `CPL-R-${String(id - 1000).padStart(2, "0")}`;
+        if (id >= 2000 && id < 3000) return `CPL-K-${id - 2000}`;
+        if (id >= 3000 && id < 4000) return `CPL-E-${id - 3000}`;
+    }
+    return code || String(player.id ?? "—");
+}
+
+/**
+ * Resolve asset paths for pages outside the site root (e.g. /squads/).
+ * fromPrefix: "../" for squads/, "../../" for squads/roster/
+ */
+function resolveAssetUrl(path, fromPrefix = "../") {
+    const value = String(path || "").trim();
+    if (!value) return `${fromPrefix}assets/placeholder.png`;
+    if (/^https?:\/\//i.test(value) || value.startsWith("data:") || value.startsWith("blob:")) {
+        return value;
+    }
+    if (value.startsWith("/") || value.startsWith("../")) return value;
+    if (value.startsWith("assets/")) return `${fromPrefix}${value}`;
+    return value;
 }
 
 function buildCategoriesFromRaw(raw) {

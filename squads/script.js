@@ -117,7 +117,7 @@ function showPlayers(teamId) {
     //Create Teams Player Card
     const createCardHTML = (player) => `
         <div class="player-card" id="player-${player.id}">
-            <div class="image-box"><img src="${player.photo}" alt="${player.name}" class="player-photo"></div>
+            <div class="image-box"><img src="${resolveAssetUrl(player.photo, "../")}" alt="${player.name}" class="player-photo" onerror="this.src='../assets/placeholder.png'"></div>
             <div class="player-name"><span>${player.name}</span></div>
             <div class="batting-style"><span>${player.battingStyle}</span></div>
             <div class="bowling-style"><span>${player.bowlingStyle || "N/A"}</span></div>

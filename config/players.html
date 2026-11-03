@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Players Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="players.css">
+</head>
+<body>
+    <main class="config-page players-page">
+        <header class="config-header">
+            <div>
+                <p class="eyebrow">Auction Desk</p>
+                <h1>Players</h1>
+                <p class="subtitle">Full player table with create, edit, delete, and CSV/Excel upload. Changes are used on the live auction after Start New Auction / Reset.</p>
+            </div>
+            <div class="header-links">
+                <a class="back-link" href="index.html">Configuration</a>
+                <a class="back-link" href="../index.html">← Auction</a>
+            </div>
+        </header>
+
+        <section class="config-card">
+            <h2>Upload CSV / Excel</h2>
+            <p class="help">
+                Columns: <strong>ID, Skill, Player, Mobile, Age, Location, Player photo, CATEGORY, AGE-CATEGORY</strong>.
+                You can also import batting/bowling/base price if those columns exist.
+            </p>
+            <div class="upload-panel">
+                <input id="players-file" type="file" accept=".csv,.xlsx,.xls,.json,text/csv">
+                <div class="upload-actions">
+                    <button type="button" id="import-replace-btn" class="primary">Import &amp; Replace</button>
+                    <button type="button" id="import-merge-btn" class="secondary-btn">Import &amp; Merge</button>
+                    <button type="button" id="reload-file-btn" class="secondary-btn">Reload data/players.json</button>
+                    <button type="button" id="download-template-btn" class="secondary-btn">Template CSV</button>
+                    <button type="button" id="export-json-btn" class="secondary-btn">Export JSON</button>
+                    <button type="button" id="export-csv-btn" class="secondary-btn">Export CSV</button>
+                    <button type="button" id="clear-players-btn" class="danger-btn">Clear all</button>
+                </div>
+            </div>
+            <p id="import-status" class="status" aria-live="polite"></p>
+        </section>
+
+        <section class="config-card" id="player-form-card">
+            <div class="list-head">
+                <div>
+                    <h2 id="form-title">Add player</h2>
+                    <p class="help">Create a new player or edit one from the table below.</p>
+                </div>
+                <button type="button" class="secondary-btn" id="new-player-btn">+ New player</button>
+            </div>
+
+            <form id="player-form" class="player-form">
+                <input type="hidden" id="player-edit-key" value="">
+                <div class="player-form-grid">
+                    <label>
+                        <span>ID / Code</span>
+                        <input id="form-code" type="text" placeholder="CPL-R-01" required>
+                    </label>
+                    <label>
+                        <span>Player name</span>
+                        <input id="form-name" type="text" placeholder="Player name" required>
+                    </label>
+                    <label>
+                        <span>Skill / Role</span>
+                        <select id="form-role">
+                            <option>Batter</option>
+                            <option>Bowler</option>
+                            <option>All-Rounder</option>
+                            <option>Wicket-Keeper</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>Category</span>
+                        <input id="form-category" type="text" list="category-options" placeholder="RISING STAR" required>
+                        <datalist id="category-options"></datalist>
+                    </label>
+                    <label>
+                        <span>Location / Club</span>
+                        <input id="form-club" type="text" placeholder="Borivali - West">
+                    </label>
+                    <label>
+                        <span>Mobile</span>
+                        <input id="form-mobile" type="text" placeholder="9000000000">
+                    </label>
+                    <label>
+                        <span>Age</span>
+                        <input id="form-age" type="number" min="0" step="1" placeholder="22">
+                    </label>
+                    <label>
+                        <span>Age category</span>
+                        <input id="form-age-category" type="text" placeholder="15-23">
+                    </label>
+                    <label>
+                        <span>Batting</span>
+                        <input id="form-batting" type="text" placeholder="Right Handed Bat">
+                    </label>
+                    <label>
+                        <span>Bowling</span>
+                        <input id="form-bowling" type="text" placeholder="Right Arm Medium">
+                    </label>
+                    <label>
+                        <span>Base price (Rs)</span>
+                        <input id="form-base-price" type="text" placeholder="5L or 500000">
+                    </label>
+                    <label>
+                        <span>Status</span>
+                        <select id="form-status">
+                            <option value="not-auctioned">not-auctioned</option>
+                            <option value="sold">sold</option>
+                            <option value="unsold">unsold</option>
+                            <option value="skipped">skipped</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>Sold to team</span>
+                        <input id="form-team-name" type="text" placeholder="—" readonly>
+                    </label>
+                    <label>
+                        <span>Sold for</span>
+                        <input id="form-sold-for" type="text" placeholder="—" readonly>
+                    </label>
+                    <label class="span-2">
+                        <span>Photo URL / path</span>
+                        <input id="form-photo" type="text" placeholder="assets/players-photo/cpl2027/CPL-R-01.jpg">
+                    </label>
+                </div>
+                <div class="form-preview-row">
+                    <img id="form-photo-preview" src="../assets/placeholder.png" alt="Preview">
+                    <div class="form-actions">
+                        <button type="submit" class="primary" id="save-player-btn">Save player</button>
+                        <button type="button" class="secondary-btn" id="reset-form-btn">Clear form</button>
+                        <button type="button" class="danger-btn" id="delete-current-btn" hidden>Delete this player</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+        <section class="config-card">
+            <div class="list-head table-toolbar">
+                <div>
+                    <h2>Player table</h2>
+                    <p class="help" id="players-count">0 players loaded</p>
+                </div>
+                <div class="table-filters">
+                    <select id="category-filter">
+                        <option value="">All categories</option>
+                    </select>
+                    <select id="role-filter">
+                        <option value="">All roles</option>
+                        <option>Batter</option>
+                        <option>Bowler</option>
+                        <option>All-Rounder</option>
+                        <option>Wicket-Keeper</option>
+                    </select>
+                    <select id="status-filter">
+                        <option value="">All statuses</option>
+                        <option value="not-auctioned">not-auctioned</option>
+                        <option value="sold">sold</option>
+                        <option value="unsold">unsold</option>
+                        <option value="skipped">skipped</option>
+                    </select>
+                    <select id="team-filter">
+                        <option value="">All teams</option>
+                    </select>
+                    <input id="players-search" type="search" placeholder="Search name, code, mobile, location, team...">
+                </div>
+            </div>
+
+            <div id="players-table-wrap" class="players-table-wrap">
+                <table class="players-table players-table-full">
+                    <thead>
+                        <tr>
+                            <th>Photo</th>
+                            <th>Code</th>
+                            <th>Player</th>
+                            <th>Role</th>
+                            <th>Category</th>
+                            <th>Age</th>
+                            <th>Age cat.</th>
+                            <th>Mobile</th>
+                            <th>Location</th>
+                            <th>Base</th>
+                            <th>Batting</th>
+                            <th>Bowling</th>
+                            <th>Status</th>
+                            <th>Team</th>
+                            <th>Sold for</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="players-table-body"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="../js/money.js"></script>
+    <script src="../js/config-store.js"></script>
+    <script src="../js/players-store.js"></script>
+    <script src="players.js"></script>
+</body>
+</html>

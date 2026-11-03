@@ -70,11 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return `
             <tr>
                 <td>
-                    <span class="player-name">${player.id}</span>
+                    <span class="player-name">${getPlayerDisplayCode(player)}</span>
                     <span class="player-subtext">Category: ${player.category}</span>
                 </td>
                 <td class="player-photo">
-                    <img src="${player.photo}" alt="${player.name}">
+                    <img src="${resolveAssetUrl(player.photo, "../../")}" alt="${player.name}" onerror="this.src='../../assets/placeholder.png'">
                 </td>
                 <td>
                     <span class="player-name">${player.name}</span>

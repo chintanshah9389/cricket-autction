@@ -21,11 +21,12 @@ const getTournamentData = async () => {
     return await response.json();
 };
 
-//Get the player data as array of objects from the players.json file
+// Prefer uploaded CSV/Excel players from localStorage; fall back to data/players.json
 const getPlayersData = async () => {
-    const response = await fetch("data/players.json");
-    // Instead of assigning to a variable, return the data directly
-    return await response.json();
+    return resolveAuctionPlayers(async () => {
+        const response = await fetch("data/players.json");
+        return await response.json();
+    });
 };
 //Get teams data
 const getTeamsData = async () => {
@@ -84,9 +85,8 @@ let finishModalCloseBtn = document.getElementById("finish-modal-close-btn");
 let playerName = document.getElementById("player-name");
 let playerPhoto = document.getElementById("player-image")
 let playerRole = document.getElementById("player-role");
-let playerBattingStyle = document.getElementById("player-batting-style");
-let playerBowlingStyle = document.getElementById("player-bowling-style");
-let playerClub = document.getElementById("player-club");
+let playerLocation = document.getElementById("player-location");
+let playerMobile = document.getElementById("player-mobile");
 let playerCategory = document.getElementById("player-category");
 let playerId = document.getElementById("player-id");
 let playerBasePrice = document.getElementById("base-price");
@@ -181,14 +181,17 @@ function showPlayerDetails(i) {
     playerRole.innerText = state.players[i].role;
     playerPhoto.src = state.players[i].photo;
     playerPhoto.alt = state.players[i].name;
-    playerBattingStyle.innerText = state.players[i].battingStyle;
-    playerBowlingStyle.innerText = state.players[i].bowlingStyle;
-    playerClub.innerText = state.players[i].currentClub;
+    if (playerLocation) {
+        playerLocation.innerText = state.players[i].currentClub || "—";
+    }
+    if (playerMobile) {
+        playerMobile.innerText = state.players[i].mobile || "—";
+    }
     const categoryName = normalizeCategoryName(state.players[i].category);
     const categoryMeta = getCategoryConfig(getActiveConfig(state), categoryName);
     playerCategory.innerText = categoryName;
     playerCategory.title = `Max ${categoryMeta.maxPlayers} per team`;
-    playerId.innerText = state.players[i].id;
+    playerId.innerText = getPlayerDisplayCode(state.players[i]);
     playerBasePrice.innerText = showAmount(state.players[i].basePrice);
     
     playerPhoto.onerror = function() {
@@ -330,17 +333,30 @@ function bidIncrement(currentBid) {
   }
 }
 
+function isOverlayBlockingBids() {
+    const wheelOpen = document.getElementById("player-wheel-modal")?.style.display === "flex";
+    const categoryOpen = document.getElementById("category-complete-modal")?.style.display === "flex";
+
+    // Clear stale flags if the overlays are already closed
+    if (playerWheelBusy && !wheelOpen) playerWheelBusy = false;
+    if (categoryGateBusy && !categoryOpen) categoryGateBusy = false;
+
+    return (playerWheelBusy && wheelOpen) || (categoryGateBusy && categoryOpen);
+}
+
 function bidPlayer(team_id) {
-    if (playerWheelBusy || categoryGateBusy) return;
+    if (isOverlayBlockingBids()) return;
 
-    let bidAmount;
-
-    const player =  state.players[state.auctionCount];      //Take a copy of the player's object
+    const player = state.players[state.auctionCount];
     const team = findTeam(team_id);
     if (!player || !team) return;
 
-    //Prevent bidding for any sold or unsold player
-    if(player.status === "unsold" || player.status === "sold"){
+    if (!Array.isArray(player.bids)) player.bids = [];
+
+    const status = String(player.status || "not-auctioned").toLowerCase();
+    // Prevent bidding for finished players
+    if (status === "unsold" || status === "sold" || status === "skipped") {
+        console.log(`Can't bid: ${player.name} is already ${status}.`);
         return;
     }
 
@@ -350,27 +366,50 @@ function bidPlayer(team_id) {
         return;
     }
 
-    if(player.bids.length === 0 && team.remaining_budget >= player.basePrice){   //while there are no bids for the player accept any bid, Bidder must have more money remaining than the players base price
-        bidAmount = player.basePrice; //base price become the first bid amount
-        
-    } else {                                                    //while there are existing  bids for the player
-        let lastBid = player.bids[player.bids.length - 1];      //Last bid object of the player
-        const nextAmount = lastBid.amount + bidIncrement(lastBid.amount);
+    const basePrice = Number(player.basePrice) || 0;
+    let bidAmount;
+
+    if (player.bids.length === 0) {
+        // First bid = base price
+        if (team.remaining_budget < basePrice) {
+            console.log(`${team.team_name} doesn't have enough purse for base price.`);
+            return;
+        }
+        bidAmount = basePrice;
+    } else {
+        const lastBid = player.bids[player.bids.length - 1];
+        if (!lastBid) return;
+        const nextAmount = Number(lastBid.amount) + bidIncrement(Number(lastBid.amount));
 
         // Prevent same team from bidding twice in a row
-        if (lastBid.team != team_id && team.remaining_budget >= nextAmount) {
-            bidAmount = nextAmount;
-        } else {
-            console.log(lastBid.team == team_id ? `${team.team_name} tried to bid twice in a row. NOT ACCEPTED.` : `${team.team_name} doesn't have enough money to bid for this player.`);
-            return; // Don't update UI if bid not accepted
+        if (Number(lastBid.team) === Number(team_id)) {
+            console.log(`${team.team_name} already has the current bid.`);
+            return;
         }
+        if (team.remaining_budget < nextAmount) {
+            console.log(`${team.team_name} doesn't have enough money to bid for this player.`);
+            return;
+        }
+        bidAmount = nextAmount;
     }
+
+    if (!Number.isFinite(bidAmount) || bidAmount <= 0) return;
 
     //Save history
     saveHistory();
-    
-    state.players[state.auctionCount].bids.push({ team: team_id, amount: bidAmount }); //Add bid to the state.players original object object
+
+    state.players[state.auctionCount].bids.push({
+        team: Number(team_id),
+        amount: bidAmount
+    });
     console.log(`${state.players[state.auctionCount].name} is bidded by ${team.team_name}`);
+
+    // Keep master list in sync
+    const master = state.allPlayers?.find((p) => p.id === player.id);
+    if (master && master !== player) {
+        if (!Array.isArray(master.bids)) master.bids = [];
+        master.bids = player.bids.slice();
+    }
 
     //Update the UI
     renderUI();
@@ -521,8 +560,34 @@ function isWheelEligiblePlayer(player) {
     return status !== "sold" && status !== "unsold" && status !== "skipped";
 }
 
+function getAuctionOrderMode() {
+    return getActiveConfig(state).auctionOrder === "RANDOM" ? "RANDOM" : "SEQUENCE";
+}
+
 function getWheelEligiblePlayers() {
     return (state.players || []).filter(isWheelEligiblePlayer);
+}
+
+/**
+ * Spinner pool:
+ * - RANDOM auction → all remaining players
+ * - Category sequence → only remaining players in the active category
+ */
+function getWheelPoolPlayers(anchorPlayer = null) {
+    const remaining = getWheelEligiblePlayers();
+    if (getAuctionOrderMode() === "RANDOM") return remaining;
+
+    const anchor =
+        anchorPlayer ||
+        state.players?.[state.auctionCount] ||
+        remaining[0] ||
+        null;
+    if (!anchor) return [];
+
+    const category = normalizeCategoryName(anchor.category);
+    return remaining.filter(
+        (player) => normalizeCategoryName(player.category) === category
+    );
 }
 
 function getWheelTargetPlayer() {
@@ -540,8 +605,7 @@ function getWheelTargetPlayer() {
 function buildWheelCandidates(winner) {
     if (!isWheelEligiblePlayer(winner)) return [];
 
-    // Only players still in the pool (never sold / unsold / skipped)
-    const remaining = getWheelEligiblePlayers();
+    const remaining = getWheelPoolPlayers(winner);
     const pool = shuffleCopy(remaining.filter((player) => player.id !== winner.id));
     const picks = [winner, ...pool].slice(0, 12);
 
@@ -626,6 +690,8 @@ function runPlayerWheel(winner) {
             return;
         }
 
+        const poolPlayers = getWheelPoolPlayers(winner);
+        const remainingCount = poolPlayers.length;
         const candidates = buildWheelCandidates(winner);
         if (!candidates.length) {
             resolve();
@@ -635,9 +701,26 @@ function runPlayerWheel(winner) {
         playerWheelBusy = true;
         playerWheelResolve = resolve;
 
+        const orderMode = getAuctionOrderMode();
+        const categoryLabel = displayCategoryName(normalizeCategoryName(winner.category));
+        const title = modal.querySelector(".wheel-title");
         const subtitle = modal.querySelector(".wheel-subtitle");
+        const eyebrow = modal.querySelector(".wheel-eyebrow");
+
+        if (eyebrow) {
+            eyebrow.textContent = orderMode === "RANDOM" ? "Player Wheel · Random" : "Player Wheel · Category";
+        }
+        if (title) {
+            title.textContent =
+                orderMode === "RANDOM"
+                    ? "Selecting next player"
+                    : `Selecting ${categoryLabel}`;
+        }
         if (subtitle) {
-            subtitle.textContent = `Spinning ${candidates.length} remaining player${candidates.length === 1 ? "" : "s"}…`;
+            subtitle.textContent =
+                orderMode === "RANDOM"
+                    ? `Spinning ${remainingCount} remaining player${remainingCount === 1 ? "" : "s"}…`
+                    : `Spinning ${remainingCount} remaining ${categoryLabel} player${remainingCount === 1 ? "" : "s"}…`;
         }
 
         const sliceAngle = 360 / candidates.length;
@@ -737,11 +820,18 @@ function getCategoryRoundStats(categoryName) {
     const inCategory = (state.players || []).filter(
         (player) => normalizeCategoryName(player.category) === name
     );
+    const sold = inCategory.filter((player) => player.status === "sold").length;
+    // Skipped players count as unsold for category summary / re-auction pool
+    const unsold = inCategory.filter(
+        (player) => player.status === "unsold" || player.status === "skipped"
+    ).length;
+    const pending = Math.max(0, inCategory.length - sold - unsold);
     return {
         total: inCategory.length,
-        sold: inCategory.filter((player) => player.status === "sold").length,
-        unsold: inCategory.filter((player) => player.status === "unsold").length,
-        skipped: inCategory.filter((player) => player.status === "skipped").length
+        sold,
+        unsold,
+        skipped: 0,
+        pending
     };
 }
 
@@ -796,19 +886,21 @@ function openCategoryCompleteModal(transition) {
 
     const fromLabel = displayCategoryName(transition.fromCategory);
     const toLabel = displayCategoryName(transition.toCategory);
-    const { sold, unsold, skipped, total } = transition.stats || {};
+    const { sold, unsold, pending, total } = transition.stats || {};
 
     if (title) title.textContent = `${fromLabel} complete`;
     if (text) {
         text.textContent = `All ${fromLabel} players are done. Do you want to continue to ${toLabel}?`;
     }
     if (statsEl) {
+        // Sold + Unsold (includes skipped) = Total
         statsEl.innerHTML = `
             <div class="stat-pill"><em>Sold</em><strong>${sold || 0}</strong></div>
             <div class="stat-pill"><em>Unsold</em><strong>${unsold || 0}</strong></div>
+            ${(pending || 0) > 0 ? `<div class="stat-pill"><em>Pending</em><strong>${pending}</strong></div>` : ""}
             <div class="stat-pill"><em>Total</em><strong>${total || 0}</strong></div>
         `;
-        statsEl.title = skipped ? `${skipped} skipped in this category` : "";
+        statsEl.title = `Sold ${sold || 0} + Unsold ${unsold || 0} (includes skipped)${pending ? ` + Pending ${pending}` : ""} = Total ${total || 0}`;
     }
 
     modal.style.display = "flex";
@@ -836,7 +928,7 @@ function advanceToNextPlayer({ useWheel = true } = {}) {
 }
 
 function nextPlayer() {
-    if (playerWheelBusy || categoryGateBusy) return;
+    if (isOverlayBlockingBids()) return;
 
     const transition = findCategoryCompletion(state.auctionCount);
     if (transition) {
@@ -858,17 +950,16 @@ function skipPlayer() {
     }
 
     const player = state.players[state.auctionCount]; // Get player
-    player.status = "skipped";           //Change the player status to "skipped"
-    console.log(`${player.name} is skipped`);
+    // Treat skip as unsold so they stay in the unsold re-auction pool
+    player.status = "unsold";
+    state.unsoldPlayers.push(player.id);
+    state.unsoldCount++;
+    console.log(`${player.name} is skipped (counted as unsold)`);
 
-    state.skippedPlayers.push(player.id);        //add players id to skipped players list
-
-    // --- 💡 FIX: UPDATE THE MASTER LIST (state.allPlayers) ---
     const playerInMasterList = state.allPlayers.find(p => p.id === player.id);
     if (playerInMasterList) {
-        playerInMasterList.status = "skipped";
+        playerInMasterList.status = "unsold";
     }
-    // --- END OF FIX ---
 
     //Load Next Player's Data
     nextPlayer();
@@ -1587,7 +1678,7 @@ function renderUnsoldPoolModal() {
                         <img src="${player.photo || "assets/placeholder.png"}" alt="" onerror="this.src='assets/placeholder.png'">
                         <div>
                             <strong>${player.name || "Player"}</strong>
-                            <em>${player.role || "—"} · #${player.id ?? "—"}</em>
+                            <em>${player.role || "—"} · ${getPlayerDisplayCode(player)}</em>
                         </div>
                         <span class="status-tag ${player.status === "skipped" ? "skipped" : ""}">${player.status || "unsold"}</span>
                     </div>
@@ -1809,7 +1900,15 @@ const initApp = async () => {
         state.config = auctionConfig;
         state.tournament = buildTournamentState(auctionConfig, state.tournament);
         const normalizeSavedPlayer = (player) => {
-            if (player) player.category = normalizeCategoryName(player.category);
+            if (!player) return;
+            player.category = normalizeCategoryName(player.category);
+            // Ensure display code stays as CPL-R-01 style, not numeric id
+            if (typeof normalizePlayerRecord === "function") {
+                const fixed = normalizePlayerRecord(player);
+                player.code = fixed.code;
+            } else {
+                player.code = getPlayerDisplayCode(player);
+            }
         };
         state.players.forEach(normalizeSavedPlayer);
         state.allPlayers.forEach(normalizeSavedPlayer);
@@ -1962,6 +2061,9 @@ const initApp = async () => {
             window.open("config/", "_blank");
         });
     }
+    document.getElementById("players-button")?.addEventListener("click", () => {
+        window.open("config/players.html", "_blank");
+    });
 
     resetButton.addEventListener("click", () => resetAll());
     undoButton.addEventListener("click", () => undoChange());

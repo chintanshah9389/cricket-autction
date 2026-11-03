@@ -141,14 +141,16 @@ body.teams-drawer-locked .big-container {
 
 .player-stage {
     display: grid;
-    grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
-    gap: 20px;
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+    gap: 22px;
     min-height: 0;
-    padding: 18px;
+    padding: 16px;
     border-radius: 28px;
-    border: 1px solid rgba(31, 154, 214, 0.16);
+    border: 1px solid rgba(22, 50, 92, 0.1);
     background:
-        linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(232, 242, 255, 0.94) 52%, rgba(255, 246, 230, 0.92));
+        radial-gradient(circle at 12% 18%, rgba(31, 154, 214, 0.12), transparent 28%),
+        radial-gradient(circle at 88% 12%, rgba(226, 161, 22, 0.14), transparent 26%),
+        linear-gradient(145deg, #ffffff, #f3f7ff 55%, #fff8ec);
     box-shadow: var(--shadow);
 }
 
@@ -160,18 +162,28 @@ body.teams-drawer-locked .big-container {
     position: relative;
     width: 100%;
     height: 100%;
-    min-height: 340px;
+    min-height: 380px;
     border-radius: 24px;
     overflow: hidden;
-    background:
-        linear-gradient(160deg, #16325c, #1f9ad6 55%, #12a39a);
-    border: 1px solid rgba(31, 154, 214, 0.35);
+    background: linear-gradient(160deg, #101b33, #16325c 55%, #1f9ad6);
+    border: 1px solid rgba(22, 50, 92, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.squareBox::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 42%;
+    background: linear-gradient(180deg, transparent, rgba(10, 18, 36, 0.72));
+    pointer-events: none;
 }
 
 .player-image {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center top;
     display: block;
     transform: none;
     border: none;
@@ -186,11 +198,19 @@ body.teams-drawer-locked .big-container {
     display: inline-flex;
     align-items: baseline;
     gap: 8px;
-    padding: 8px 12px;
+    padding: 10px 14px;
     border-radius: 14px;
-    background: rgba(15, 27, 51, 0.72);
+    background: rgba(15, 27, 51, 0.78);
     color: #fff;
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.photo-status-wrap {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 3;
 }
 
 .photo-id-label {
@@ -206,62 +226,63 @@ body.teams-drawer-locked .big-container {
     font-weight: 600;
     line-height: 1;
     color: #fff;
+    letter-spacing: 0.02em;
 }
 
 .player-details {
     display: grid;
     grid-template-rows: auto auto 1fr;
-    gap: 16px;
+    gap: 14px;
     min-width: 0;
     min-height: 0;
+    padding: 6px 4px 4px 0;
 }
 
 .player-hero {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
 }
 
 .player-kicker {
-    margin: 0 0 6px;
+    margin: 0;
     color: var(--sky);
     font-size: 0.78rem;
     font-weight: 800;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
 }
 
 .player-name {
     margin: 0;
-    color: var(--navy);
     font-family: var(--font-player);
-    font-size: clamp(1.9rem, 3.2vw, 3rem);
+    font-size: clamp(2.2rem, 4vw, 3.4rem);
     font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 0.95;
+    letter-spacing: -0.045em;
+    line-height: 0.92;
     text-transform: uppercase;
-    background: linear-gradient(90deg, #16325c, #1f9ad6 48%, #c23b8a);
+    background: linear-gradient(92deg, #16325c 10%, #1f9ad6 48%, #c23b8a 92%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+    max-width: 18ch;
 }
 
 .player-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    justify-content: flex-end;
+    justify-content: flex-start;
 }
 
 .category-container {
-    display: grid;
-    gap: 4px;
-    min-width: 150px;
-    padding: 10px 14px;
-    border-radius: 16px;
-    border: 1px solid rgba(194, 59, 138, 0.22);
-    background: linear-gradient(135deg, #ffe7f4, #e7e9ff);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(194, 59, 138, 0.2);
+    background: linear-gradient(135deg, #ffe7f4, #eceaff);
 }
 
 .tag-label {
@@ -276,7 +297,7 @@ body.teams-drawer-locked .big-container {
     margin: 0;
     color: var(--magenta);
     font-family: var(--font-display);
-    font-size: 1.35rem;
+    font-size: 1.25rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     line-height: 1;
@@ -287,15 +308,16 @@ body.teams-drawer-locked .big-container {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 88px;
+    min-width: 84px;
     padding: 10px 14px;
-    border-radius: 16px;
+    border-radius: 999px;
     background: linear-gradient(135deg, #12a39a, #1f9ad6);
     color: #fff;
     font-family: var(--font-display);
-    font-size: 1.2rem;
+    font-size: 1.15rem;
     font-weight: 600;
     letter-spacing: 0.08em;
+    box-shadow: 0 10px 24px rgba(15, 27, 51, 0.22);
 }
 
 .player-status-chip[data-status="sold"] {
@@ -316,34 +338,44 @@ body.teams-drawer-locked .big-container {
     50% { transform: scale(1.03); box-shadow: 0 0 0 8px rgba(31, 154, 214, 0); }
 }
 
-#players-data-section {
+#players-data-section,
+.player-meta-bar {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
     align-items: stretch;
     width: 100%;
     min-height: 0;
     padding: 0;
     margin: 0;
+    overflow: hidden;
+    border-radius: 18px;
+    border: 1px solid rgba(22, 50, 92, 0.1);
+    background: rgba(255, 255, 255, 0.72);
 }
 
 .player-stat {
     display: grid;
-    gap: 8px;
+    gap: 6px;
     padding: 14px 16px;
-    border-radius: 18px;
-    border: 1px solid rgba(22, 50, 92, 0.08);
-    background: rgba(255, 255, 255, 0.82);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+    border-radius: 0;
+    border: none;
+    border-right: 1px solid rgba(22, 50, 92, 0.08);
+    background: transparent;
+    box-shadow: none;
+}
+
+.player-stat:last-child {
+    border-right: none;
 }
 
 .player-data-head {
     width: 100%;
     padding: 0;
     color: var(--muted);
-    font-size: 0.74rem;
+    font-size: 0.7rem;
     font-weight: 800;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     border-bottom: none;
 }
@@ -353,24 +385,31 @@ body.teams-drawer-locked .big-container {
     margin-top: 0;
     padding: 0;
     color: var(--ink);
-    font-size: 1.12rem;
+    font-size: 1.05rem;
     font-weight: 700;
-    text-transform: uppercase;
-    line-height: 1.15;
+    text-transform: none;
+    line-height: 1.2;
+    word-break: break-word;
 }
 
 #player-role {
-    font-size: 1.7rem;
+    font-size: 1.45rem;
     font-family: var(--font-display);
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--indigo);
+    text-transform: uppercase;
+}
+
+#player-mobile {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
 }
 
 /* ======== BID BOARD ======== */
 .bid-board {
     display: grid;
-    grid-template-columns: minmax(160px, 0.7fr) minmax(0, 1.8fr);
+    grid-template-columns: minmax(150px, 0.65fr) minmax(0, 1.85fr);
     gap: 12px;
     align-self: end;
 }
@@ -378,10 +417,11 @@ body.teams-drawer-locked .big-container {
 .bid-card {
     display: grid;
     width: 100%;
-    min-height: 118px;
+    min-height: 132px;
     overflow: hidden;
-    border-radius: 20px;
+    border-radius: 22px;
     border: 1px solid var(--line);
+    box-shadow: 0 10px 24px rgba(21, 42, 78, 0.08);
 }
 
 #base-price-section {
@@ -390,29 +430,29 @@ body.teams-drawer-locked .big-container {
 
 #base-price-section .base-price-head {
     width: 100%;
-    padding: 10px 14px;
+    padding: 12px 16px;
     background: linear-gradient(90deg, #16325c, #1f9ad6);
     color: #fff;
     font-family: var(--font-display);
     font-size: 1.05rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
 }
 
 #base-price-section .base-price-info {
     display: grid;
     place-items: center;
     width: 100%;
-    background: linear-gradient(180deg, #f2f9ff, #dcefff);
+    background: linear-gradient(180deg, #f4faff, #dcefff);
     color: var(--sky);
     font-family: var(--font-display);
-    font-size: clamp(2rem, 3vw, 2.6rem);
+    font-size: clamp(2.2rem, 3.2vw, 2.9rem);
     font-weight: 700;
 }
 
 #current-bid-section {
     display: grid;
-    grid-template-columns: 1.1fr 1.4fr auto;
+    grid-template-columns: 1.05fr 1.45fr auto;
     grid-template-rows: auto 1fr;
     grid-template-areas:
         "head head action"
@@ -423,24 +463,24 @@ body.teams-drawer-locked .big-container {
     grid-area: head;
     display: flex;
     align-items: center;
-    padding: 10px 14px;
+    padding: 12px 16px;
     background: linear-gradient(90deg, #f08a24, #e2a116);
     color: #fff;
     font-family: var(--font-display);
     font-size: 1.05rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
 }
 
 .current-bid-info {
     grid-area: amount;
     display: grid;
     place-items: center;
-    padding: 8px;
+    padding: 10px;
     background: linear-gradient(180deg, #fff8e6, #ffe3a3);
     color: #9a6200;
     font-family: var(--font-display);
-    font-size: clamp(2.1rem, 3.4vw, 3rem);
+    font-size: clamp(2.3rem, 3.6vw, 3.2rem);
     font-weight: 700;
 }
 
@@ -451,7 +491,7 @@ body.teams-drawer-locked .big-container {
     align-content: center;
     justify-items: center;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     background: var(--teal);
     color: #fff;
     text-align: center;
@@ -462,7 +502,7 @@ body.teams-drawer-locked .big-container {
 
 .current-bid-team-name {
     font-family: var(--font-player);
-    font-size: clamp(0.95rem, 1.25vw, 1.2rem);
+    font-size: clamp(1rem, 1.35vw, 1.25rem);
     font-weight: 700;
 }
 
@@ -480,7 +520,7 @@ body.teams-drawer-locked .big-container {
 .bid-team-stat {
     display: grid;
     gap: 2px;
-    padding: 6px 4px;
+    padding: 7px 4px;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.16);
     border: 1px solid rgba(255, 255, 255, 0.22);
@@ -489,7 +529,7 @@ body.teams-drawer-locked .big-container {
 
 .bid-team-stat em {
     font-style: normal;
-    font-family: var(--font-ui);
+    font-family: var(--font-body);
     font-size: 0.62rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -526,16 +566,18 @@ body.teams-drawer-locked .big-container {
 
 .custom-bid-button {
     grid-area: action;
-    width: 110px;
+    width: 108px;
     height: 100%;
     margin: 0;
     border: none;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
     background: linear-gradient(180deg, #c23b8a, #4f5bd5);
     color: #fff;
     font-family: var(--font-display);
-    font-size: 1.2rem;
+    font-size: 1.25rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     cursor: pointer;
 }
 
@@ -1010,6 +1052,7 @@ body.teams-drawer-locked .big-container {
 
 #reset-button { background: linear-gradient(180deg, #73849a, #40556f); }
 #config-button { background: linear-gradient(180deg, #6d7cff, #4f5bd5); }
+#players-button { background: linear-gradient(180deg, #7c3aed, #5b21b6); }
 #teams-button { background: linear-gradient(180deg, #2eb7c9, #12a39a); }
 #skip-button { background: linear-gradient(180deg, #5b6b8a, #16325c); }
 #spin-button { background: linear-gradient(180deg, #f59e0b, #d97706); }
@@ -1282,7 +1325,7 @@ body.teams-drawer-locked .big-container {
 
 .category-complete-stats {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
     gap: 10px;
     margin: 18px 0 8px;
 }
@@ -1682,8 +1725,30 @@ body.teams-drawer-locked .big-container {
         flex-direction: column;
     }
 
-    .player-tags {
-        justify-content: flex-start;
+    .player-stage {
+        grid-template-columns: 1fr;
+    }
+
+    .squareBox {
+        min-height: 280px;
+    }
+
+    .player-name {
+        max-width: none;
+    }
+
+    .player-meta-bar,
+    #players-data-section {
+        grid-template-columns: 1fr;
+    }
+
+    .player-stat {
+        border-right: none;
+        border-bottom: 1px solid rgba(22, 50, 92, 0.08);
+    }
+
+    .player-stat:last-child {
+        border-bottom: none;
     }
 
     #footer-section {
@@ -1709,6 +1774,8 @@ body.teams-drawer-locked .big-container {
     .custom-bid-button {
         width: 100%;
         min-height: 48px;
+        writing-mode: horizontal-tb;
+        transform: none;
     }
 }
 
