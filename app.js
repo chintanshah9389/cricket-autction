@@ -21,18 +21,36 @@ const getTournamentData = async () => {
     return await response.json();
 };
 
-// Prefer uploaded CSV/Excel players from localStorage; fall back to data/players.json
-const getPlayersData = async () => {
-    return resolveAuctionPlayers(async () => {
-        const response = await fetch("data/players.json");
-        return await response.json();
-    });
-};
-//Get teams data
-const getTeamsData = async () => {
-    const response = await fetch("data/teams.json");
-    // Return the data directly
-    return await response.json();
+function getActiveDivisionIdFromConfig(config) {
+    return config?.activeDivisionId || config?.divisions?.[0]?.id || "div_1";
+}
+
+function getAuctionDataStorageKey(divisionId) {
+    if (typeof getDivisionAuctionDataKey === "function") {
+        return getDivisionAuctionDataKey(divisionId);
+    }
+    return `auctionData:${divisionId || "div_1"}`;
+}
+
+function divisionHasSavedAuction(divisionId) {
+    try {
+        if (typeof migrateLegacyDivisionStorage === "function") {
+            migrateLegacyDivisionStorage(divisionId);
+        }
+        const raw = localStorage.getItem(getAuctionDataStorageKey(divisionId));
+        return Boolean(raw);
+    } catch (_) {
+        return false;
+    }
+}
+
+// Players for this division only — never fall back to a shared global file
+const getPlayersData = async (divisionId) => {
+    const id = divisionId || getActivePlayersDivisionId?.() || "div_1";
+    if (typeof resolveAuctionPlayers === "function") {
+        return resolveAuctionPlayers(null, id);
+    }
+    return [];
 };
 
 // Keys for teams in list order. Avoids plain "s" / "u" (sold / unsold). Extra teams still clickable.
@@ -52,11 +70,285 @@ function teamFromHotkey(key) {
     return state.teams[index];
 }
 
-//DOM for Welcome Modal
-let welcomeModal = document.getElementById("welcome-modal");
+//DOM for Welcome Screen
+let welcomeScreen = document.getElementById("welcome-screen");
 let welcomeResumeBtn = document.getElementById("welcome-resume-btn");
 let welcomeStartNewBtn = document.getElementById("welcome-start-new-btn");
 let welcomeResetBtn = document.getElementById("welcome-reset-btn");
+let welcomeResetProjectBtn = document.getElementById("welcome-reset-project-btn");
+let welcomeLogo = document.getElementById("welcome-logo");
+let welcomeTitle = document.getElementById("welcome-title");
+let welcomeDivisions = document.getElementById("welcome-divisions");
+let welcomeDivisionNote = document.getElementById("welcome-division-note");
+let bigContainer = document.getElementById("big-container");
+let welcomeConfigCache = null;
+
+// Partners intro (when returning from config / players / partners)
+let partnersIntro = document.getElementById("partners-intro");
+let partnersIntroTier = document.getElementById("partners-intro-tier");
+let partnersIntroLogo = document.getElementById("partners-intro-logo");
+let partnersIntroVideo = document.getElementById("partners-intro-video");
+let partnersIntroMediaWrap = document.getElementById("partners-intro-media-wrap");
+let partnersIntroName = document.getElementById("partners-intro-name");
+let partnersIntroTagline = document.getElementById("partners-intro-tagline");
+let partnersIntroDots = document.getElementById("partners-intro-dots");
+let partnersIntroContinue = document.getElementById("partners-intro-continue");
+let partnersIntroCaption = document.getElementById("partners-intro-caption");
+let partnersIntroBrandLogo = document.getElementById("partners-intro-brand-logo");
+let partnersIntroList = [];
+let partnersIntroIndex = 0;
+let partnersIntroTimer = null;
+let partnersIntroVideoHandler = null;
+
+function waitMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fadePartnersIntroCaption(out) {
+    if (!partnersIntroCaption) return;
+    if (out) {
+        partnersIntroCaption.classList.add("is-fading");
+        await waitMs(420);
+    } else {
+        partnersIntroCaption.classList.remove("is-fading");
+    }
+}
+
+const PARTNER_TIER_LABELS = {
+    title: "Title Partner",
+    presented: "Presented By",
+    partner: "Partner"
+};
+
+function shouldShowPartnersIntro() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("showPartners") === "1") return true;
+        const ref = String(document.referrer || "");
+        if (!ref) return false;
+        const refUrl = new URL(ref);
+        if (refUrl.origin !== window.location.origin) return false;
+        const path = refUrl.pathname || "";
+        return (
+            path.includes("/config") ||
+            path.includes("/partners") ||
+            path.includes("/squads")
+        );
+    } catch (_) {
+        return false;
+    }
+}
+
+function clearPartnersIntroQuery() {
+    try {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has("showPartners")) return;
+        url.searchParams.delete("showPartners");
+        const next = `${url.pathname}${url.search}${url.hash}`;
+        window.history.replaceState({}, "", next || "./");
+    } catch (_) {
+        // ignore
+    }
+}
+
+function clearPartnersIntroTimers() {
+    if (partnersIntroTimer) {
+        clearTimeout(partnersIntroTimer);
+        partnersIntroTimer = null;
+    }
+    if (partnersIntroVideo && partnersIntroVideoHandler) {
+        partnersIntroVideo.removeEventListener("ended", partnersIntroVideoHandler);
+        partnersIntroVideoHandler = null;
+    }
+}
+
+function stopPartnersIntroVideo() {
+    if (!partnersIntroVideo) return;
+    partnersIntroVideo.pause();
+    partnersIntroVideo.removeAttribute("src");
+    partnersIntroVideo.classList.add("is-hidden");
+    try {
+        partnersIntroVideo.load();
+    } catch (_) {
+        // ignore
+    }
+}
+
+function playPartnersIntroVideo(src, { loop = false } = {}) {
+    return new Promise((resolve) => {
+        if (!partnersIntroVideo || !src) {
+            resolve(false);
+            return;
+        }
+        stopPartnersIntroVideo();
+        partnersIntroVideo.classList.remove("is-hidden");
+        partnersIntroVideo.muted = true;
+        partnersIntroVideo.playsInline = true;
+        partnersIntroVideo.loop = loop;
+        partnersIntroVideo.src = src;
+        let settled = false;
+        const finish = (ok) => {
+            if (settled) return;
+            settled = true;
+            partnersIntroVideo.removeEventListener("canplay", onReady);
+            resolve(ok);
+        };
+        const onReady = () => {
+            partnersIntroVideo.play().then(() => finish(true)).catch(() => finish(false));
+        };
+        partnersIntroVideo.addEventListener("canplay", onReady);
+        partnersIntroVideo.addEventListener("error", () => finish(false), { once: true });
+    });
+}
+
+async function renderPartnersIntroSlide({ animate = false } = {}) {
+    if (!partnersIntroList.length) return;
+    if (animate) await fadePartnersIntroCaption(true);
+
+    const partner = partnersIntroList[partnersIntroIndex % partnersIntroList.length];
+    if (partnersIntroTier) {
+        const tier = partner.tier || "partner";
+        partnersIntroTier.textContent = PARTNER_TIER_LABELS[tier] || "Partner";
+        partnersIntroTier.dataset.tier = tier;
+    }
+    if (partnersIntroName) {
+        partnersIntroName.textContent = String(partner.name || "Partner").trim();
+    }
+    const tagline = String(partner.tagline || "").trim();
+    if (partnersIntroTagline) {
+        if (tagline) {
+            partnersIntroTagline.textContent = tagline;
+            partnersIntroTagline.classList.remove("is-hidden");
+        } else {
+            partnersIntroTagline.textContent = "";
+            partnersIntroTagline.classList.add("is-hidden");
+        }
+    }
+
+    const videoSrc = String(partner.video || "").trim();
+    const logoSrc = String(partner.logo || "").trim();
+
+    if (partnersIntroBrandLogo) {
+        if (logoSrc) {
+            partnersIntroBrandLogo.classList.remove("is-hidden");
+            partnersIntroBrandLogo.src = logoSrc;
+            partnersIntroBrandLogo.alt = `${partner.name || "Partner"} logo`;
+            partnersIntroBrandLogo.onerror = () => {
+                partnersIntroBrandLogo.onerror = null;
+                partnersIntroBrandLogo.classList.add("is-hidden");
+                partnersIntroBrandLogo.removeAttribute("src");
+            };
+        } else {
+            partnersIntroBrandLogo.classList.add("is-hidden");
+            partnersIntroBrandLogo.removeAttribute("src");
+        }
+    }
+
+    if (videoSrc && partnersIntroVideo) {
+        if (partnersIntroMediaWrap) partnersIntroMediaWrap.dataset.mode = "video";
+        if (partnersIntroLogo) {
+            partnersIntroLogo.classList.add("is-hidden");
+            partnersIntroLogo.removeAttribute("src");
+        }
+        const played = await playPartnersIntroVideo(videoSrc, {
+            loop: partnersIntroList.length <= 1
+        });
+        if (!played && logoSrc && partnersIntroLogo) {
+            stopPartnersIntroVideo();
+            if (partnersIntroMediaWrap) partnersIntroMediaWrap.dataset.mode = "logo";
+            partnersIntroLogo.classList.remove("is-hidden");
+            partnersIntroLogo.src = logoSrc;
+            partnersIntroLogo.alt = partner.name || "Partner logo";
+        }
+    } else {
+        stopPartnersIntroVideo();
+        if (partnersIntroMediaWrap) partnersIntroMediaWrap.dataset.mode = "logo";
+        if (partnersIntroLogo) {
+            if (logoSrc) {
+                partnersIntroLogo.classList.remove("is-hidden");
+                partnersIntroLogo.src = logoSrc;
+                partnersIntroLogo.alt = partner.name || "Partner logo";
+            } else {
+                partnersIntroLogo.classList.add("is-hidden");
+                partnersIntroLogo.removeAttribute("src");
+            }
+        }
+    }
+
+    if (partnersIntroDots) {
+        // Hide lone blue dots — only useful when multiple partners cycle
+        partnersIntroDots.innerHTML =
+            partnersIntroList.length > 1
+                ? partnersIntroList
+                      .map(
+                          (_, i) =>
+                              `<span class="partners-intro-dot${i === partnersIntroIndex % partnersIntroList.length ? " is-active" : ""}"></span>`
+                      )
+                      .join("")
+                : "";
+    }
+
+    await fadePartnersIntroCaption(false);
+    schedulePartnersIntroAdvance(partner);
+}
+
+function advancePartnersIntro() {
+    if (partnersIntroList.length <= 1) return;
+    partnersIntroIndex = (partnersIntroIndex + 1) % partnersIntroList.length;
+    renderPartnersIntroSlide({ animate: true });
+}
+
+function schedulePartnersIntroAdvance(partner) {
+    clearPartnersIntroTimers();
+    if (partnersIntroList.length <= 1) return;
+
+    const hasVideo = Boolean(String(partner?.video || "").trim());
+    if (hasVideo && partnersIntroVideo) {
+        partnersIntroVideoHandler = () => advancePartnersIntro();
+        partnersIntroVideo.addEventListener("ended", partnersIntroVideoHandler);
+        partnersIntroTimer = setTimeout(() => advancePartnersIntro(), 20000);
+        return;
+    }
+    partnersIntroTimer = setTimeout(() => advancePartnersIntro(), 4000);
+}
+
+function hidePartnersIntro() {
+    clearPartnersIntroTimers();
+    stopPartnersIntroVideo();
+    if (partnersIntro) partnersIntro.hidden = true;
+    clearPartnersIntroQuery();
+}
+
+async function maybeShowPartnersIntro() {
+    if (!partnersIntro || !shouldShowPartnersIntro()) {
+        clearPartnersIntroQuery();
+        return;
+    }
+
+    try {
+        const response = await fetch("/api/partners", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            clearPartnersIntroQuery();
+            return;
+        }
+        const all = Array.isArray(payload.partners) ? payload.partners : [];
+        partnersIntroList = all
+            .filter((p) => p && p.highlight)
+            .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+        if (!partnersIntroList.length) {
+            clearPartnersIntroQuery();
+            return;
+        }
+
+        partnersIntroIndex = 0;
+        partnersIntroCaption?.classList.add("is-fading");
+        partnersIntro.hidden = false;
+        renderPartnersIntroSlide();
+    } catch (_) {
+        clearPartnersIntroQuery();
+    }
+}
 
 //Buttons for Editing Budgets
 let budgetModal = document.getElementById("budget-modal");
@@ -113,39 +405,40 @@ soldSeal = document.getElementById("sold-seal");
 // showAmount / formatMoney come from js/money.js
 
 /**
- * Hides the welcome modal and starts the main UI.
- * This is called by the button handlers.
+ * Leave the full-page welcome and show the live auction desk.
  */
-function startMainApplication(isResuming) {
-    if (isResuming) {
-        // Fix auction count if the last loaded player was already done
-        if (state.auctionCount < state.players.length) {
-            const lastPlayerStatus = state.players[state.auctionCount].status;
-            if (lastPlayerStatus === "sold" || lastPlayerStatus === "unsold" || lastPlayerStatus === "skipped") {
-                state.auctionCount++;
-            }
-        }
-    }
-    
-    // Render the UI for the first time
-    renderUI();
-    updateUndoRedoButtons();
-    
-    // Hide the modal
-    welcomeModal.style.display = 'none';
+function enterAuctionDesk() {
+    document.body.classList.remove("welcome-active");
+    if (welcomeScreen) welcomeScreen.hidden = true;
+    if (bigContainer) bigContainer.hidden = false;
 }
 
 /**
- * Click handler for "Resume Auction" button.
+ * Starts the main UI after welcome. Auction state is already prepared in initApp.
  */
-function handleWelcomeResume() {
-    console.log("Resuming auction...");
-    // Data is already pre-loaded by initApp, just start the UI
-    startMainApplication(true);
+function startMainApplication() {
+    // Leave welcome first — renderUI() skips player details while welcome-active.
+    enterAuctionDesk();
+    renderUI();
+    updateUndoRedoButtons();
 }
 
-function closeWelcomeModal() {
-    welcomeModal.style.display = 'none';
+function handleWelcomeResume() {
+    startMainApplication();
+}
+
+async function handleWelcomeStartNew() {
+    // Reload players/config from storage so uploads done after page open are included
+    if (welcomeConfigCache) {
+        const divisionId = welcomeConfigCache.activeDivisionId;
+        localStorage.removeItem(getAuctionDataStorageKey(divisionId));
+        if (typeof queueProjectPersist === "function" && typeof persistAuctionToProjectFolder === "function") {
+            queueProjectPersist(() => persistAuctionToProjectFolder(divisionId, null));
+        }
+        await loadAuctionStateForActiveDivision(welcomeConfigCache);
+        showTournamentDetails();
+    }
+    startMainApplication();
 }
 
 //This Function is used to show tounament details in the screen
@@ -153,16 +446,162 @@ function showTournamentDetails() {
     // Check if tournament data exists before trying to display it
     if (!state.tournament) return;
 
+    const title = getTournamentTitle(state.tournament);
+    const divisionName = state.divisionName || getActiveDivision(welcomeConfigCache || state.config || {})?.name;
+    const deskTitle = divisionName ? `${title} — ${divisionName}` : title;
+    const logoSrc = getTournamentLogoSrc(state.tournament, "assets/tournament-logo.png");
+
     const logoEl = document.querySelector(".tournament-logo");
     const headline = document.querySelector(".headline");
     if (logoEl) {
-        logoEl.src = getTournamentLogoSrc(state.tournament, "assets/tournament-logo.png");
+        logoEl.src = logoSrc;
         logoEl.onerror = () => {
             logoEl.src = "assets/tournament-logo.png";
         };
     }
     if (headline) {
-        headline.innerText = getTournamentTitle(state.tournament);
+        headline.innerText = deskTitle;
+    }
+
+    if (welcomeLogo) {
+        welcomeLogo.src = logoSrc;
+        welcomeLogo.onerror = () => {
+            welcomeLogo.src = "assets/tournament-logo.png";
+        };
+    }
+    if (welcomeTitle) {
+        welcomeTitle.innerText = title;
+    }
+}
+
+function refreshWelcomeDivisionActions() {
+    const config = welcomeConfigCache;
+    if (!config) return;
+    const active = getActiveDivision(config);
+    const hasSaved = divisionHasSavedAuction(active.id);
+
+    if (welcomeResumeBtn) welcomeResumeBtn.hidden = !hasSaved;
+    if (welcomeResetBtn) welcomeResetBtn.hidden = !hasSaved;
+    if (welcomeStartNewBtn) welcomeStartNewBtn.hidden = hasSaved;
+    if (welcomeDivisionNote) {
+        const teamCount = (active.teams || []).length;
+        const playerCount =
+            typeof loadStoredPlayers === "function"
+                ? (loadStoredPlayers(active.id) || []).length
+                : 0;
+        welcomeDivisionNote.textContent = hasSaved
+            ? `${active.name}: ${teamCount} teams, ${playerCount} players — saved auction found — resume or reset.`
+            : `${active.name}: ${teamCount} teams, ${playerCount} players — no saved auction — start fresh.`;
+    }
+}
+
+function renderWelcomeDivisions() {
+    if (!welcomeDivisions || !welcomeConfigCache) return;
+    const divisions = listDivisions(welcomeConfigCache);
+    welcomeDivisions.innerHTML = "";
+    divisions.forEach((division) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `welcome-division-btn${
+            division.id === welcomeConfigCache.activeDivisionId ? " is-active" : ""
+        }`;
+        const teamCount = Array.isArray(division.teams) ? division.teams.length : 0;
+        let playerCount = 0;
+        if (typeof loadStoredPlayers === "function") {
+            const stored = loadStoredPlayers(division.id);
+            playerCount = Array.isArray(stored) ? stored.length : 0;
+        }
+        button.innerHTML = `<span class="welcome-division-name">${division.name}</span><span class="welcome-division-meta">${teamCount} teams · ${playerCount} players</span>`;
+        button.title = `${division.name}: ${teamCount} teams, ${playerCount} players`;
+        button.addEventListener("click", () => selectWelcomeDivision(division.id));
+        welcomeDivisions.appendChild(button);
+    });
+    refreshWelcomeDivisionActions();
+}
+
+async function selectWelcomeDivision(divisionId) {
+    if (!welcomeConfigCache || welcomeConfigCache.activeDivisionId === divisionId) return;
+    welcomeConfigCache = setActiveDivisionId(welcomeConfigCache, divisionId);
+    saveAuctionConfig(welcomeConfigCache);
+    await loadAuctionStateForActiveDivision(welcomeConfigCache);
+    renderWelcomeDivisions();
+    showTournamentDetails();
+    if (typeof updateUndoRedoButtons === "function") updateUndoRedoButtons();
+    if (!document.body.classList.contains("welcome-active") && typeof renderUI === "function") {
+        renderUI();
+    }
+}
+
+async function loadAuctionStateForActiveDivision(auctionConfig) {
+    const division = getActiveDivision(auctionConfig);
+    migrateLegacyDivisionStorage?.(division.id);
+    const savedDataJSON = localStorage.getItem(getAuctionDataStorageKey(division.id));
+
+    history = { undoStack: [], redoStack: [] };
+    state = {
+        players: [],
+        teams: [],
+        auctionCount: 0,
+        soldCount: 0,
+        unsoldCount: 0,
+        soldPlayers: [],
+        unsoldPlayers: [],
+        skippedPlayers: [],
+        divisionId: division.id,
+        divisionName: division.name
+    };
+
+    if (savedDataJSON) {
+        const savedData = JSON.parse(savedDataJSON);
+        state = savedData.auctionState;
+        history = savedData.historyData || history;
+        if (!state.allPlayers) {
+            state.allPlayers = (state.players || []).slice();
+        }
+        state.config = auctionConfig;
+        state.tournament = buildTournamentState(auctionConfig, state.tournament);
+        state.divisionId = division.id;
+        state.divisionName = division.name;
+        if (typeof reconcileAuctionTeamsFromConfig === "function") {
+            reconcileAuctionTeamsFromConfig(state, auctionConfig);
+        } else if (typeof syncTeamMediaFromConfig === "function") {
+            syncTeamMediaFromConfig(state, auctionConfig);
+        }
+
+        const normalizeSavedPlayer = (player) => {
+            if (!player) return;
+            player.category = normalizeCategoryName(player.category);
+            if (typeof normalizePlayerRecord === "function") {
+                const fixed = normalizePlayerRecord(player);
+                player.code = fixed.code;
+                // Keep category from stored/sheet data (normalizePlayerRecord already used CATEGORY field)
+                player.category = fixed.category;
+            } else {
+                player.code = getPlayerDisplayCode(player);
+            }
+        };
+        (state.players || []).forEach(normalizeSavedPlayer);
+        (state.allPlayers || []).forEach(normalizeSavedPlayer);
+
+        if (state.auctionCount < (state.players || []).length) {
+            const lastPlayerStatus = state.players[state.auctionCount].status;
+            if (lastPlayerStatus === "sold" || lastPlayerStatus === "unsold" || lastPlayerStatus === "skipped") {
+                state.auctionCount++;
+            }
+        }
+
+        // Re-apply category sequence to the remaining queue (fixes mixed categories on resume)
+        if (typeof reorderRemainingPlayersByCategory === "function") {
+            reorderRemainingPlayersByCategory(state, auctionConfig);
+        }
+    } else {
+        state.players = await getPlayersData(division.id);
+        state.allPlayers = state.players.slice();
+        applyConfigToAuctionState(state, auctionConfig);
+        // Teams come only from this division's config — never a shared teams.json
+        if (!state.teams?.length && typeof buildFreshTeamsFromConfig === "function") {
+            state.teams = buildFreshTeamsFromConfig(auctionConfig);
+        }
     }
 }
 
@@ -174,12 +613,35 @@ function triggerAnim(el, className) {
 }
 
 //this function will show specific player details in the UI
+async function setPlayerPhotoElement(imgEl, photoRef) {
+    if (!imgEl) return;
+    const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
+    imgEl.onerror = function () {
+        this.onerror = null;
+        this.src = "assets/placeholder.png";
+    };
+    if (typeof resolvePlayerPhotoSrc === "function") {
+        try {
+            imgEl.src = await resolvePlayerPhotoSrc(photoRef, {
+                divisionId,
+                fromPrefix: "",
+                verifyLocal: true
+            });
+            return;
+        } catch (_) {
+            // fall through
+        }
+    }
+    const value = String(photoRef || "").trim();
+    imgEl.src = value && !/^idb:/i.test(value) ? value : "assets/placeholder.png";
+}
+
 function showPlayerDetails(i) {
     triggerAnim(document.querySelector(".player-stage"), "player-swap");
 
     playerName.innerText = state.players[i].name;
     playerRole.innerText = state.players[i].role;
-    playerPhoto.src = state.players[i].photo;
+    setPlayerPhotoElement(playerPhoto, state.players[i].photo);
     playerPhoto.alt = state.players[i].name;
     if (playerLocation) {
         playerLocation.innerText = state.players[i].currentClub || "—";
@@ -193,10 +655,6 @@ function showPlayerDetails(i) {
     playerCategory.title = `Max ${categoryMeta.maxPlayers} per team`;
     playerId.innerText = getPlayerDisplayCode(state.players[i]);
     playerBasePrice.innerText = showAmount(state.players[i].basePrice);
-    
-    playerPhoto.onerror = function() {
-        this.src = 'assets/placeholder.png'; // Add a placeholder image
-    };
 
     updateCurrentBidPanel(state.players[i]);
 
@@ -425,10 +883,14 @@ function bidPlayer(team_id) {
 function saveData() {
     let data = {
         auctionState: state,
-        historyData: history 
+        historyData: history
+    };
+    const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
+    localStorage.setItem(getAuctionDataStorageKey(divisionId), JSON.stringify(data));
+    if (typeof queueProjectPersist === "function" && typeof persistAuctionToProjectFolder === "function") {
+        queueProjectPersist(() => persistAuctionToProjectFolder(divisionId, data));
     }
-    localStorage.setItem('auctionData', JSON.stringify(data));        //Save current state
-    console.log("All data saved...")
+    console.log("All data saved...");
 }
 
 function unsoldPlayer() {
@@ -462,6 +924,57 @@ function unsoldPlayer() {
 
     //save current state to local storage
     saveData();
+}
+
+function hideTeamSoldVideo() {
+    const overlay = document.getElementById("team-sold-video");
+    const videoEl = document.getElementById("team-sold-video-el");
+    if (videoEl) {
+        videoEl.pause();
+        videoEl.removeAttribute("src");
+        try {
+            videoEl.load();
+        } catch (_) {
+            // ignore
+        }
+    }
+    if (overlay) overlay.hidden = true;
+}
+
+function maybeShowTeamSoldVideo(team, player) {
+    const overlay = document.getElementById("team-sold-video");
+    const videoEl = document.getElementById("team-sold-video-el");
+    const nameEl = document.getElementById("team-sold-video-name");
+    const metaEl = document.getElementById("team-sold-video-meta");
+    if (!overlay || !videoEl || !team) return;
+
+    const videoSrc =
+        typeof getTeamVideoSrc === "function"
+            ? getTeamVideoSrc(team)
+            : String(team.video || "").trim();
+    if (!videoSrc) return;
+
+    if (nameEl) nameEl.textContent = team.team_name || "Team";
+    if (metaEl) {
+        const category = displayCategoryName(normalizeCategoryName(player?.category));
+        metaEl.textContent = player?.name
+            ? `${player.name}${category ? ` · ${category}` : ""}`
+            : "";
+    }
+
+    overlay.hidden = false;
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    videoEl.loop = false;
+    videoEl.src = videoSrc;
+    const onEnded = () => {
+        videoEl.removeEventListener("ended", onEnded);
+        hideTeamSoldVideo();
+    };
+    videoEl.addEventListener("ended", onEnded);
+    videoEl.play().catch(() => {
+        // If autoplay fails, keep overlay so user can Continue
+    });
 }
 
 function soldPlayer() {
@@ -524,6 +1037,9 @@ function soldPlayer() {
 
     //save current state to local storage
     saveData();
+
+    // Optional team celebration video
+    maybeShowTeamSoldVideo(team, player);
 }
 
 const WHEEL_COLORS = [
@@ -585,9 +1101,11 @@ function getWheelPoolPlayers(anchorPlayer = null) {
     if (!anchor) return [];
 
     const category = normalizeCategoryName(anchor.category);
-    return remaining.filter(
+    const sameCategory = remaining.filter(
         (player) => normalizeCategoryName(player.category) === category
     );
+    // Never fall back to a mixed pool during category sequence
+    return sameCategory;
 }
 
 function getWheelTargetPlayer() {
@@ -641,10 +1159,7 @@ function updateWheelSpotlight(player, { finalReveal = false } = {}) {
     if (!player) return;
 
     if (photo) {
-        photo.src = player.photo || "assets/placeholder.png";
-        photo.onerror = function () {
-            this.src = "assets/placeholder.png";
-        };
+        setPlayerPhotoElement(photo, player.photo);
     }
     if (name) name.textContent = player.name || "—";
     if (meta) {
@@ -707,8 +1222,22 @@ function runPlayerWheel(winner) {
         const subtitle = modal.querySelector(".wheel-subtitle");
         const eyebrow = modal.querySelector(".wheel-eyebrow");
 
+        // Breakdown so a huge count is clearly "this category only" vs whole auction
+        const allEligible = getWheelEligiblePlayers();
+        const counts = {};
+        allEligible.forEach((player) => {
+            const name = displayCategoryName(normalizeCategoryName(player.category));
+            counts[name] = (counts[name] || 0) + 1;
+        });
+        const breakdown = Object.entries(counts)
+            .map(([name, count]) => `${name} ${count}`)
+            .join(" · ");
+
         if (eyebrow) {
-            eyebrow.textContent = orderMode === "RANDOM" ? "Player Wheel · Random" : "Player Wheel · Category";
+            eyebrow.textContent =
+                orderMode === "RANDOM"
+                    ? `Player Wheel · Random · ${allEligible.length} left`
+                    : `Player Wheel · ${categoryLabel} only · ${breakdown || "—"}`;
         }
         if (title) {
             title.textContent =
@@ -720,7 +1249,7 @@ function runPlayerWheel(winner) {
             subtitle.textContent =
                 orderMode === "RANDOM"
                     ? `Spinning ${remainingCount} remaining player${remainingCount === 1 ? "" : "s"}…`
-                    : `Spinning ${remainingCount} remaining ${categoryLabel} player${remainingCount === 1 ? "" : "s"}…`;
+                    : `Spinning ${remainingCount} ${categoryLabel} player${remainingCount === 1 ? "" : "s"} left in this category…`;
         }
 
         const sliceAngle = 360 / candidates.length;
@@ -745,11 +1274,13 @@ function runPlayerWheel(winner) {
             const label = document.createElement("div");
             label.className = "wheel-label";
             const angle = -90 + index * sliceAngle + sliceAngle / 2;
+            const cat = displayCategoryName(normalizeCategoryName(player.category));
             label.style.setProperty("--wheel-angle", `${angle}deg`);
             label.innerHTML = `
                 <div class="wheel-label-card">
                     <img src="${player.photo || "assets/placeholder.png"}" alt="" onerror="this.src='assets/placeholder.png'">
                     <span>${player.name}</span>
+                    <small>${cat}</small>
                 </div>
             `;
             wheel.appendChild(label);
@@ -1072,6 +1603,36 @@ function initTeamsDrawer() {
     });
 }
 
+function getCurrentAuctionCategoryName() {
+    const player = state?.players?.[state.auctionCount];
+    if (!player) return "";
+    return normalizeCategoryName(player.category);
+}
+
+function getTeamsOrderedForCurrentCategory() {
+    const categoryName = getCurrentAuctionCategoryName();
+    const indexed = (state.teams || []).map((team, index) => {
+        const quota = categoryName
+            ? getCategoryQuotaStatus(state, team.team_id, categoryName)
+            : null;
+        return { team, index, quota };
+    });
+
+    if (!categoryName) return indexed;
+
+    // Open for this category first, then full teams; keep hotkey index stable via index
+    indexed.sort((a, b) => {
+        const aFull = a.quota?.isFull ? 1 : 0;
+        const bFull = b.quota?.isFull ? 1 : 0;
+        if (aFull !== bFull) return aFull - bFull;
+        const aRem = a.quota?.remaining ?? 0;
+        const bRem = b.quota?.remaining ?? 0;
+        if (aRem !== bRem) return bRem - aRem;
+        return a.index - b.index;
+    });
+    return indexed;
+}
+
 function renderTeams() {
     const container = document.getElementById("teams-data-section");
     const rail = document.getElementById("teams-rail");
@@ -1082,22 +1643,38 @@ function renderTeams() {
         rail.querySelectorAll(".team-rail-btn").forEach((btn) => btn.remove());
     }
 
-    const teamCount = Math.max(1, state.teams.length);
+    const categoryName = getCurrentAuctionCategoryName();
+    const categoryLabel = categoryName ? displayCategoryName(categoryName) : "";
+    const ordered = getTeamsOrderedForCurrentCategory();
+    const teamCount = Math.max(1, ordered.length);
     container.style.setProperty("--team-rows", String(teamCount));
 
-    state.teams.forEach((team, index) => {
+    ordered.forEach(({ team, index, quota }) => {
         const teamId = team.team_id;
         const hotkey = TEAM_HOTKEYS[index] || "";
         const accent = team.color || "#16325c";
         const logoSrc = getTeamLogoSrc(team);
+        const isFull = Boolean(quota?.isFull);
+        const categoryChip = quota
+            ? `${quota.owned}/${quota.max} ${categoryLabel}`
+            : "";
 
         const teamElement = document.createElement("button");
         teamElement.type = "button";
-        teamElement.className = "team-container";
+        teamElement.className = `team-container${isFull ? " category-full" : " category-open"}`;
         teamElement.id = `team-${teamId}`;
         teamElement.dataset.teamName = String(team.team_name || "").toLowerCase();
+        teamElement.dataset.categoryOpen = isFull ? "0" : "1";
         teamElement.style.setProperty("--team-accent", accent);
-        teamElement.setAttribute("aria-label", `Bid with ${team.team_name}`);
+        teamElement.setAttribute(
+            "aria-label",
+            isFull
+                ? `${team.team_name} full for ${categoryLabel}`
+                : `Bid with ${team.team_name}`
+        );
+        if (isFull) {
+            teamElement.title = `${team.team_name} already has max ${categoryLabel} players`;
+        }
 
         teamElement.innerHTML = `
             <div class="logo-container">
@@ -1112,6 +1689,11 @@ function renderTeams() {
                         <span id="taken-player-${teamId}">${team.player_bought}</span>
                         <span class="stat-label">players</span>
                     </div>
+                    ${
+                        categoryChip
+                            ? `<span class="team-category-chip ${isFull ? "is-full" : "is-open"}" title="Current category slots">${categoryChip}</span>`
+                            : ""
+                    }
                     ${hotkey ? `<span class="team-hotkey" title="Hotkey">${hotkey}</span>` : ""}
                 </div>
             </div>
@@ -1126,11 +1708,13 @@ function renderTeams() {
         if (rail) {
             const railBtn = document.createElement("button");
             railBtn.type = "button";
-            railBtn.className = "team-rail-btn";
+            railBtn.className = `team-rail-btn${isFull ? " category-full" : ""}`;
             railBtn.id = `team-rail-${teamId}`;
             railBtn.dataset.teamName = String(team.team_name || "").toLowerCase();
             railBtn.style.setProperty("--team-accent", accent);
-            railBtn.title = `${team.team_name} (${hotkey || "click"})`;
+            railBtn.title = categoryChip
+                ? `${team.team_name} · ${categoryChip}${hotkey ? ` (${hotkey})` : ""}`
+                : `${team.team_name} (${hotkey || "click"})`;
             railBtn.setAttribute("aria-label", `Quick bid ${team.team_name}`);
             railBtn.innerHTML = `
                 <img src="${logoSrc}" alt="" onerror="this.style.visibility='hidden'">
@@ -1180,34 +1764,89 @@ function makeBidHandler(teamId) {
 // }
 
 function renderUI() {
-    if (state.auctionCount >= state.players.length) {
-        // alert("The auction is finished!");
-        // state.auctionCount = 0;
-        // showPlayerDetails(0);
-        // renderTeams();
-        // endAuction();
+    renderTeams();
 
+    // Stay quiet on the welcome screen or when no players are loaded yet
+    if (document.body.classList.contains("welcome-active")) {
+        return;
+    }
+
+    if (!state.players.length) {
+        if (playerName) playerName.innerText = "No players loaded";
+        return;
+    }
+
+    if (state.auctionCount >= state.players.length) {
         openRoundEndModal();
         return;
     }
-    
+
     showPlayerDetails(state.auctionCount);
-    renderTeams();
 }
 
-function resetAll() {
-    const securityKey = prompt("Enter the security key to reset: (rezwan19)");
+async function resetAll() {
+    const securityKey = prompt("Enter the security key to reset this division: (rezwan19)");
 
-    if(securityKey === "rezwan19"){
-        //remove all saved data from localStorage
-        localStorage.removeItem('auctionData');
-
-        //reload the page
-        window.location.reload();
-    } else {
-        alert("Wrong security key!")
+    if (securityKey !== "rezwan19") {
+        alert("Wrong security key!");
+        return;
     }
-    //initApp function is already designed to start a fresh auction if it can't find any saved data
+
+    const divisionId =
+        state.divisionId ||
+        welcomeConfigCache?.activeDivisionId ||
+        getActiveDivisionIdFromConfig(welcomeConfigCache) ||
+        "div_1";
+
+    // Clear browser cache for this division's auction progress
+    localStorage.removeItem(getAuctionDataStorageKey(divisionId));
+    if (divisionId === "div_1") {
+        localStorage.removeItem("auctionData");
+    }
+
+    // Also remove auction.json for this division on disk (players/photos stay)
+    try {
+        if (typeof deleteDivisionAuction === "function") {
+            await deleteDivisionAuction(divisionId);
+        } else if (typeof persistAuctionToProjectFolder === "function") {
+            await persistAuctionToProjectFolder(divisionId, null);
+        }
+    } catch (error) {
+        alert(error.message || "Could not clear division auction on disk.");
+        return;
+    }
+
+    window.location.reload();
+}
+
+async function resetEntireProjectFlow() {
+    const confirmed = confirm(
+        "Reset ENTIRE project?\n\nThis clears all divisions, teams, players, auction progress, and offline photos.\nYou will get a blank project (no teams, Main Auction only)."
+    );
+    if (!confirmed) return;
+
+    const securityKey = prompt("Enter the security key to reset the whole project: (rezwan19)");
+    if (securityKey !== "rezwan19") {
+        alert("Wrong security key!");
+        return;
+    }
+
+    try {
+        try {
+            sessionStorage.setItem("auctionForceBlank", "1");
+        } catch (_) {
+            // ignore
+        }
+        if (typeof resetEntireProject === "function") {
+            await resetEntireProject();
+        } else {
+            localStorage.clear();
+        }
+        // Cache-bust so the browser does not keep an old welcome screen
+        window.location.href = `./index.html?blank=1&ts=${Date.now()}`;
+    } catch (error) {
+        alert(error.message || "Could not reset project.");
+    }
 }
 
 
@@ -1870,6 +2509,19 @@ function showFinishScreen() {
 
 // Main App Logic
 const initApp = async () => {
+    const bootParams = new URLSearchParams(window.location.search);
+    const forceBlankBoot = bootParams.get("blank") === "1";
+    if (forceBlankBoot) {
+        try {
+            sessionStorage.setItem("auctionForceBlank", "1");
+        } catch (_) {
+            // ignore
+        }
+        if (typeof clearAuctionLocalStorageCaches === "function") {
+            clearAuctionLocalStorageCaches();
+        }
+    }
+
     // Fallback tournament file, then overlay configurable branding.
     try {
         state.tournament = await getTournamentData();
@@ -1878,72 +2530,22 @@ const initApp = async () => {
         state.tournament = buildTournamentState(DEFAULT_AUCTION_CONFIG);
     }
 
-    //check localStorage for saved data
-    const savedDataJSON = localStorage.getItem('auctionData');
-    const auctionConfig = await getAuctionConfig();
-
-    if (savedDataJSON) {
-        welcomeResumeBtn.style.display = 'flex';
-        welcomeResetBtn.style.display = 'flex';
-
-        // Logic for loading a SAVED game
-        let savedData = JSON.parse(savedDataJSON);
-        state = savedData.auctionState;
-        history = savedData.historyData;
- 
-        // Add this 'if' block to support old save files
-        if (!state.allPlayers) {
-            state.allPlayers = state.players.slice();
-        }
-
-        // Keep category names, branding, and max rules in sync with the latest config
-        state.config = auctionConfig;
-        state.tournament = buildTournamentState(auctionConfig, state.tournament);
-        const normalizeSavedPlayer = (player) => {
-            if (!player) return;
-            player.category = normalizeCategoryName(player.category);
-            // Ensure display code stays as CPL-R-01 style, not numeric id
-            if (typeof normalizePlayerRecord === "function") {
-                const fixed = normalizePlayerRecord(player);
-                player.code = fixed.code;
-            } else {
-                player.code = getPlayerDisplayCode(player);
-            }
-        };
-        state.players.forEach(normalizeSavedPlayer);
-        state.allPlayers.forEach(normalizeSavedPlayer);
-
-        console.log("Loaded saved state from localStorage.");
-
-
-        // Check the status of the player at the loaded auction count
-        if (state.auctionCount < state.players.length) {
-            // This block now only runs if the player at auctionCount actually exists
-            const lastPlayerStatus = state.players[state.auctionCount].status;
-            if (lastPlayerStatus === "sold" || lastPlayerStatus === "unsold" || lastPlayerStatus === "skipped") {
-                // If the last player's turn was over, increment the count.
-                state.auctionCount++;
-            }
-        }
-
-    } else {
-        welcomeStartNewBtn.style.display = 'flex';
-
-        // Logic for starting a NEW game
-        console.log("No saved state found. Starting a new auction.");
-        state.players = await getPlayersData();
-
-        // Add this line to create the master list
-        state.allPlayers = state.players.slice();
-
-        applyConfigToAuctionState(state, auctionConfig);
-        if (!state.teams?.length) {
-            state.teams = await getTeamsData();
-        }
-        console.log(`Applied config: ${state.teams.length} teams, kitty ${formatMoney(auctionConfig.teamKitty)}`);
-    }
-
+    welcomeConfigCache = await getAuctionConfig();
+    await loadAuctionStateForActiveDivision(welcomeConfigCache);
+    renderWelcomeDivisions();
     showTournamentDetails();
+
+    if (forceBlankBoot) {
+        // Drop ?blank=1 from the URL after a successful blank boot
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("blank");
+            url.searchParams.delete("ts");
+            window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+        } catch (_) {
+            // ignore
+        }
+    }
 
     // This block runs for BOTH new and loaded states, ensuring UI is always in sync.
     renderUI();
@@ -2004,13 +2606,21 @@ const initApp = async () => {
 
 
 
-    // Add Welcome Modal Listeners
-    welcomeResumeBtn.addEventListener('click', closeWelcomeModal);
-    welcomeStartNewBtn.addEventListener('click', closeWelcomeModal);
-    welcomeResetBtn.addEventListener('click', resetAll); // Calls your existing reset function
+    // Welcome screen listeners
+    welcomeResumeBtn?.addEventListener("click", handleWelcomeResume);
+    welcomeStartNewBtn?.addEventListener("click", handleWelcomeStartNew);
+    welcomeResetBtn?.addEventListener("click", resetAll);
+    welcomeResetProjectBtn?.addEventListener("click", () => {
+        resetEntireProjectFlow();
+    });
+    partnersIntroContinue?.addEventListener("click", hidePartnersIntro);
+    document.getElementById("team-sold-video-continue")?.addEventListener("click", hideTeamSoldVideo);
 
-    // Show the modal
-    welcomeModal.style.display = 'flex';
+    // Stay on the full-page welcome until the user chooses an action
+    document.body.classList.add("welcome-active");
+    if (welcomeScreen) welcomeScreen.hidden = false;
+    if (bigContainer) bigContainer.hidden = true;
+    maybeShowPartnersIntro();
      
     //Click event for Buttons
     unsoldButton.addEventListener("click", () => unsoldPlayer());

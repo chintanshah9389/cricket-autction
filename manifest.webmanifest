@@ -1,0 +1,23 @@
+{
+  "name": "Cricket Auction Desk",
+  "short_name": "Auction Desk",
+  "description": "Offline-capable cricket auction desk with division packs.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#16325c",
+  "theme_color": "#16325c",
+  "icons": [
+    {
+      "src": "assets/tournament-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/tournament-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

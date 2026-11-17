@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Partners Showcase</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="showcase" id="showcase" aria-live="polite">
+        <section class="showcase-stage is-empty" id="hero-stage">
+            <div class="showcase-media" id="hero-media-wrap" data-mode="logo">
+                <img id="hero-logo" class="showcase-logo is-hidden" alt="">
+                <video id="hero-video" class="showcase-video is-hidden" muted playsinline></video>
+            </div>
+
+            <header class="showcase-bar" id="showcase-caption">
+                <img id="showcase-brand-logo" class="showcase-brand-logo is-hidden" alt="Partner logo">
+                <div class="showcase-bar-copy">
+                    <p class="showcase-tier" id="hero-tier">Partner</p>
+                    <h1 class="showcase-name" id="hero-name">Partner</h1>
+                    <p class="showcase-tagline is-hidden" id="hero-tagline"></p>
+                    <div class="showcase-dots" id="partners-dots" aria-hidden="true"></div>
+                </div>
+                <a class="showcase-manage-inline" href="../config/partners.html">Manage</a>
+            </header>
+        </section>
+
+        <p class="showcase-empty" id="empty-state">
+            No highlighted partners yet. Open <a href="../config/partners.html">Manage</a> and turn on <strong>Highlight</strong>.
+        </p>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>

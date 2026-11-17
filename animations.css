@@ -109,7 +109,22 @@
 .team-container:nth-child(11) { animation-delay: 0.35s; }
 .team-container:nth-child(12) { animation-delay: 0.38s; }
 
-.welcome-modal-content,
+.welcome-screen {
+    animation: pageEnter 0.45s ease-out;
+}
+
+.welcome-logo {
+    animation: floatSoft 3.5s ease-in-out infinite;
+}
+
+.welcome-title {
+    animation: pageEnter 0.55s ease-out 0.08s both;
+}
+
+.welcome-actions {
+    animation: pageEnter 0.55s ease-out 0.16s both;
+}
+
 .modal-content {
     animation: pageEnter 0.35s ease-out;
 }

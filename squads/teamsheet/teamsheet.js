@@ -1,8 +1,26 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // showAmount / formatMoney come from ../../js/money.js
 
-    // --- Main Logic ---
-    const savedDataJSON = localStorage.getItem('auctionData');
+    let auctionConfig = null;
+    try {
+        auctionConfig = await getAuctionConfig();
+    } catch (_) {
+        // ignore
+    }
+    const divisionId =
+        auctionConfig?.activeDivisionId ||
+        auctionConfig?.divisions?.[0]?.id ||
+        "div_1";
+    if (typeof migrateLegacyDivisionStorage === "function") {
+        migrateLegacyDivisionStorage(divisionId);
+    }
+    const dataKey =
+        typeof getDivisionAuctionDataKey === "function"
+            ? getDivisionAuctionDataKey(divisionId)
+            : `auctionData:${divisionId}`;
+
+    // --- Main Logic (active division only) ---
+    const savedDataJSON = localStorage.getItem(dataKey);
     if (!savedDataJSON) {
         document.body.innerHTML = '<h1>Error: Auction data not found.</h1>';
         return;
@@ -23,8 +41,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Populate Header from configurable branding
     (async () => {
         try {
-            const auctionConfig = await getAuctionConfig();
-            state.tournament = buildTournamentState(auctionConfig, state.tournament);
+            if (auctionConfig) {
+                state.tournament = buildTournamentState(auctionConfig, state.tournament);
+            }
         } catch (_) {
             // keep saved tournament
         }
@@ -37,7 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
         if (nameEl) {
-            nameEl.textContent = getTournamentTitle(state.tournament);
+            const divisionName =
+                state.divisionName || getActiveDivision?.(auctionConfig)?.name;
+            nameEl.textContent = divisionName
+                ? `${getTournamentTitle(state.tournament)} — ${divisionName}`
+                : getTournamentTitle(state.tournament);
         }
     })();
 

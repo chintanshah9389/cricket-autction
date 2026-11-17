@@ -117,7 +117,7 @@ function showPlayers(teamId) {
     //Create Teams Player Card
     const createCardHTML = (player) => `
         <div class="player-card" id="player-${player.id}">
-            <div class="image-box"><img src="${resolveAssetUrl(player.photo, "../")}" alt="${player.name}" class="player-photo" onerror="this.src='../assets/placeholder.png'"></div>
+            <div class="image-box"><img src="${resolveAssetUrl(player.photo, "../")}" data-photo-ref="${player.photo || ""}" alt="${player.name}" class="player-photo" onerror="this.src='../assets/placeholder.png'"></div>
             <div class="player-name"><span>${player.name}</span></div>
             <div class="batting-style"><span>${player.battingStyle}</span></div>
             <div class="bowling-style"><span>${player.bowlingStyle || "N/A"}</span></div>
@@ -128,6 +128,11 @@ function showPlayers(teamId) {
     bowlers.forEach(p => bowlerSection.innerHTML += createCardHTML(p));
     allrounders.forEach(p => allrounderSection.innerHTML += createCardHTML(p));
     wks.forEach(p => wkSection.innerHTML += createCardHTML(p));
+
+    if (typeof hydratePhotoElements === "function") {
+        const divisionId = state.divisionId || "div_1";
+        hydratePhotoElements(document, { divisionId, fromPrefix: "../" }).catch(() => {});
+    }
 
     //If there is no player to show
     const showNoPlayer = (role, section) => {
@@ -151,51 +156,60 @@ function runSquadsPage() {
 
     
 
-    const savedDataJSON = localStorage.getItem('auctionData');
-
-    if (savedDataJSON) {
-        // Load state and show squads
-        const savedData = JSON.parse(savedDataJSON);
-        state = savedData.auctionState;
-        console.log('Data loaded successfully.');
-    } else {
-        // Replace all content with the message
-        document.querySelector(".king-container").innerHTML = `
-            <div class="no-data">AUCTION HAS NOT STARTED</div>
-            <style>
-                
-                .no-data {
-                    position: fixed;
-                    top: 0; left: 0; right: 0; bottom: 0;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    font-size: 5rem;
-                    font-weight: bold;
-                    background: #fff;
-                    z-index: 1;
-                    color: white;
-                    background: linear-gradient(90deg, rgba(2, 0, 36, 1) 0%, rgba(9, 9, 121, 1) 46%, rgba(219, 169, 68, 1) 100%);
-                }
-            </style>
-        `;
-
-        return;
-    }
-
-    // Fallback: If no team was selected in the URL (or it's invalid),
-    // default to the first team in the list.
-    if (!selectedTeam || isNaN(selectedTeam) || !state.teams.find(t => t.team_id === selectedTeam)) {
-        selectedTeam = state.teams[0].team_id;
-    }
-
-    // Apply configurable tournament branding when available
     (async () => {
+        let auctionConfig = null;
         try {
-            const auctionConfig = await getAuctionConfig();
-            state.tournament = buildTournamentState(auctionConfig, state.tournament);
+            auctionConfig = await getAuctionConfig();
         } catch (_) {
-            // keep existing tournament from auction save
+            // ignore
+        }
+
+        const divisionId =
+            auctionConfig?.activeDivisionId ||
+            auctionConfig?.divisions?.[0]?.id ||
+            "div_1";
+        if (typeof migrateLegacyDivisionStorage === "function") {
+            migrateLegacyDivisionStorage(divisionId);
+        }
+        const dataKey =
+            typeof getDivisionAuctionDataKey === "function"
+                ? getDivisionAuctionDataKey(divisionId)
+                : `auctionData:${divisionId}`;
+        // Only this division's auction — do not fall back to legacy shared auctionData
+        const savedDataJSON = localStorage.getItem(dataKey);
+
+        if (savedDataJSON) {
+            const savedData = JSON.parse(savedDataJSON);
+            state = savedData.auctionState;
+            console.log("Data loaded successfully.");
+        } else {
+            document.querySelector(".king-container").innerHTML = `
+                <div class="no-data">AUCTION HAS NOT STARTED</div>
+                <style>
+                    .no-data {
+                        position: fixed;
+                        top: 0; left: 0; right: 0; bottom: 0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        font-size: 5rem;
+                        font-weight: bold;
+                        z-index: 1;
+                        color: white;
+                        background: linear-gradient(90deg, rgba(2, 0, 36, 1) 0%, rgba(9, 9, 121, 1) 46%, rgba(219, 169, 68, 1) 100%);
+                    }
+                </style>
+            `;
+            return;
+        }
+
+        if (!selectedTeam || isNaN(selectedTeam) || !state.teams.find((t) => t.team_id === selectedTeam)) {
+            selectedTeam = state.teams[0].team_id;
+        }
+
+        if (auctionConfig) {
+            state.tournament = buildTournamentState(auctionConfig, state.tournament);
+            state.divisionName = getActiveDivision(auctionConfig)?.name || state.divisionName;
         }
         const logoEl = document.querySelector(".tournament-logo");
         if (logoEl) {
@@ -204,13 +218,10 @@ function runSquadsPage() {
                 logoEl.src = "../assets/tournament-logo.png";
             };
         }
+
+        renderTeamsData();
+        showPlayers(selectedTeam);
     })();
-
-    //Render teams data
-    renderTeamsData();
-
-    //Show Team's players list
-    showPlayers(selectedTeam);
 
     printButton.style.cursor = "pointer";
     printButton.addEventListener('click', () => {

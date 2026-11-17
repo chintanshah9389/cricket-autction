@@ -1,0 +1,222 @@
+:root {
+    --ink: #f4f7fb;
+    --ink-soft: rgba(244, 247, 251, 0.78);
+    --pitch: #3fd0c6;
+    --gold: #e2a116;
+    --font-display: "Teko", sans-serif;
+    --font-player: "Sora", sans-serif;
+    --font-body: "Hind", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    color: var(--ink);
+    font-family: var(--font-body);
+    background: #050b16;
+}
+
+.is-hidden {
+    display: none !important;
+}
+
+.showcase {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.showcase-stage {
+    position: absolute;
+    inset: 0;
+}
+
+.showcase-stage.is-empty {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.showcase-media {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    background: #070f1d;
+}
+
+.showcase-media[data-mode="video"] {
+    background: #000;
+}
+
+.showcase-logo,
+.showcase-video {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    object-fit: contain;
+}
+
+.showcase-media[data-mode="logo"] .showcase-logo {
+    width: min(70vw, 860px);
+    height: min(58vh, 500px);
+    padding: 28px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 24px;
+}
+
+.showcase-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+    min-height: 92px;
+    padding: 14px 18px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    background: linear-gradient(180deg, rgba(5, 11, 22, 0.94), rgba(5, 11, 22, 0.78));
+    backdrop-filter: blur(16px);
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 450ms ease, transform 450ms ease;
+}
+
+.showcase-brand-logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 6px;
+}
+
+.showcase-bar.is-fading {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+.showcase-bar-copy {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    justify-items: center;
+    text-align: center;
+}
+
+.showcase-manage-inline {
+    justify-self: end;
+    padding: 10px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    background: rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+}
+
+.showcase-tier {
+    margin: 0;
+    width: fit-content;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #ffe6a8;
+    background: rgba(226, 161, 22, 0.18);
+    font-family: var(--font-player);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.showcase-tier[data-tier="partner"] {
+    color: #bfeff0;
+    background: rgba(63, 208, 198, 0.16);
+}
+
+.showcase-name {
+    margin: 0;
+    max-width: 100%;
+    font-family: var(--font-player);
+    font-size: clamp(1rem, 2.2vw, 1.4rem);
+    font-weight: 800;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.showcase-tagline {
+    margin: 0;
+    max-width: min(46rem, 100%);
+    padding: 6px 12px;
+    border-radius: 999px;
+    color: #fff4cc;
+    background: linear-gradient(90deg, rgba(226, 161, 22, 0.28), rgba(255, 214, 102, 0.18));
+    border: 1px solid rgba(226, 161, 22, 0.35);
+    font-family: var(--font-player);
+    font-size: clamp(0.88rem, 1.8vw, 1.05rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.showcase-dots {
+    display: none;
+}
+
+.showcase-dots:not(:empty) {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 2px;
+    min-height: 8px;
+}
+
+.showcase-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.showcase-dot.is-active {
+    background: var(--pitch);
+}
+
+.showcase-empty {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    padding: 32px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 1.15rem;
+    line-height: 1.5;
+    background: #070f1d;
+}
+
+.showcase-empty.is-hidden {
+    display: none !important;
+}
+
+.showcase-empty a {
+    color: var(--pitch);
+    font-weight: 700;
+}

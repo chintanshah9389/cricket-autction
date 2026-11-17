@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Partners</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="partners.css">
+</head>
+<body>
+    <main class="config-page">
+        <header class="config-header">
+            <div>
+                <p class="eyebrow">Auction Desk</p>
+                <h1>Event Partners</h1>
+                <p class="subtitle">Add sponsors, upload logos, mark who to highlight on the showcase screen.</p>
+            </div>
+            <div class="header-links">
+                <a class="back-link" href="../partners/" target="_blank" rel="noopener">Open Showcase</a>
+                <a class="back-link" href="index.html">Configuration</a>
+                <a class="back-link" href="../index.html?showPartners=1">← Auction</a>
+            </div>
+        </header>
+
+        <section class="config-card">
+            <h2 id="form-heading">Add Partner</h2>
+            <p class="help">Saved into <code>data-project/partners.json</code> with logos under <code>data-project/partners/logos/</code>.</p>
+
+            <form id="partner-form" class="partner-form">
+                <input type="hidden" id="partner-edit-id" value="">
+
+                <div class="partner-form-grid">
+                    <div>
+                        <label for="partner-name">Name</label>
+                        <input id="partner-name" type="text" placeholder="Sponsor / brand name" required>
+                    </div>
+                    <div>
+                        <label for="partner-tier">Tier</label>
+                        <select id="partner-tier">
+                            <option value="title">Title Partner</option>
+                            <option value="presented">Presented By</option>
+                            <option value="partner" selected>Partner</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="partner-url">Website (optional)</label>
+                        <input id="partner-url" type="text" placeholder="https://…">
+                    </div>
+                    <div>
+                        <label for="partner-tagline">Tagline (optional)</label>
+                        <input id="partner-tagline" type="text" placeholder="e.g. Official Hydration Partner">
+                    </div>
+                    <div>
+                        <label for="partner-order">Display order</label>
+                        <input id="partner-order" type="number" min="1" step="1" value="1">
+                    </div>
+                </div>
+
+                <div class="partner-logo-row">
+                    <img id="partner-logo-preview" class="partner-logo-preview is-empty" alt="Partner logo preview">
+                    <div class="partner-logo-actions">
+                        <button type="button" id="partner-logo-upload-btn" class="team-logo-upload-btn">Upload logo</button>
+                        <input id="partner-logo-file" class="team-logo-file" type="file" accept="image/*">
+                        <button type="button" id="partner-logo-clear-btn" class="team-logo-clear-btn" disabled>Clear logo</button>
+                        <label class="partner-highlight-label">
+                            <input id="partner-highlight" type="checkbox" checked>
+                            Highlight on showcase
+                        </label>
+                    </div>
+                </div>
+
+                <div class="partner-video-row">
+                    <video id="partner-video-preview" class="partner-video-preview is-empty" muted playsinline controls></video>
+                    <div class="partner-logo-actions">
+                        <button type="button" id="partner-video-upload-btn" class="team-logo-upload-btn">Upload video (optional)</button>
+                        <input id="partner-video-file" class="team-logo-file" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+                        <button type="button" id="partner-video-clear-btn" class="team-logo-clear-btn" disabled>Clear video</button>
+                        <p class="help">Short MP4/WebM animation for showcase &amp; auction intro. Keep under ~80MB.</p>
+                        <p class="help" id="partner-video-name"></p>
+                    </div>
+                </div>
+
+                <div class="partner-form-actions">
+                    <button type="submit" class="primary" id="partner-save-btn">Save Partner</button>
+                    <button type="button" class="secondary-btn" id="partner-cancel-btn" hidden>Cancel edit</button>
+                </div>
+            </form>
+            <p id="partner-status" class="status" aria-live="polite"></p>
+        </section>
+
+        <section class="config-card">
+            <div class="partner-list-head">
+                <h2>All Partners</h2>
+                <p class="help" id="partner-count">0 partners</p>
+            </div>
+            <div id="partners-list" class="partners-list"></div>
+        </section>
+    </main>
+
+    <script src="partners.js"></script>
+</body>
+</html>

@@ -1,4 +1,7 @@
 const AUCTION_CONFIG_KEY = "auctionConfig";
+const LEGACY_AUCTION_PLAYERS_KEY = "auctionPlayers";
+const LEGACY_AUCTION_DATA_KEY = "auctionData";
+const MAX_AUCTION_DIVISIONS = 3;
 
 const DEFAULT_CATEGORY_SEQUENCE = ["RISING STAR", "KEY PLAYERS", "EVERGREEN"];
 
@@ -9,12 +12,12 @@ const DEFAULT_TEAM_COLORS = [
 ];
 
 const DEFAULT_TOURNAMENT = {
-    name: "ABCD Super League",
-    year: "2025",
+    name: "New Auction",
+    year: "2026",
     logo: ""
 };
 
-const DEFAULT_AUCTION_CONFIG = {
+const DEFAULT_DIVISION_SETTINGS = {
     teamKitty: 10000000,
     useCategoryBasePrices: true,
     auctionOrder: "SEQUENCE",
@@ -25,26 +28,169 @@ const DEFAULT_AUCTION_CONFIG = {
         "RISING STAR": { basePrice: 500000, maxPlayers: 3 },
         "KEY PLAYERS": { basePrice: 1000000, maxPlayers: 4 },
         "EVERGREEN": { basePrice: 2000000, maxPlayers: 4 }
-    },
-    teams: [],
-    tournament: { ...DEFAULT_TOURNAMENT }
+    }
 };
+
+const DEFAULT_AUCTION_CONFIG = {
+    ...DEFAULT_DIVISION_SETTINGS,
+    teams: [],
+    tournament: { ...DEFAULT_TOURNAMENT },
+    activeDivisionId: "div_1",
+    divisions: [
+        {
+            id: "div_1",
+            name: "Main Auction",
+            ...DEFAULT_DIVISION_SETTINGS,
+            teams: [],
+            categorySequence: DEFAULT_CATEGORY_SEQUENCE.slice(),
+            categories: {
+                "RISING STAR": { basePrice: 500000, maxPlayers: 3 },
+                "KEY PLAYERS": { basePrice: 1000000, maxPlayers: 4 },
+                "EVERGREEN": { basePrice: 2000000, maxPlayers: 4 }
+            }
+        }
+    ]
+};
+
+function getDivisionPlayersKey(divisionId) {
+    return `auctionPlayers:${divisionId || "div_1"}`;
+}
+
+function getDivisionAuctionDataKey(divisionId) {
+    return `auctionData:${divisionId || "div_1"}`;
+}
+
+function buildBlankProjectConfig() {
+    const categories = {
+        "RISING STAR": { basePrice: 500000, maxPlayers: 3 },
+        "KEY PLAYERS": { basePrice: 1000000, maxPlayers: 4 },
+        "EVERGREEN": { basePrice: 2000000, maxPlayers: 4 }
+    };
+    return normalizeConfig({
+        tournament: {
+            name: "New Auction",
+            year: String(new Date().getFullYear())
+        },
+        teams: [],
+        activeDivisionId: "div_1",
+        divisions: [
+            {
+                id: "div_1",
+                name: "Main Auction",
+                teams: [],
+                teamKitty: 10000000,
+                useCategoryBasePrices: true,
+                auctionOrder: "SEQUENCE",
+                shuffleWithinCategory: true,
+                playerWheelEnabled: true,
+                categorySequence: DEFAULT_CATEGORY_SEQUENCE.slice(),
+                categories
+            }
+        ]
+    });
+}
+
+/**
+ * Wipe every auction/local offline key and restore a blank project config.
+ */
+async function resetEntireProject() {
+    // Stop boot hydrate from pushing old browser cache back onto a wiped disk
+    try {
+        sessionStorage.setItem("auctionForceBlank", "1");
+    } catch (_) {
+        // ignore
+    }
+
+    // Wipe disk first (config + players + photos together). Do NOT delete photos
+    // alone beforehand — that left player records pointing at missing image files.
+    if (typeof resetProjectFolderOnDisk === "function") {
+        await resetProjectFolderOnDisk();
+    } else {
+        if (typeof deleteAllDivisionPhotoFolders === "function") {
+            await deleteAllDivisionPhotoFolders();
+        }
+        const blankDisk = buildBlankProjectConfig();
+        if (typeof persistConfigToProjectFolder === "function") {
+            await persistConfigToProjectFolder(blankDisk);
+        }
+        if (typeof persistPlayersToProjectFolder === "function") {
+            await persistPlayersToProjectFolder("div_1", []);
+        }
+    }
+
+    if (typeof clearAuctionLocalStorageCaches === "function") {
+        clearAuctionLocalStorageCaches();
+    } else {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (
+                key === AUCTION_CONFIG_KEY ||
+                key === LEGACY_AUCTION_PLAYERS_KEY ||
+                key === LEGACY_AUCTION_DATA_KEY ||
+                key.startsWith("auctionPlayers:") ||
+                key.startsWith("auctionData:") ||
+                key === "teamsDrawerPrefs" ||
+                key === "auctionDeskPrefs"
+            ) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach((key) => localStorage.removeItem(key));
+    }
+
+    if ("indexedDB" in window) {
+        await new Promise((resolve) => {
+            const req = indexedDB.deleteDatabase("cricket-auction-offline");
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+        });
+    }
+
+    const blank = buildBlankProjectConfig();
+    localStorage.setItem(AUCTION_CONFIG_KEY, JSON.stringify(blank));
+    localStorage.setItem(getDivisionPlayersKey(blank.activeDivisionId), JSON.stringify([]));
+    return blank;
+}
+
+function createDivisionId(existing = []) {
+    const used = new Set((existing || []).map((item) => String(item?.id || "")));
+    let n = 1;
+    while (used.has(`div_${n}`)) n += 1;
+    return `div_${n}`;
+}
 
 const LEGACY_CATEGORY_MAP = {
     A: "EVERGREEN",
     B: "KEY PLAYERS",
     C: "RISING STAR",
     "RISING STAR": "RISING STAR",
+    "RISINGSTARS": "RISING STAR",
+    "RISING STARS": "RISING STAR",
+    RS: "RISING STAR",
     "KEY PLAYER": "KEY PLAYERS",
     "KEY PLAYERS": "KEY PLAYERS",
+    "KEYPLAYER": "KEY PLAYERS",
+    "KEYPLAYERS": "KEY PLAYERS",
+    KP: "KEY PLAYERS",
     EVERGREEN: "EVERGREEN",
     "EVER GREEN": "EVERGREEN",
-    "EVER-GREEN": "EVERGREEN"
+    "EVER-GREEN": "EVERGREEN",
+    EG: "EVERGREEN"
 };
 
 function normalizeCategoryName(rawCategory) {
-    const key = String(rawCategory || "").trim().toUpperCase().replace(/\s+/g, " ");
-    return LEGACY_CATEGORY_MAP[key] || key;
+    const key = String(rawCategory || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ");
+    if (LEGACY_CATEGORY_MAP[key]) return LEGACY_CATEGORY_MAP[key];
+    // Soft match: "RISING STAR PLAYER" → RISING STAR, etc.
+    if (key.includes("RISING")) return "RISING STAR";
+    if (key.includes("KEY") && key.includes("PLAYER")) return "KEY PLAYERS";
+    if (key.includes("EVER") && key.includes("GREEN")) return "EVERGREEN";
+    return key;
 }
 
 function displayCategoryName(categoryName) {
@@ -79,7 +225,9 @@ function resolveAssetUrl(path, fromPrefix = "../") {
         return value;
     }
     if (value.startsWith("/") || value.startsWith("../")) return value;
-    if (value.startsWith("assets/")) return `${fromPrefix}${value}`;
+    if (value.startsWith("assets/") || value.startsWith("data-project/")) {
+        return `${fromPrefix}${value}`;
+    }
     return value;
 }
 
@@ -153,12 +301,39 @@ function normalizeTeamLogo(rawLogo) {
     return "";
 }
 
+function normalizeTeamVideo(rawVideo) {
+    const video = String(rawVideo || "").trim();
+    if (!video) return "";
+    if (video.startsWith("data-project/teams/videos/")) return video;
+    if (video.startsWith("/data-project/teams/videos/")) return video.slice(1);
+    return "";
+}
+
+function cloneTeamsList(teams) {
+    return normalizeTeams(JSON.parse(JSON.stringify(Array.isArray(teams) ? teams : [])));
+}
+
+/** Teams for the active division (root `teams` is a mirror for compatibility). */
+function getConfigTeams(config) {
+    const normalized = config?.divisions ? config : normalizeConfig(config || {});
+    const active = getActiveDivision(normalized);
+    if (Array.isArray(active?.teams)) return normalizeTeams(active.teams);
+    return normalizeTeams(normalized.teams);
+}
+
 function getTeamLogoSrc(team, assetsPrefix = "assets/teams-logo") {
     const uploaded = normalizeTeamLogo(team?.logo);
     if (uploaded) return uploaded;
     const teamId = Number(team?.team_id);
     if (!Number.isFinite(teamId)) return "";
     return `${assetsPrefix}/team_${teamId}.png`;
+}
+
+function getTeamVideoSrc(team, fromPrefix = "") {
+    const video = normalizeTeamVideo(team?.video);
+    if (!video) return "";
+    if (video.startsWith("/") || video.startsWith("http")) return video;
+    return `${fromPrefix}${video}`;
 }
 
 function normalizeTournament(raw) {
@@ -212,11 +387,13 @@ function normalizeTeams(rawTeams) {
                 String(team?.color || "").trim() ||
                 DEFAULT_TEAM_COLORS[index % DEFAULT_TEAM_COLORS.length];
             const logo = normalizeTeamLogo(team?.logo);
+            const video = normalizeTeamVideo(team?.video);
             return {
                 team_id: teamId,
                 team_name: teamName || `Team ${index + 1}`,
                 color,
-                ...(logo ? { logo } : {})
+                ...(logo ? { logo } : {}),
+                ...(video ? { video } : {})
             };
         })
         .filter((team) => team.team_name);
@@ -224,24 +401,316 @@ function normalizeTeams(rawTeams) {
 
 function nextAvailableTeamId(teams) {
     const used = new Set((teams || []).map((team) => Number(team.team_id)));
-    let id = 11;
+    let id = (teams || []).length ? 1 : 1;
     while (used.has(id)) id += 1;
     return id;
 }
 
-function normalizeConfig(raw) {
+function buildDivisionSettingsFromRaw(raw) {
     const categories = buildCategoriesFromRaw(raw || {});
     return {
-        teamKitty: Number(raw?.teamKitty) || DEFAULT_AUCTION_CONFIG.teamKitty,
+        teamKitty: Number(raw?.teamKitty) || DEFAULT_DIVISION_SETTINGS.teamKitty,
         useCategoryBasePrices: raw?.useCategoryBasePrices !== false,
         auctionOrder: normalizeAuctionOrder(raw?.auctionOrder),
         shuffleWithinCategory: raw?.shuffleWithinCategory !== false,
         playerWheelEnabled: raw?.playerWheelEnabled !== false,
         categories,
-        categorySequence: normalizeCategorySequence(raw?.categorySequence, categories),
-        teams: normalizeTeams(raw?.teams),
-        tournament: normalizeTournament(raw?.tournament)
+        categorySequence: normalizeCategorySequence(raw?.categorySequence, categories)
     };
+}
+
+function teamsSignature(teams) {
+    return JSON.stringify(
+        (Array.isArray(teams) ? teams : []).map((team) => [
+            Number(team?.team_id) || 0,
+            String(team?.team_name || "").trim().toLowerCase(),
+            String(team?.color || "").trim().toLowerCase()
+        ])
+    );
+}
+
+function normalizeDivision(raw, index = 0, fallbackName = null, legacyTeams = null) {
+    const settings = buildDivisionSettingsFromRaw(raw || {});
+    const id =
+        String(raw?.id || "").trim() ||
+        `div_${index + 1}`;
+    const name =
+        String(raw?.name || fallbackName || `Division ${index + 1}`).trim() ||
+        `Division ${index + 1}`;
+
+    let teams = [];
+    if (Array.isArray(raw?.teams)) {
+        teams = normalizeTeams(raw.teams);
+    } else if (Array.isArray(legacyTeams)) {
+        // Legacy shared root teams belong only to Main / first division
+        teams = cloneTeamsList(legacyTeams);
+    }
+
+    return {
+        id,
+        name,
+        teams,
+        ...settings
+    };
+}
+
+function flattenActiveDivision(config) {
+    const active = getActiveDivision(config);
+    return {
+        ...config,
+        teams: normalizeTeams(active.teams),
+        teamKitty: active.teamKitty,
+        useCategoryBasePrices: active.useCategoryBasePrices,
+        auctionOrder: active.auctionOrder,
+        shuffleWithinCategory: active.shuffleWithinCategory,
+        playerWheelEnabled: active.playerWheelEnabled,
+        categories: active.categories,
+        categorySequence: active.categorySequence
+    };
+}
+
+function normalizeConfig(raw) {
+    const source = raw || {};
+    const legacySharedTeams = Array.isArray(source.teams) ? source.teams : null;
+    const tournament = normalizeTournament(source.tournament);
+
+    let divisions = [];
+    if (Array.isArray(source.divisions) && source.divisions.length) {
+        divisions = source.divisions.slice(0, MAX_AUCTION_DIVISIONS).map((item, index) => {
+            // Only seed Main/first division from old shared root teams.
+            // Other divisions start empty so Female / Div 2 are not clones of Main.
+            const canInheritLegacy =
+                !Array.isArray(item?.teams) &&
+                (index === 0 || String(item?.id || "") === "div_1");
+            return normalizeDivision(
+                item,
+                index,
+                null,
+                canInheritLegacy ? legacySharedTeams : null
+            );
+        });
+
+        // Repair older saves where secondary divisions still hold an exact copy of Main's roster
+        if (divisions.length > 1) {
+            const primarySig = teamsSignature(divisions[0].teams);
+            if (primarySig !== "[]") {
+                divisions = divisions.map((division, index) => {
+                    if (index === 0) return division;
+                    if (teamsSignature(division.teams) !== primarySig) return division;
+                    return { ...division, teams: [] };
+                });
+            }
+        }
+    } else {
+        // Legacy flat config → one "Main Auction" division
+        divisions = [
+            normalizeDivision(
+                {
+                    id: "div_1",
+                    name: "Main Auction",
+                    teams: legacySharedTeams || [],
+                    teamKitty: source.teamKitty,
+                    useCategoryBasePrices: source.useCategoryBasePrices,
+                    auctionOrder: source.auctionOrder,
+                    shuffleWithinCategory: source.shuffleWithinCategory,
+                    playerWheelEnabled: source.playerWheelEnabled,
+                    categorySequence: source.categorySequence,
+                    categories: source.categories,
+                    basePrices: source.basePrices,
+                    maxPlayers: source.maxPlayers
+                },
+                0,
+                "Main Auction",
+                null
+            )
+        ];
+    }
+
+    // Ensure unique ids
+    const usedIds = new Set();
+    divisions = divisions.map((division, index) => {
+        let id = String(division.id || "").trim();
+        if (!id || usedIds.has(id)) {
+            let n = index + 1;
+            id = `div_${n}`;
+            while (usedIds.has(id)) {
+                n += 1;
+                id = `div_${n}`;
+            }
+        }
+        usedIds.add(id);
+        return { ...division, id };
+    });
+
+    let activeDivisionId = String(source.activeDivisionId || "").trim();
+    if (!divisions.some((division) => division.id === activeDivisionId)) {
+        activeDivisionId = divisions[0].id;
+    }
+
+    return flattenActiveDivision({
+        tournament,
+        divisions,
+        activeDivisionId
+    });
+}
+
+function getActiveDivision(config) {
+    const normalized = config?.divisions
+        ? config
+        : normalizeConfig(config || {});
+    const divisions = normalized.divisions || [];
+    return (
+        divisions.find((division) => division.id === normalized.activeDivisionId) ||
+        divisions[0] ||
+        normalizeDivision({ id: "div_1", name: "Main Auction" }, 0, "Main Auction")
+    );
+}
+
+function listDivisions(config) {
+    return (normalizeConfig(config || {}).divisions || []).slice();
+}
+
+function setActiveDivisionId(config, divisionId) {
+    const normalized = normalizeConfig(config || {});
+    if (!normalized.divisions.some((division) => division.id === divisionId)) {
+        return normalized;
+    }
+    normalized.activeDivisionId = divisionId;
+    return flattenActiveDivision(normalized);
+}
+
+function patchActiveDivision(config, patch = {}) {
+    const normalized = normalizeConfig(config || {});
+    const index = normalized.divisions.findIndex(
+        (division) => division.id === normalized.activeDivisionId
+    );
+    if (index < 0) return normalized;
+
+    const nextDivision = normalizeDivision(
+        {
+            ...normalized.divisions[index],
+            ...patch,
+            id: normalized.divisions[index].id
+        },
+        index,
+        normalized.divisions[index].name
+    );
+    normalized.divisions[index] = nextDivision;
+    return flattenActiveDivision(normalized);
+}
+
+function addDivision(config, name = "") {
+    const normalized = normalizeConfig(config || {});
+    if (normalized.divisions.length >= MAX_AUCTION_DIVISIONS) {
+        throw new Error(`You can have at most ${MAX_AUCTION_DIVISIONS} auction divisions.`);
+    }
+    const active = getActiveDivision(normalized);
+    const id = createDivisionId(normalized.divisions);
+    const label = String(name || "").trim() || `Division ${normalized.divisions.length + 1}`;
+    const division = normalizeDivision(
+        {
+            id,
+            name: label,
+            // New divisions start with their own empty team list
+            teams: [],
+            teamKitty: active.teamKitty,
+            useCategoryBasePrices: active.useCategoryBasePrices,
+            auctionOrder: active.auctionOrder,
+            shuffleWithinCategory: active.shuffleWithinCategory,
+            playerWheelEnabled: active.playerWheelEnabled,
+            categorySequence: active.categorySequence,
+            categories: JSON.parse(JSON.stringify(active.categories))
+        },
+        normalized.divisions.length,
+        label,
+        null
+    );
+    normalized.divisions.push(division);
+    normalized.activeDivisionId = division.id;
+    return flattenActiveDivision(normalized);
+}
+
+function renameDivision(config, divisionId, name) {
+    const normalized = normalizeConfig(config || {});
+    const label = String(name || "").trim();
+    if (!label) throw new Error("Enter a division name.");
+    const index = normalized.divisions.findIndex((division) => division.id === divisionId);
+    if (index < 0) throw new Error("Division not found.");
+    normalized.divisions[index] = {
+        ...normalized.divisions[index],
+        name: label
+    };
+    return flattenActiveDivision(normalized);
+}
+
+function removeDivision(config, divisionId) {
+    const normalized = normalizeConfig(config || {});
+    if (normalized.divisions.length <= 1) {
+        throw new Error("Keep at least one auction division.");
+    }
+    const next = normalized.divisions.filter((division) => division.id !== divisionId);
+    if (next.length === normalized.divisions.length) {
+        throw new Error("Division not found.");
+    }
+    normalized.divisions = next;
+    if (normalized.activeDivisionId === divisionId) {
+        normalized.activeDivisionId = next[0].id;
+    }
+    return flattenActiveDivision(normalized);
+}
+
+function purgeRemovedDivisionStorage(previousConfig, nextConfig) {
+    try {
+        const prevIds = new Set((previousConfig?.divisions || []).map((d) => d.id));
+        const nextIds = new Set((nextConfig?.divisions || []).map((d) => d.id));
+        prevIds.forEach((id) => {
+            if (nextIds.has(id)) return;
+            localStorage.removeItem(getDivisionPlayersKey(id));
+            localStorage.removeItem(getDivisionAuctionDataKey(id));
+            if (id === "div_1") {
+                localStorage.removeItem(LEGACY_AUCTION_PLAYERS_KEY);
+                localStorage.removeItem(LEGACY_AUCTION_DATA_KEY);
+            }
+            if (typeof deleteDivisionOfflineMedia === "function") {
+                deleteDivisionOfflineMedia(id).catch(() => {});
+            }
+            if (typeof queueProjectPersist === "function") {
+                if (typeof persistPlayersToProjectFolder === "function") {
+                    queueProjectPersist(() => persistPlayersToProjectFolder(id, []));
+                }
+                if (typeof persistAuctionToProjectFolder === "function") {
+                    queueProjectPersist(() => persistAuctionToProjectFolder(id, null));
+                }
+            }
+        });
+    } catch (_) {
+        // ignore
+    }
+}
+
+function migrateLegacyDivisionStorage(divisionId) {
+    // Unscoped legacy keys belong only to the original Main Auction (div_1).
+    // Never copy them into div_2 / div_3 — that made every division look the same.
+    const id = divisionId || "div_1";
+    if (id !== "div_1") return;
+
+    const playersKey = getDivisionPlayersKey(id);
+    const dataKey = getDivisionAuctionDataKey(id);
+
+    try {
+        if (!localStorage.getItem(playersKey) && localStorage.getItem(LEGACY_AUCTION_PLAYERS_KEY)) {
+            localStorage.setItem(playersKey, localStorage.getItem(LEGACY_AUCTION_PLAYERS_KEY));
+        }
+        if (!localStorage.getItem(dataKey) && localStorage.getItem(LEGACY_AUCTION_DATA_KEY)) {
+            localStorage.setItem(dataKey, localStorage.getItem(LEGACY_AUCTION_DATA_KEY));
+        }
+        if (localStorage.getItem(playersKey) || localStorage.getItem(dataKey)) {
+            localStorage.removeItem(LEGACY_AUCTION_PLAYERS_KEY);
+            localStorage.removeItem(LEGACY_AUCTION_DATA_KEY);
+        }
+    } catch (_) {
+        // ignore
+    }
 }
 
 async function loadDefaultTeamsFile() {
@@ -281,10 +750,21 @@ async function loadDefaultTournamentFile() {
 }
 
 async function ensureConfigTeams(config) {
-    const normalized = normalizeConfig(config || {});
-    if (normalized.teams.length) return normalized;
-    normalized.teams = await loadDefaultTeamsFile();
-    return normalized;
+    const raw = config || {};
+    const hadExplicitTeams =
+        Array.isArray(raw.teams) ||
+        (Array.isArray(raw.divisions) &&
+            raw.divisions.some((division) => Array.isArray(division?.teams)));
+    const normalized = normalizeConfig(raw);
+    // Respect explicit teams (including empty). Only fill from file when omitted entirely.
+    if (hadExplicitTeams) return normalized;
+    const defaults = await loadDefaultTeamsFile();
+    if (!defaults.length) return normalized;
+    normalized.divisions = normalized.divisions.map((division) => ({
+        ...division,
+        teams: cloneTeamsList(defaults)
+    }));
+    return flattenActiveDivision(normalized);
 }
 
 async function ensureConfigBranding(config) {
@@ -307,17 +787,89 @@ async function ensureConfigBranding(config) {
 
 function buildFreshTeamsFromConfig(config) {
     const normalized = normalizeConfig(config || {});
-    return normalized.teams.map((team) => ({
+    const active = getActiveDivision(normalized);
+    const kitty = active.teamKitty;
+    return getConfigTeams(normalized).map((team) => ({
         team_id: team.team_id,
         team_name: team.team_name,
         color: team.color,
         ...(team.logo ? { logo: team.logo } : {}),
-        team_budget: normalized.teamKitty,
-        remaining_budget: normalized.teamKitty,
+        ...(team.video ? { video: team.video } : {}),
+        team_budget: kitty,
+        remaining_budget: kitty,
         player_bought: 0,
         total_cost: 0,
         players: []
     }));
+}
+
+/** Keep uploaded media (logo/video) from config on live auction team objects. */
+function syncTeamMediaFromConfig(state, config) {
+    if (!state?.teams?.length) return state;
+    const byId = new Map(getConfigTeams(config).map((team) => [team.team_id, team]));
+    state.teams.forEach((team) => {
+        const source = byId.get(Number(team.team_id));
+        if (!source) return;
+        if (source.logo) team.logo = source.logo;
+        else delete team.logo;
+        if (source.video) team.video = source.video;
+        else delete team.video;
+    });
+    return state;
+}
+
+/**
+ * Align live auction teams with the active division's config roster.
+ * Keeps sold players / spend for matching team_ids; drops removed teams; adds new ones.
+ */
+function reconcileAuctionTeamsFromConfig(state, config) {
+    if (!state) return state;
+    let working = normalizeConfig(config || state.config || {});
+    if (
+        state.divisionId &&
+        (working.divisions || []).some((division) => division.id === state.divisionId)
+    ) {
+        working = setActiveDivisionId(working, state.divisionId);
+    }
+    const active = getActiveDivision(working);
+    const kitty = active.teamKitty;
+    const configTeams = getConfigTeams(working);
+    const previousById = new Map(
+        (Array.isArray(state.teams) ? state.teams : []).map((team) => [Number(team.team_id), team])
+    );
+
+    state.teams = configTeams.map((team) => {
+        const prev = previousById.get(Number(team.team_id));
+        if (prev) {
+            const spent = Number(prev.total_cost) || 0;
+            const next = {
+                ...prev,
+                team_id: team.team_id,
+                team_name: team.team_name,
+                color: team.color,
+                team_budget: kitty,
+                remaining_budget: kitty - spent
+            };
+            if (team.logo) next.logo = team.logo;
+            else delete next.logo;
+            if (team.video) next.video = team.video;
+            else delete next.video;
+            return next;
+        }
+        return {
+            team_id: team.team_id,
+            team_name: team.team_name,
+            color: team.color,
+            ...(team.logo ? { logo: team.logo } : {}),
+            ...(team.video ? { video: team.video } : {}),
+            team_budget: kitty,
+            remaining_budget: kitty,
+            player_bought: 0,
+            total_cost: 0,
+            players: []
+        };
+    });
+    return state;
 }
 
 function readImageFileAsDataUrl(file, maxSize = 256, quality = 0.82) {
@@ -386,19 +938,39 @@ function orderPlayersForAuction(players, config) {
         return shuffleList(list);
     }
 
-    const sequence = normalized.categorySequence;
+    const sequence = normalized.categorySequence.map((name) => normalizeCategoryName(name));
     const ordered = [];
     sequence.forEach((categoryName) => {
-        let group = list.filter((player) => player.category === categoryName);
+        let group = list.filter(
+            (player) => normalizeCategoryName(player.category) === categoryName
+        );
         if (normalized.shuffleWithinCategory) {
             group = shuffleList(group);
         }
         ordered.push(...group);
     });
 
-    const leftovers = list.filter((player) => !sequence.includes(player.category));
+    const leftovers = list.filter(
+        (player) => !sequence.includes(normalizeCategoryName(player.category))
+    );
     ordered.push(...(normalized.shuffleWithinCategory ? shuffleList(leftovers) : leftovers));
     return ordered;
+}
+
+/**
+ * Keep finished players in place; re-queue everyone from auctionCount onward
+ * by category sequence so Rising Star cannot mix with later categories.
+ */
+function reorderRemainingPlayersByCategory(state, config) {
+    if (!state || !Array.isArray(state.players)) return state;
+    const normalized = normalizeConfig(config || state.config || {});
+    if (normalized.auctionOrder === "RANDOM") return state;
+
+    const index = Math.max(0, Number(state.auctionCount) || 0);
+    const completed = state.players.slice(0, index);
+    const remaining = state.players.slice(index);
+    state.players = completed.concat(orderPlayersForAuction(remaining, normalized));
+    return state;
 }
 
 async function fetchConfigFrom(path) {
@@ -420,39 +992,127 @@ async function loadDefaultConfigFile() {
 }
 
 async function getAuctionConfig() {
-    const saved = localStorage.getItem(AUCTION_CONFIG_KEY);
-    if (saved) {
+    // Prefer WhatsApp-style disk project when server is available
+    if (typeof hydrateLocalStorageFromProjectFolder === "function") {
         try {
-            return ensureConfigBranding(JSON.parse(saved));
+            await hydrateLocalStorageFromProjectFolder();
         } catch (_) {
-            // Fall through to file defaults
+            // fall through to localStorage / defaults
         }
     }
-    return ensureConfigBranding(await loadDefaultConfigFile());
+
+    const saved = localStorage.getItem(AUCTION_CONFIG_KEY);
+    let config;
+    if (saved) {
+        try {
+            config = await ensureConfigBranding(JSON.parse(saved));
+        } catch (_) {
+            config = await ensureConfigBranding(await loadDefaultConfigFile());
+        }
+    } else {
+        config = await ensureConfigBranding(await loadDefaultConfigFile());
+    }
+
+    migrateLegacyDivisionStorage(config.activeDivisionId);
+
+    // Persist migrated shape once so later reads see divisions
+    try {
+        const current = localStorage.getItem(AUCTION_CONFIG_KEY);
+        const normalizedJson = JSON.stringify(config);
+        if (current !== normalizedJson) {
+            localStorage.setItem(AUCTION_CONFIG_KEY, normalizedJson);
+            if (typeof queueProjectPersist === "function" && typeof persistConfigToProjectFolder === "function") {
+                queueProjectPersist(() => persistConfigToProjectFolder(config));
+            }
+        }
+    } catch (_) {
+        // ignore
+    }
+
+    return config;
 }
 
 function saveAuctionConfig(config) {
-    const normalized = normalizeConfig(config);
-    if (!normalized.teams.length) {
-        throw new Error("Keep at least one team in the configuration.");
+    let incoming = config || {};
+
+    // If caller sends a flat form (no divisions), merge into existing active division
+    if (!Array.isArray(incoming.divisions) || !incoming.divisions.length) {
+        let existing = normalizeConfig(DEFAULT_AUCTION_CONFIG);
+        try {
+            const saved = localStorage.getItem(AUCTION_CONFIG_KEY);
+            if (saved) existing = normalizeConfig(JSON.parse(saved));
+        } catch (_) {
+            // ignore
+        }
+
+        incoming = patchActiveDivision(
+            {
+                ...existing,
+                tournament: incoming.tournament != null ? incoming.tournament : existing.tournament,
+                activeDivisionId: incoming.activeDivisionId || existing.activeDivisionId
+            },
+            {
+                name: getActiveDivision(existing).name,
+                teams:
+                    incoming.teams != null
+                        ? incoming.teams
+                        : getActiveDivision(existing).teams,
+                teamKitty: incoming.teamKitty,
+                useCategoryBasePrices: incoming.useCategoryBasePrices,
+                auctionOrder: incoming.auctionOrder,
+                shuffleWithinCategory: incoming.shuffleWithinCategory,
+                playerWheelEnabled: incoming.playerWheelEnabled,
+                categorySequence: incoming.categorySequence,
+                categories: incoming.categories
+            }
+        );
     }
+
+    let previous = null;
+    try {
+        const saved = localStorage.getItem(AUCTION_CONFIG_KEY);
+        if (saved) previous = normalizeConfig(JSON.parse(saved));
+    } catch (_) {
+        previous = null;
+    }
+
+    const normalized = normalizeConfig(incoming);
+    if (!normalized.divisions.length) {
+        throw new Error("Keep at least one auction division.");
+    }
+    migrateLegacyDivisionStorage(normalized.activeDivisionId);
+    if (previous) purgeRemovedDivisionStorage(previous, normalized);
     localStorage.setItem(AUCTION_CONFIG_KEY, JSON.stringify(normalized));
+    if (typeof queueProjectPersist === "function" && typeof persistConfigToProjectFolder === "function") {
+        queueProjectPersist(() => persistConfigToProjectFolder(normalized));
+    }
     return normalized;
 }
 
 function getActiveConfig(state) {
-    if (state?.config?.categories) {
-        return normalizeConfig(state.config);
-    }
-    const saved = localStorage.getItem(AUCTION_CONFIG_KEY);
-    if (saved) {
-        try {
-            return normalizeConfig(JSON.parse(saved));
-        } catch (_) {
-            // ignore
+    let config = null;
+    if (state?.config?.categories || state?.config?.divisions) {
+        config = normalizeConfig(state.config);
+    } else {
+        const saved = localStorage.getItem(AUCTION_CONFIG_KEY);
+        if (saved) {
+            try {
+                config = normalizeConfig(JSON.parse(saved));
+            } catch (_) {
+                config = null;
+            }
         }
     }
-    return normalizeConfig(DEFAULT_AUCTION_CONFIG);
+    if (!config) config = normalizeConfig(DEFAULT_AUCTION_CONFIG);
+
+    // Prefer the live desk/squads division over whatever is marked active in config
+    if (
+        state?.divisionId &&
+        (config.divisions || []).some((division) => division.id === state.divisionId)
+    ) {
+        return setActiveDivisionId(config, state.divisionId);
+    }
+    return config;
 }
 
 function getCategoryConfig(config, categoryName) {
@@ -499,24 +1159,28 @@ function canTeamBuyCategory(state, teamId, categoryName) {
 function applyConfigToAuctionState(state, config) {
     if (!state || !config) return state;
     const normalized = normalizeConfig(config);
+    const division = getActiveDivision(normalized);
 
     state.tournament = buildTournamentState(normalized, state.tournament);
+    state.divisionId = division.id;
+    state.divisionName = division.name;
 
-    if (normalized.teams.length) {
+    if (getConfigTeams(normalized).length) {
         state.teams = buildFreshTeamsFromConfig(normalized);
     } else if (Array.isArray(state.teams)) {
         state.teams.forEach((team) => {
             const spent = Number(team.total_cost) || 0;
-            team.team_budget = normalized.teamKitty;
-            team.remaining_budget = normalized.teamKitty - spent;
+            team.team_budget = division.teamKitty;
+            team.remaining_budget = division.teamKitty - spent;
         });
     }
 
     const applyCategory = (player) => {
         if (!player) return;
+        // Category from player data only — do not infer from ID (CPL-E / CPL-R / …)
         player.category = normalizeCategoryName(player.category);
-        if (normalized.useCategoryBasePrices) {
-            const category = normalized.categories[player.category];
+        if (division.useCategoryBasePrices) {
+            const category = division.categories[player.category];
             if (category) {
                 player.basePrice = category.basePrice;
             }

@@ -16,19 +16,27 @@
             <div>
                 <p class="eyebrow">Auction Desk</p>
                 <h1>Players</h1>
-                <p class="subtitle">Full player table with create, edit, delete, and CSV/Excel upload. Changes are used on the live auction after Start New Auction / Reset.</p>
+                <p class="subtitle">Manage players per auction division. Changes apply on Start New Auction / Reset for that division.</p>
             </div>
             <div class="header-links">
                 <a class="back-link" href="index.html">Configuration</a>
-                <a class="back-link" href="../index.html">← Auction</a>
+                <a class="back-link" href="partners.html">Event Partners</a>
+                <a class="back-link" href="../index.html?showPartners=1">← Auction</a>
             </div>
         </header>
+
+        <section class="config-card">
+            <h2>Auction Division</h2>
+            <p class="help">Player lists are separate for each division. Switch here before uploading or editing.</p>
+            <div class="division-tabs" id="players-division-tabs" role="tablist" aria-label="Auction divisions"></div>
+            <p class="help" id="players-division-label">Active: Main Auction</p>
+        </section>
 
         <section class="config-card">
             <h2>Upload CSV / Excel</h2>
             <p class="help">
                 Columns: <strong>ID, Skill, Player, Mobile, Age, Location, Player photo, CATEGORY, AGE-CATEGORY</strong>.
-                You can also import batting/bowling/base price if those columns exist.
+                Photo URLs are downloaded once (when online) and stored offline for this division.
             </p>
             <div class="upload-panel">
                 <input id="players-file" type="file" accept=".csv,.xlsx,.xls,.json,text/csv">
@@ -43,6 +51,30 @@
                 </div>
             </div>
             <p id="import-status" class="status" aria-live="polite"></p>
+        </section>
+
+        <section class="config-card">
+            <h2>Photos &amp; Pack</h2>
+            <p class="help">
+                Run <code>node server.js</code>. Project data lives in
+                <code>data-project/</code> (config, players, auction, photos) — like a local WhatsApp folder.
+                Restarting the server reloads from disk. Export a pack to copy a division to another PC.
+            </p>
+            <div class="upload-actions">
+                <button type="button" id="cache-photos-btn" class="secondary-btn">Save photos to assets</button>
+                <button type="button" id="upload-photos-btn" class="secondary-btn">Upload photo files</button>
+                <input id="photos-files" type="file" accept="image/*" multiple hidden>
+                <button type="button" id="fix-categories-from-id-btn" class="secondary-btn">Fix categories from ID (CPL-R/K/E)</button>
+                <button type="button" id="export-pack-btn" class="secondary-btn">Export division pack</button>
+                <button type="button" id="import-pack-btn" class="secondary-btn">Import division pack</button>
+                <input id="pack-file" type="file" accept=".json,application/json" hidden>
+            </div>
+            <p class="help">
+                Wheel count = players whose <strong>Category</strong> field is Rising Star (not Config sequence).
+                If IDs are correct (<code>CPL-R</code>/<code>CPL-K</code>/<code>CPL-E</code>) but Category is wrong, use
+                <strong>Fix categories from ID</strong>, then Start New Auction.
+            </p>
+            <p id="offline-status" class="status" aria-live="polite"></p>
         </section>
 
         <section class="config-card" id="player-form-card">
@@ -200,9 +232,14 @@
     </main>
 
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-    <script src="../js/money.js"></script>
-    <script src="../js/config-store.js"></script>
-    <script src="../js/players-store.js"></script>
-    <script src="players.js"></script>
+    <script src="../js/money.js?v=12"></script>
+    <script src="../js/config-store.js?v=12"></script>
+    <script src="../js/project-store.js?v=12"></script>
+    <script src="../js/players-store.js?v=12"></script>
+    <script src="../js/offline-store.js?v=12"></script>
+    <script src="players.js?v=12"></script>
+    <script>
+        if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
+    </script>
 </body>
 </html>

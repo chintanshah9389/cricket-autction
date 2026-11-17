@@ -22,9 +22,90 @@ const formTitle = document.getElementById("form-title");
 const formPhotoPreview = document.getElementById("form-photo-preview");
 const categoryOptions = document.getElementById("category-options");
 
+const playersDivisionTabs = document.getElementById("players-division-tabs");
+const playersDivisionLabel = document.getElementById("players-division-label");
+const offlineStatus = document.getElementById("offline-status");
+const cachePhotosBtn = document.getElementById("cache-photos-btn");
+const uploadPhotosBtn = document.getElementById("upload-photos-btn");
+const photosFiles = document.getElementById("photos-files");
+const fixCategoriesFromIdBtn = document.getElementById("fix-categories-from-id-btn");
+const exportPackBtn = document.getElementById("export-pack-btn");
+const importPackBtn = document.getElementById("import-pack-btn");
+const packFile = document.getElementById("pack-file");
+
 let playersCache = [];
 let editingKey = "";
 let teamLookup = new Map(); // team_id -> { name, color }
+let activeDivisionId = "div_1";
+let divisionsCache = [];
+
+function setOfflineStatus(message, isError = false) {
+    if (!offlineStatus) return;
+    offlineStatus.textContent = message || "";
+    offlineStatus.style.color = isError ? "#b42318" : "";
+}
+
+function getAuctionDataStorageKey(divisionId = activeDivisionId) {
+    return typeof getDivisionAuctionDataKey === "function"
+        ? getDivisionAuctionDataKey(divisionId)
+        : `auctionData:${divisionId}`;
+}
+
+/** Counts must come from that division's own storage — never reuse another tab's cache. */
+function getPlayersCountForDivision(divisionId) {
+    try {
+        const stored =
+            typeof loadStoredPlayers === "function" ? loadStoredPlayers(divisionId) : null;
+        if (Array.isArray(stored)) return stored.length;
+        if (divisionId === activeDivisionId && Array.isArray(playersCache)) {
+            return playersCache.length;
+        }
+        return 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function getTeamsCountForDivision(divisionId) {
+    const division = divisionsCache.find((item) => item.id === divisionId);
+    return Array.isArray(division?.teams) ? division.teams.length : 0;
+}
+
+function renderPlayersDivisionTabs() {
+    if (!playersDivisionTabs) return;
+    playersDivisionTabs.innerHTML = "";
+    divisionsCache.forEach((division) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `division-tab${division.id === activeDivisionId ? " is-active" : ""}`;
+        const playerCount = getPlayersCountForDivision(division.id);
+        const teamCount = getTeamsCountForDivision(division.id);
+        button.innerHTML = `<span class="division-tab-name">${division.name}</span><span class="division-tab-count">${teamCount} teams · ${playerCount} players</span>`;
+        button.title = `${division.name}: ${teamCount} teams, ${playerCount} players`;
+        button.addEventListener("click", async () => {
+            if (division.id === activeDivisionId) return;
+            activeDivisionId = division.id;
+            playersCache = [];
+            try {
+                const config = await getAuctionConfig();
+                const next = setActiveDivisionId(config, activeDivisionId);
+                saveAuctionConfig(next);
+            } catch (_) {
+                // still switch local view
+            }
+            // Load this division first, then refresh tab counts
+            await refreshPlayers();
+            renderPlayersDivisionTabs();
+        });
+        playersDivisionTabs.appendChild(button);
+    });
+    const active = divisionsCache.find((division) => division.id === activeDivisionId);
+    if (playersDivisionLabel) {
+        const teamCount = getTeamsCountForDivision(activeDivisionId);
+        const playerCount = getPlayersCountForDivision(activeDivisionId);
+        playersDivisionLabel.textContent = `Active: ${active?.name || "—"} — ${teamCount} teams, ${playerCount} players`;
+    }
+}
 
 function setStatus(message, isError = false) {
     if (!importStatus) return;
@@ -35,7 +116,7 @@ function setStatus(message, isError = false) {
 function loadAuctionTeamLookup() {
     const map = new Map();
     try {
-        const saved = JSON.parse(localStorage.getItem("auctionData") || "null");
+        const saved = JSON.parse(localStorage.getItem(getAuctionDataStorageKey(activeDivisionId)) || "null");
         const teams = saved?.auctionState?.teams || [];
         teams.forEach((team) => {
             map.set(String(team.team_id), {
@@ -51,7 +132,16 @@ function loadAuctionTeamLookup() {
     if (!map.size) {
         try {
             const config = JSON.parse(localStorage.getItem("auctionConfig") || "null");
-            (config?.teams || []).forEach((team) => {
+            const division =
+                (config?.divisions || []).find((item) => item.id === activeDivisionId) ||
+                (config?.divisions || [])[0];
+            const teams =
+                Array.isArray(division?.teams) && division.teams.length
+                    ? division.teams
+                    : config?.activeDivisionId === activeDivisionId
+                      ? config?.teams || []
+                      : [];
+            teams.forEach((team) => {
                 map.set(String(team.team_id), {
                     id: team.team_id,
                     name: team.team_name || `Team ${team.team_id}`,
@@ -67,7 +157,7 @@ function loadAuctionTeamLookup() {
 
 function loadAuctionPlayerOverlay() {
     try {
-        const saved = JSON.parse(localStorage.getItem("auctionData") || "null");
+        const saved = JSON.parse(localStorage.getItem(getAuctionDataStorageKey()) || "null");
         const allPlayers = saved?.auctionState?.allPlayers || saved?.auctionState?.players || [];
         const byKey = new Map();
         allPlayers.forEach((player) => {
@@ -125,10 +215,48 @@ function enrichPlayers(list) {
 function resolvePhotoSrc(photo) {
     const value = String(photo || "").trim();
     if (!value) return "../assets/placeholder.png";
+    if (typeof isIdbPhotoRef === "function" && isIdbPhotoRef(value)) {
+        return "../assets/placeholder.png";
+    }
     if (/^https?:\/\//i.test(value) || value.startsWith("data:")) return value;
-    if (value.startsWith("../")) return value;
-    if (value.startsWith("assets/")) return `../${value}`;
+    if (value.startsWith("../") || value.startsWith("/")) return value;
+    // Pages under /config/ need ../ for root-relative project/asset paths
+    if (value.startsWith("assets/") || value.startsWith("data-project/")) return `../${value}`;
     return value;
+}
+
+async function refreshOfflinePhotoStatus() {
+    if (typeof countCachedPlayerPhotos !== "function") return;
+    try {
+        const ready =
+            typeof checkAssetsApiReady === "function" ? await checkAssetsApiReady() : false;
+        const cached = await countCachedPlayerPhotos(playersCache, activeDivisionId);
+        const remoteLeft = playersCache.filter((player) =>
+            /^https?:\/\//i.test(String(player.photo || ""))
+        ).length;
+        const missing = Math.max(0, playersCache.length - cached);
+        if (!ready) {
+            setOfflineStatus(
+                `Photos on disk: ${cached} / ${playersCache.length} · start with node server.js to save into assets/`,
+                true
+            );
+            return;
+        }
+        if (missing > 0) {
+            setOfflineStatus(
+                `Photos on disk: ${cached} / ${playersCache.length} · ${missing} missing. Use “Upload photo files” (name files like CPL-R-01.jpg) or re-import a pack with media.`,
+                true
+            );
+            return;
+        }
+        setOfflineStatus(
+            `Photos on disk: ${cached} / ${playersCache.length}` +
+                (remoteLeft ? ` · ${remoteLeft} still remote` : "") +
+                " · server ready"
+        );
+    } catch (_) {
+        setOfflineStatus("Photo store unavailable. Start with: node server.js", true);
+    }
 }
 
 function escapeHtml(value) {
@@ -186,6 +314,13 @@ function fillForm(player) {
             : (player?.soldFor != null ? String(player.soldFor) : "");
     document.getElementById("form-photo").value = player?.photo || "";
     formPhotoPreview.src = resolvePhotoSrc(player?.photo);
+    if (player?.photo && typeof resolvePlayerPhotoSrc === "function") {
+        resolvePlayerPhotoSrc(player.photo, { divisionId: activeDivisionId, fromPrefix: "../" })
+            .then((src) => {
+                formPhotoPreview.src = src;
+            })
+            .catch(() => {});
+    }
     formPhotoPreview.onerror = function () {
         this.src = "../assets/placeholder.png";
     };
@@ -268,9 +403,11 @@ function getFilteredPlayers() {
 
 function renderPlayersTable() {
     const filtered = getFilteredPlayers();
+    const breakdown = formatCategoryBreakdown(playersCache);
     playersCount.textContent =
         `${playersCache.length} player${playersCache.length === 1 ? "" : "s"}` +
-        (filtered.length !== playersCache.length ? ` · showing ${filtered.length}` : "");
+        (filtered.length !== playersCache.length ? ` · showing ${filtered.length}` : "") +
+        (breakdown ? ` · ${breakdown}` : "");
 
     if (!filtered.length) {
         playersTableBody.innerHTML = `
@@ -297,7 +434,7 @@ function renderPlayersTable() {
         const status = player.status || "not-auctioned";
         return `
             <tr class="${isEditing ? "is-editing" : ""}" data-row-key="${escapeHtml(key)}">
-                <td><img src="${resolvePhotoSrc(player.photo)}" alt="" onerror="this.src='../assets/placeholder.png'"></td>
+                <td><img src="${resolvePhotoSrc(player.photo)}" data-photo-ref="${escapeHtml(player.photo || "")}" alt="" onerror="this.src='../assets/placeholder.png'"></td>
                 <td>${escapeHtml(player.code || player.id)}</td>
                 <td class="player-cell"><strong>${escapeHtml(player.name)}</strong></td>
                 <td>${escapeHtml(player.role || "—")}</td>
@@ -325,13 +462,22 @@ function renderPlayersTable() {
             </tr>
         `;
     }).join("");
+
+    if (typeof hydratePhotoElements === "function") {
+        hydratePhotoElements(playersTableBody, {
+            divisionId: activeDivisionId,
+            fromPrefix: "../"
+        }).catch(() => {});
+    }
+    refreshOfflinePhotoStatus();
 }
 
 function persistAndRefresh(list, message) {
-    const saved = saveStoredPlayers(list);
+    const saved = saveStoredPlayers(list, activeDivisionId);
     playersCache = enrichPlayers(saved);
     updateFilterOptions();
     renderPlayersTable();
+    renderPlayersDivisionTabs();
     if (message) setStatus(message);
 }
 
@@ -344,33 +490,54 @@ async function fetchFilePlayers() {
 }
 
 async function refreshPlayers({ preferFile = false } = {}) {
+    const divisionName =
+        divisionsCache.find((division) => division.id === activeDivisionId)?.name || "division";
     try {
         if (preferFile) {
             const filePlayers = await fetchFilePlayers();
-            persistAndRefresh(filePlayers, `Loaded ${filePlayers.length} players from data/players.json`);
+            persistAndRefresh(
+                filePlayers,
+                `Loaded ${filePlayers.length} players from data/players.json into ${divisionName}`
+            );
             resetForm();
+            renderPlayersDivisionTabs();
             return;
         }
 
-        const stored = loadStoredPlayers();
-        if (stored && stored.length) {
-            playersCache = enrichPlayers(stored);
-            updateFilterOptions();
-            renderPlayersTable();
-            const soldCount = playersCache.filter((p) => p.status === "sold").length;
-            setStatus(`Editing ${stored.length} players (browser copy)${soldCount ? ` · ${soldCount} sold in live auction` : ""}.`);
-            return;
-        }
-
-        const filePlayers = await fetchFilePlayers();
-        persistAndRefresh(filePlayers, `Loaded ${filePlayers.length} players from data/players.json into the editor.`);
+        // Always use this division's own list (including empty). Never borrow Main's file pool.
+        const stored = loadStoredPlayers(activeDivisionId);
+        playersCache = enrichPlayers(Array.isArray(stored) ? stored : []);
+        updateFilterOptions();
+        renderPlayersTable();
+        renderPlayersDivisionTabs();
+        const soldCount = playersCache.filter((p) => p.status === "sold").length;
+        setStatus(
+            playersCache.length
+                ? `Editing ${playersCache.length} players for ${divisionName}${soldCount ? ` · ${soldCount} sold in live auction` : ""}.`
+                : `No players in ${divisionName} yet. Upload CSV/Excel for this division only.`
+        );
     } catch (error) {
         console.error(error);
         playersCache = [];
         updateFilterOptions();
         renderPlayersTable();
+        renderPlayersDivisionTabs();
         setStatus(error.message || "Could not load players.", true);
     }
+}
+
+function formatCategoryBreakdown(players) {
+    const counts = {};
+    (players || []).forEach((player) => {
+        const name =
+            typeof displayCategoryName === "function"
+                ? displayCategoryName(player.category)
+                : String(player.category || "—");
+        counts[name] = (counts[name] || 0) + 1;
+    });
+    return Object.entries(counts)
+        .map(([name, count]) => `${name}: ${count}`)
+        .join(" · ");
 }
 
 async function runImport(mode) {
@@ -383,13 +550,54 @@ async function runImport(mode) {
     try {
         setStatus(`Reading ${file.name}...`);
         const rows = await parseSpreadsheetFile(file);
+        const hasCategoryCol = rows.some((row) => rowHasCategoryColumn?.(row));
         const config = await getAuctionConfig();
-        const saved = importPlayerRows(rows, { mode, config });
+        let saved = importPlayerRows(rows, { mode, config, divisionId: activeDivisionId });
+        const catSummary = formatCategoryBreakdown(saved);
+        const risingCount = saved.filter(
+            (player) => normalizeCategoryName(player.category) === "RISING STAR"
+        ).length;
+        const mostlyRising = saved.length > 0 && risingCount / saved.length >= 0.85;
+        if (!hasCategoryCol || mostlyRising) {
+            setStatus(
+                `Imported ${saved.length} (${mode}). ${catSummary}. ` +
+                    (!hasCategoryCol
+                        ? "No CATEGORY column detected — almost everyone may default to Rising Star. "
+                        : "Most players are Rising Star. ") +
+                    "Use “Fix categories from ID (CPL-R/K/E)” if IDs encode the pool, then Start New Auction.",
+                true
+            );
+        } else {
+            setStatus(`Imported ${saved.length} players (${mode}). ${catSummary}. Saving photos…`);
+        }
+        if (typeof cachePlayersPhotos === "function") {
+            try {
+                const result = await cachePlayersPhotos(saved, activeDivisionId, {
+                    assetPrefix: "../",
+                    onProgress: (done, total, cached) => {
+                        setOfflineStatus(`Saving photos ${done}/${total} (written ${cached})…`);
+                    }
+                });
+                saved = saveStoredPlayers(result.players, activeDivisionId);
+                setStatus(
+                    `Imported ${saved.length} players (${mode}). ${formatCategoryBreakdown(saved)}. ` +
+                        `Photos: ${result.cached}` +
+                        (result.failed ? `, ${result.failed} skipped` : "") +
+                        ". Start New Auction to apply."
+                );
+            } catch (photoError) {
+                setStatus(
+                    `Imported ${saved.length} players (${mode}). ${catSummary}. Photos not saved yet — ${photoError.message || "start node server.js and click Save photos to assets."}`,
+                    true
+                );
+            }
+        } else {
+            setStatus(`Imported ${saved.length} players (${mode}). ${catSummary}. Start New Auction to apply.`);
+        }
         playersCache = enrichPlayers(saved);
         updateFilterOptions();
         renderPlayersTable();
         resetForm();
-        setStatus(`Imported ${saved.length} players (${mode}). Use Start New Auction to apply on the desk.`);
     } catch (error) {
         console.error(error);
         setStatus(error.message || "Import failed.", true);
@@ -444,12 +652,18 @@ function findPlayer(key) {
     );
 }
 
-function deletePlayerByKey(key) {
+async function deletePlayerByKey(key) {
+    const victim = findPlayer(key);
+    const code = victim ? String(victim.code || victim.id || key) : String(key);
+    if (typeof deletePlayerPhotoFile === "function") {
+        await deletePlayerPhotoFile(activeDivisionId, code).catch(() => {});
+    }
     const next = playersCache.filter(
         (player) => String(player.code) !== String(key) && String(player.id) !== String(key)
     );
     persistAndRefresh(next, "Player deleted.");
     if (String(editingKey) === String(key)) resetForm();
+    refreshOfflinePhotoStatus();
 }
 
 importReplaceBtn.addEventListener("click", () => runImport("replace"));
@@ -471,20 +685,32 @@ exportCsvBtn.addEventListener("click", () => {
     exportPlayersCsv(playersCache);
 });
 
-clearPlayersBtn.addEventListener("click", () => {
+clearPlayersBtn.addEventListener("click", async () => {
     if (!playersCache.length) {
         setStatus("Player list is already empty.");
         return;
     }
-    if (!confirm("Clear all players from the editor? Auction will fall back to data/players.json until you import again.")) {
+    if (
+        !confirm(
+            "Clear all players for this division? Photo files under assets/players-photo for this division will also be deleted."
+        )
+    ) {
         return;
     }
-    clearStoredPlayers();
+    try {
+        if (typeof deleteDivisionOfflineMedia === "function") {
+            await deleteDivisionOfflineMedia(activeDivisionId);
+        }
+    } catch (_) {
+        // still clear player list even if folder delete fails
+    }
+    clearStoredPlayers(activeDivisionId);
     playersCache = [];
     updateFilterOptions();
     renderPlayersTable();
     resetForm();
-    setStatus("Player list cleared.");
+    setStatus("Player list and division photo folder cleared.");
+    refreshOfflinePhotoStatus();
 });
 
 playersSearch.addEventListener("input", renderPlayersTable);
@@ -570,4 +796,128 @@ playerForm.addEventListener("submit", (event) => {
 
 resetFormBtn.addEventListener("click", resetForm);
 
-refreshPlayers();
+fixCategoriesFromIdBtn?.addEventListener("click", () => {
+    if (!playersCache.length) {
+        setStatus("No players to fix.", true);
+        return;
+    }
+    if (typeof categoryFromPlayerCode !== "function") {
+        setStatus("Category-from-ID helper is unavailable. Hard-refresh the page.", true);
+        return;
+    }
+    let changed = 0;
+    const next = playersCache.map((player) => {
+        const fromCode = categoryFromPlayerCode(player.code || player.id);
+        if (!fromCode || normalizeCategoryName(player.category) === fromCode) return player;
+        changed += 1;
+        return { ...player, category: fromCode };
+    });
+    if (!changed) {
+        setStatus(`No changes. Categories already match IDs. ${formatCategoryBreakdown(playersCache)}`);
+        return;
+    }
+    persistAndRefresh(
+        next,
+        `Updated ${changed} player categor${changed === 1 ? "y" : "ies"} from ID. ${formatCategoryBreakdown(next)}. Start New Auction to apply on the desk.`
+    );
+});
+
+cachePhotosBtn?.addEventListener("click", async () => {
+    if (!playersCache.length) {
+        setOfflineStatus("No players to save.", true);
+        return;
+    }
+    try {
+        setOfflineStatus("Saving photos to assets…");
+        const result = await cachePlayersPhotos(playersCache, activeDivisionId, {
+            assetPrefix: "../",
+            onProgress: (done, total, cached) => {
+                setOfflineStatus(`Saving photos ${done}/${total} (written ${cached})…`);
+            }
+        });
+        persistAndRefresh(
+            result.players,
+            `Saved to assets: ${result.cached} new, ${result.failed} skipped.`
+        );
+        setOfflineStatus(
+            `Photos on disk: ${result.cached} updated / ${result.total} players · server ready`
+        );
+    } catch (error) {
+        setOfflineStatus(error.message || "Could not save photos to assets.", true);
+    }
+});
+
+uploadPhotosBtn?.addEventListener("click", () => photosFiles?.click());
+photosFiles?.addEventListener("change", async () => {
+    const files = [...(photosFiles.files || [])];
+    photosFiles.value = "";
+    if (!files.length) return;
+    try {
+        setOfflineStatus(`Matching ${files.length} photo file(s)…`);
+        const result = await importPhotoFilesForDivision(files, playersCache, activeDivisionId);
+        persistAndRefresh(result.players, `Matched and stored ${result.matched} photo file(s) offline.`);
+        setOfflineStatus(`Stored ${result.matched} photo(s) for this division.`);
+    } catch (error) {
+        setOfflineStatus(error.message || "Could not import photos.", true);
+    }
+});
+
+exportPackBtn?.addEventListener("click", async () => {
+    try {
+        setOfflineStatus("Building division pack…");
+        const pack = await exportDivisionPack(activeDivisionId);
+        const safeName = String(pack.division?.name || activeDivisionId).replace(/[^\w\-]+/g, "_").slice(0, 40);
+        downloadJsonFile(`${safeName || "division"}-pack.json`, pack);
+        setOfflineStatus(`Exported pack with ${pack.players?.length || 0} players and ${pack.media?.length || 0} images.`);
+    } catch (error) {
+        setOfflineStatus(error.message || "Could not export pack.", true);
+    }
+});
+
+importPackBtn?.addEventListener("click", () => packFile?.click());
+packFile?.addEventListener("change", async () => {
+    const file = packFile.files && packFile.files[0];
+    packFile.value = "";
+    if (!file) return;
+    try {
+        setOfflineStatus(`Importing ${file.name}…`);
+        const pack = JSON.parse(await file.text());
+        const result = await importDivisionPack(pack, {
+            replacePlayers: true,
+            replaceAuctionData: true,
+            replaceTournament: false
+        });
+        activeDivisionId = result.divisionId;
+        const config = await getAuctionConfig();
+        divisionsCache = listDivisions(config);
+        await refreshPlayers();
+        renderPlayersDivisionTabs();
+        setOfflineStatus(
+            `Pack replaced division: ${result.teamCount || 0} teams, ${result.playerCount || 0} players, ${result.mediaCount || 0} media.`
+        );
+        setStatus("Division fully replaced from pack. Use Start New Auction / Reset on the desk.");
+    } catch (error) {
+        setOfflineStatus(error.message || "Could not import pack.", true);
+    }
+});
+
+(async function initPlayersPage() {
+    try {
+        if (typeof hydrateLocalStorageFromProjectFolder === "function") {
+            await hydrateLocalStorageFromProjectFolder();
+        }
+    } catch (_) {
+        // continue with whatever is in localStorage
+    }
+    try {
+        const config = await getAuctionConfig();
+        divisionsCache = listDivisions(config);
+        activeDivisionId = config.activeDivisionId || divisionsCache[0]?.id || "div_1";
+        renderPlayersDivisionTabs();
+    } catch (_) {
+        divisionsCache = [{ id: "div_1", name: "Main Auction" }];
+        activeDivisionId = "div_1";
+        renderPlayersDivisionTabs();
+    }
+    await refreshPlayers();
+})();

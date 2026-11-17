@@ -1,9 +1,27 @@
 // showAmount / formatMoney come from ../../js/money.js
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
 
-    // 1. Load all data from localStorage
-    const savedDataJSON = localStorage.getItem('auctionData');
+    let auctionConfig = null;
+    try {
+        auctionConfig = await getAuctionConfig();
+    } catch (_) {
+        // ignore
+    }
+    const divisionId =
+        auctionConfig?.activeDivisionId ||
+        auctionConfig?.divisions?.[0]?.id ||
+        "div_1";
+    if (typeof migrateLegacyDivisionStorage === "function") {
+        migrateLegacyDivisionStorage(divisionId);
+    }
+    const dataKey =
+        typeof getDivisionAuctionDataKey === "function"
+            ? getDivisionAuctionDataKey(divisionId)
+            : `auctionData:${divisionId}`;
+
+    // 1. Load all data from localStorage (active division only)
+    const savedDataJSON = localStorage.getItem(dataKey);
     if (!savedDataJSON) {
         document.body.innerHTML = '<h1>Error: Auction data not found.</h1>';
         return;
@@ -18,8 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Populate Header from configurable branding
     (async () => {
         try {
-            const auctionConfig = await getAuctionConfig();
-            state.tournament = buildTournamentState(auctionConfig, state.tournament);
+            if (auctionConfig) {
+                state.tournament = buildTournamentState(auctionConfig, state.tournament);
+            }
         } catch (_) {
             // keep saved tournament
         }
@@ -34,7 +53,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             }
             if (nameEl) {
-                nameEl.textContent = getTournamentTitle(state.tournament);
+                const divisionName =
+                    state.divisionName || getActiveDivision?.(auctionConfig)?.name;
+                nameEl.textContent = divisionName
+                    ? `${getTournamentTitle(state.tournament)} — ${divisionName}`
+                    : getTournamentTitle(state.tournament);
             }
         } else {
             if (logoEl) logoEl.src = "../../assets/tournament-logo.png";
@@ -74,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="player-subtext">Category: ${player.category}</span>
                 </td>
                 <td class="player-photo">
-                    <img src="${resolveAssetUrl(player.photo, "../../")}" alt="${player.name}" onerror="this.src='../../assets/placeholder.png'">
+                    <img src="${resolveAssetUrl(player.photo, "../../")}" data-photo-ref="${player.photo || ""}" alt="${player.name}" onerror="this.src='../../assets/placeholder.png'">
                 </td>
                 <td>
                     <span class="player-name">${player.name}</span>
@@ -120,6 +143,13 @@ document.addEventListener('DOMContentLoaded', () => {
     buildTable(document.getElementById('bowler-table'), bowlers);
     buildTable(document.getElementById('allrounder-table'), allrounders);
     buildTable(document.getElementById('wk-table'), wks);
+
+    if (typeof hydratePhotoElements === "function") {
+        await hydratePhotoElements(document, {
+            divisionId,
+            fromPrefix: "../../"
+        });
+    }
 
     // 6. Auto-trigger print dialog
     // This will now run successfully

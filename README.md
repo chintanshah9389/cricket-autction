@@ -29,17 +29,20 @@ A fully-featured, serverless cricket auction application built with vanilla HTML
 
 ## 🚀 Getting Started
 
-This is a serverless application and requires no build steps.
+1.  Clone the repository and open the project folder.
+2.  Start the local desk server:
+    ```bash
+    node server.js
+    ```
+3.  Open [http://localhost:3000](http://localhost:3000).
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/your-username/your-repo-name.git
-    ```
-2.  Navigate to the project directory:
-    ```bash
-    cd your-repo-name
-    ```
-3.  Open the `index.html` file in your web browser. For the best experience and to ensure the `fetch` API works correctly, it's recommended to use a local server. A simple way is to use the **Live Server** extension in Visual Studio Code.
+All auction data is stored in `data-project/` (WhatsApp-style local folder):
+- `project.json` — tournament, teams, divisions
+- `divisions/<id>/players.json` — players
+- `divisions/<id>/auction.json` — live auction progress
+- `divisions/<id>/photos/` — player photos
+
+Restarting the server reloads from this folder. Backup = zip `data-project/`. **Reset Entire Project** wipes it.
 
 -----
 

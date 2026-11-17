@@ -1,5 +1,24 @@
 const AUCTION_PLAYERS_KEY = "auctionPlayers";
 
+function resolvePlayersStorageKey(divisionId) {
+    if (divisionId && typeof getDivisionPlayersKey === "function") {
+        return getDivisionPlayersKey(divisionId);
+    }
+    if (divisionId) return `auctionPlayers:${divisionId}`;
+    return AUCTION_PLAYERS_KEY;
+}
+
+function getActivePlayersDivisionId() {
+    try {
+        const saved = JSON.parse(localStorage.getItem("auctionConfig") || "null");
+        if (saved?.activeDivisionId) return saved.activeDivisionId;
+        if (Array.isArray(saved?.divisions) && saved.divisions[0]?.id) return saved.divisions[0].id;
+    } catch (_) {
+        // ignore
+    }
+    return "div_1";
+}
+
 const ROLE_ALIASES = {
     BATTER: "Batter",
     BATSMAN: "Batter",
@@ -20,8 +39,19 @@ const PLAYER_FIELD_ALIASES = {
     name: ["name", "player", "player name", "player_name", "full name"],
     role: ["role", "skill", "speciality", "specialty", "type"],
     photo: ["photo", "player photo", "player_photo", "image", "photo url", "image url", "url"],
-    category: ["category", "catagory", "player category", "group"],
-    ageCategory: ["age-category", "age category", "age_category", "age group"],
+    category: [
+        "category",
+        "catagory",
+        "categories",
+        "player category",
+        "auction category",
+        "auction catagory",
+        "bid category",
+        "pool",
+        "tier",
+        "group"
+    ],
+    ageCategory: ["age-category", "age category", "age_category", "age group", "age-catagory"],
     currentClub: ["currentclub", "current club", "club", "location", "area", "city"],
     mobile: ["mobile", "phone", "contact", "mobile no", "mobile number"],
     age: ["age"],
@@ -81,16 +111,26 @@ function codeToNumericId(code, fallbackIndex) {
     return 4000 + Number(fallbackIndex || 0);
 }
 
-function pickRowValue(row, aliases) {
+function pickRowValue(row, aliases, { skipKeys = [] } = {}) {
     const map = {};
+    const skip = new Set((skipKeys || []).map((key) => normalizeHeaderKey(key)));
     Object.keys(row || {}).forEach((key) => {
-        map[normalizeHeaderKey(key)] = row[key];
+        const normalized = normalizeHeaderKey(key);
+        if (skip.has(normalized)) return;
+        map[normalized] = row[key];
     });
     for (const alias of aliases) {
         const value = map[normalizeHeaderKey(alias)];
         if (value != null && String(value).trim() !== "") return value;
     }
     return "";
+}
+
+function pickCategoryValue(row) {
+    // Never read Age-Category / age group as the auction CATEGORY
+    return pickRowValue(row, PLAYER_FIELD_ALIASES.category, {
+        skipKeys: PLAYER_FIELD_ALIASES.ageCategory
+    });
 }
 
 function createEmptyPlayerDraft(overrides = {}) {
@@ -133,6 +173,40 @@ function numericIdToDisplayCode(id) {
     return "";
 }
 
+/**
+ * Sheet CATEGORY wins when present.
+ * If CATEGORY is blank, fall back to ID prefix: CPL-R → Rising, CPL-K → Key, CPL-E → Evergreen.
+ */
+function categoryFromPlayerCode(code) {
+    const text = String(code || "").trim().toUpperCase();
+    if (!text) return "";
+    if (/^CPL-R\b/i.test(text) || /^R[-_]?\d/i.test(text)) return "RISING STAR";
+    if (/^CPL-K\b/i.test(text) || /^K[-_]?\d/i.test(text)) return "KEY PLAYERS";
+    if (/^CPL-E\b/i.test(text) || /^E[-_]?\d/i.test(text)) return "EVERGREEN";
+    return "";
+}
+
+function resolvePlayerCategory(rawCategory, code = "", { forceFromCode = false } = {}) {
+    const fromCode = categoryFromPlayerCode(code);
+    if (forceFromCode && fromCode) return fromCode;
+
+    const fromSheet = String(rawCategory || "").trim();
+    if (fromSheet) {
+        return typeof normalizeCategoryName === "function"
+            ? normalizeCategoryName(fromSheet)
+            : fromSheet.toUpperCase();
+    }
+    if (fromCode) return fromCode;
+    return "RISING STAR";
+}
+
+function rowHasCategoryColumn(row) {
+    if (!row || typeof row !== "object") return false;
+    const keys = Object.keys(row).map((key) => normalizeHeaderKey(key));
+    const aliases = PLAYER_FIELD_ALIASES.category.map((alias) => normalizeHeaderKey(alias));
+    return aliases.some((alias) => keys.includes(alias));
+}
+
 function normalizePlayerRecord(raw, index = 0, config = null) {
     const source = raw && typeof raw === "object" ? raw : {};
     const rawIdField = String(
@@ -148,9 +222,7 @@ function normalizePlayerRecord(raw, index = 0, config = null) {
     const name = String(
         pickRowValue(source, PLAYER_FIELD_ALIASES.name) || source.name || `Player ${index + 1}`
     ).trim();
-    const category = normalizeCategoryName(
-        pickRowValue(source, PLAYER_FIELD_ALIASES.category) || source.category || "RISING STAR"
-    );
+    const category = resolvePlayerCategory(pickCategoryValue(source) || source.category || "", code);
     const role = normalizeRoleName(
         pickRowValue(source, PLAYER_FIELD_ALIASES.role) || source.role || "Batter"
     );
@@ -207,9 +279,12 @@ function normalizePlayerRecord(raw, index = 0, config = null) {
     };
 }
 
-function loadStoredPlayers() {
+function loadStoredPlayers(divisionId = getActivePlayersDivisionId()) {
     try {
-        const raw = JSON.parse(localStorage.getItem(AUCTION_PLAYERS_KEY) || "null");
+        if (typeof migrateLegacyDivisionStorage === "function") {
+            migrateLegacyDivisionStorage(divisionId);
+        }
+        const raw = JSON.parse(localStorage.getItem(resolvePlayersStorageKey(divisionId)) || "null");
         if (!Array.isArray(raw)) return null;
         return raw.map((player, index) => normalizePlayerRecord(player, index));
     } catch (_) {
@@ -217,18 +292,24 @@ function loadStoredPlayers() {
     }
 }
 
-function saveStoredPlayers(players) {
+function saveStoredPlayers(players, divisionId = getActivePlayersDivisionId()) {
     const list = (players || []).map((player, index) => normalizePlayerRecord(player, index));
-    localStorage.setItem(AUCTION_PLAYERS_KEY, JSON.stringify(list));
+    localStorage.setItem(resolvePlayersStorageKey(divisionId), JSON.stringify(list));
+    if (typeof queueProjectPersist === "function" && typeof persistPlayersToProjectFolder === "function") {
+        queueProjectPersist(() => persistPlayersToProjectFolder(divisionId, list));
+    }
     return list;
 }
 
-function clearStoredPlayers() {
-    localStorage.removeItem(AUCTION_PLAYERS_KEY);
+function clearStoredPlayers(divisionId = getActivePlayersDivisionId()) {
+    localStorage.removeItem(resolvePlayersStorageKey(divisionId));
+    if (typeof queueProjectPersist === "function" && typeof persistPlayersToProjectFolder === "function") {
+        queueProjectPersist(() => persistPlayersToProjectFolder(divisionId, []));
+    }
 }
 
-function hasStoredPlayers() {
-    const list = loadStoredPlayers();
+function hasStoredPlayers(divisionId = getActivePlayersDivisionId()) {
+    const list = loadStoredPlayers(divisionId);
     return Array.isArray(list) && list.length > 0;
 }
 
@@ -337,7 +418,7 @@ async function parseSpreadsheetFile(file) {
     throw new Error("Unsupported file type. Use CSV, Excel (.xlsx), or JSON.");
 }
 
-function importPlayerRows(rows, { mode = "replace", config = null } = {}) {
+function importPlayerRows(rows, { mode = "replace", config = null, divisionId = getActivePlayersDivisionId() } = {}) {
     const incoming = (rows || [])
         .map((row, index) => normalizePlayerRecord(row, index, config))
         .filter((player) => player.name && player.name !== "—");
@@ -348,7 +429,7 @@ function importPlayerRows(rows, { mode = "replace", config = null } = {}) {
 
     let next = incoming;
     if (mode === "merge") {
-        const existing = loadStoredPlayers() || [];
+        const existing = loadStoredPlayers(divisionId) || [];
         const byKey = new Map();
         existing.forEach((player) => {
             byKey.set(String(player.code || player.id), player);
@@ -359,26 +440,26 @@ function importPlayerRows(rows, { mode = "replace", config = null } = {}) {
         next = [...byKey.values()];
     }
 
-    return saveStoredPlayers(next);
+    return saveStoredPlayers(next, divisionId);
 }
 
-function upsertStoredPlayer(player) {
-    const list = loadStoredPlayers() || [];
+function upsertStoredPlayer(player, divisionId = getActivePlayersDivisionId()) {
+    const list = loadStoredPlayers(divisionId) || [];
     const normalized = normalizePlayerRecord(player, list.length);
     const index = list.findIndex(
         (item) => String(item.id) === String(normalized.id) || String(item.code) === String(normalized.code)
     );
     if (index >= 0) list[index] = { ...list[index], ...normalized };
     else list.push(normalized);
-    return saveStoredPlayers(list);
+    return saveStoredPlayers(list, divisionId);
 }
 
-function deleteStoredPlayer(playerIdOrCode) {
+function deleteStoredPlayer(playerIdOrCode, divisionId = getActivePlayersDivisionId()) {
     const key = String(playerIdOrCode);
-    const list = (loadStoredPlayers() || []).filter(
+    const list = (loadStoredPlayers(divisionId) || []).filter(
         (player) => String(player.id) !== key && String(player.code) !== key
     );
-    return saveStoredPlayers(list);
+    return saveStoredPlayers(list, divisionId);
 }
 
 function getPlayersTemplateCsv() {
@@ -390,9 +471,10 @@ function getPlayersTemplateCsv() {
     ].join("\n");
 }
 
-async function resolveAuctionPlayers(fallbackLoader) {
-    const stored = loadStoredPlayers();
-    if (stored && stored.length) return stored;
+async function resolveAuctionPlayers(fallbackLoader, divisionId = getActivePlayersDivisionId()) {
+    const stored = loadStoredPlayers(divisionId);
+    // Empty array means this division intentionally has no players — do not borrow another pool
+    if (Array.isArray(stored)) return stored;
     if (typeof fallbackLoader === "function") {
         const fallback = await fallbackLoader();
         return (fallback || []).map((player, index) => normalizePlayerRecord(player, index));

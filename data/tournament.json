@@ -1,7 +1,7 @@
 {
-    "name" : "ABCD Super League",
-    "year" : 2025,
-    "edition" : 1,
-    "location" : "Lalmonirhat, BD",
-    "logo" : "../assets/tournament-logo.png"
+  "name": "New Auction",
+  "year": "2026",
+  "edition": 1,
+  "location": "",
+  "logo": "assets/tournament-logo.png"
 }
