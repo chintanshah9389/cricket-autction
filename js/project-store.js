@@ -233,7 +233,29 @@ async function persistConfigToProjectFolder(config) {
         if (generation !== projectPersistGeneration) return false;
         if (!(await checkProjectApiReady())) return false;
         if (generation !== projectPersistGeneration) return false;
-        await putProjectConfig(config);
+
+        // Stale tabs can save an older 1-division cache and wipe WOMENS/etc.
+        // Keep any disk divisions missing from the incoming payload.
+        let next = config;
+        try {
+            const snapshot = await fetchProjectSnapshot();
+            const diskDivisions = snapshot?.project?.divisions;
+            const incomingDivisions = Array.isArray(next?.divisions) ? next.divisions : [];
+            if (Array.isArray(diskDivisions) && diskDivisions.length > incomingDivisions.length) {
+                const byId = new Map(incomingDivisions.map((d) => [d?.id, d]));
+                const merged = incomingDivisions.slice();
+                diskDivisions.forEach((diskDiv) => {
+                    if (diskDiv?.id && !byId.has(diskDiv.id)) {
+                        merged.push(diskDiv);
+                    }
+                });
+                next = { ...next, divisions: merged };
+            }
+        } catch (_) {
+            // write incoming as-is if snapshot unavailable
+        }
+
+        await putProjectConfig(next);
         return true;
     });
 }

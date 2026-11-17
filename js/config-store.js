@@ -17,12 +17,113 @@ const DEFAULT_TOURNAMENT = {
     logo: ""
 };
 
+/**
+ * Per-division player field policy (auction desk + players form).
+ * Always-on fields (code, name, category) are not listed here.
+ */
+const PLAYER_FIELD_DEFS = [
+    { key: "role", label: "Role / Skill", auction: true, form: true, defaultVisible: true, defaultRequired: false },
+    { key: "currentClub", label: "Location / Club", auction: true, form: true, defaultVisible: true, defaultRequired: false },
+    { key: "mobile", label: "Mobile", auction: true, form: true, defaultVisible: true, defaultRequired: false },
+    { key: "age", label: "Age", auction: true, form: true, defaultVisible: false, defaultRequired: false },
+    { key: "ageCategory", label: "Age category", auction: true, form: true, defaultVisible: false, defaultRequired: false },
+    { key: "battingStyle", label: "Batting", auction: true, form: true, defaultVisible: false, defaultRequired: false },
+    { key: "bowlingStyle", label: "Bowling", auction: true, form: true, defaultVisible: false, defaultRequired: false },
+    { key: "basePrice", label: "Base price", auction: true, form: true, defaultVisible: true, defaultRequired: false },
+    { key: "photo", label: "Photo", auction: true, form: true, defaultVisible: true, defaultRequired: false }
+];
+
+function buildDefaultPlayerFields() {
+    const fields = {};
+    PLAYER_FIELD_DEFS.forEach((def) => {
+        fields[def.key] = {
+            visible: def.defaultVisible !== false,
+            required: def.defaultRequired === true
+        };
+    });
+    return fields;
+}
+
+function humanizePlayerFieldKey(key) {
+    return String(key || "")
+        .replace(/^x_/i, "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\b\w/g, (ch) => ch.toUpperCase())
+        .trim() || "Field";
+}
+
+function normalizePlayerFields(raw) {
+    const defaults = buildDefaultPlayerFields();
+    const source = raw && typeof raw === "object" ? raw : {};
+    const fields = {};
+    PLAYER_FIELD_DEFS.forEach((def) => {
+        const entry = source[def.key];
+        const visible = entry?.visible != null ? entry.visible !== false : defaults[def.key].visible;
+        let required = entry?.required === true;
+        if (!visible) required = false;
+        fields[def.key] = { visible, required };
+    });
+    // Preserve Excel-driven custom fields (Gender, Seat, …)
+    Object.keys(source).forEach((key) => {
+        if (fields[key]) return;
+        const entry = source[key];
+        if (!entry || typeof entry !== "object") return;
+        if (!(entry.custom === true || String(key).startsWith("x_"))) return;
+        const visible = entry.visible !== false;
+        fields[key] = {
+            visible,
+            required: visible && entry.required === true,
+            label: entry.label || humanizePlayerFieldKey(key),
+            custom: true
+        };
+    });
+    return fields;
+}
+
+function listPlayerFieldDefs(playerFields = null) {
+    const fields = normalizePlayerFields(playerFields);
+    const defs = PLAYER_FIELD_DEFS.map((def) => ({ ...def }));
+    Object.keys(fields).forEach((key) => {
+        if (defs.some((def) => def.key === key)) return;
+        if (!fields[key]?.custom && !String(key).startsWith("x_")) return;
+        defs.push({
+            key,
+            label: fields[key].label || humanizePlayerFieldKey(key),
+            auction: true,
+            form: false,
+            custom: true,
+            defaultVisible: true,
+            defaultRequired: false
+        });
+    });
+    return defs;
+}
+
+function isPlayerFieldVisible(configOrDivision, fieldKey) {
+    const fields =
+        configOrDivision?.playerFields ||
+        getActiveDivision?.(configOrDivision)?.playerFields ||
+        buildDefaultPlayerFields();
+    if (!fields[fieldKey]) return true;
+    return fields[fieldKey].visible !== false;
+}
+
+function isPlayerFieldRequired(configOrDivision, fieldKey) {
+    const fields =
+        configOrDivision?.playerFields ||
+        getActiveDivision?.(configOrDivision)?.playerFields ||
+        buildDefaultPlayerFields();
+    if (!fields[fieldKey]) return false;
+    return fields[fieldKey].visible !== false && fields[fieldKey].required === true;
+}
+
 const DEFAULT_DIVISION_SETTINGS = {
     teamKitty: 10000000,
     useCategoryBasePrices: true,
     auctionOrder: "SEQUENCE",
     shuffleWithinCategory: true,
     playerWheelEnabled: true,
+    playerFields: buildDefaultPlayerFields(),
     categorySequence: DEFAULT_CATEGORY_SEQUENCE.slice(),
     categories: {
         "RISING STAR": { basePrice: 500000, maxPlayers: 3 },
@@ -414,6 +515,7 @@ function buildDivisionSettingsFromRaw(raw) {
         auctionOrder: normalizeAuctionOrder(raw?.auctionOrder),
         shuffleWithinCategory: raw?.shuffleWithinCategory !== false,
         playerWheelEnabled: raw?.playerWheelEnabled !== false,
+        playerFields: normalizePlayerFields(raw?.playerFields),
         categories,
         categorySequence: normalizeCategorySequence(raw?.categorySequence, categories)
     };
@@ -464,6 +566,7 @@ function flattenActiveDivision(config) {
         auctionOrder: active.auctionOrder,
         shuffleWithinCategory: active.shuffleWithinCategory,
         playerWheelEnabled: active.playerWheelEnabled,
+        playerFields: normalizePlayerFields(active.playerFields),
         categories: active.categories,
         categorySequence: active.categorySequence
     };
@@ -618,6 +721,7 @@ function addDivision(config, name = "") {
             auctionOrder: active.auctionOrder,
             shuffleWithinCategory: active.shuffleWithinCategory,
             playerWheelEnabled: active.playerWheelEnabled,
+            playerFields: JSON.parse(JSON.stringify(normalizePlayerFields(active.playerFields))),
             categorySequence: active.categorySequence,
             categories: JSON.parse(JSON.stringify(active.categories))
         },
@@ -674,13 +778,12 @@ function purgeRemovedDivisionStorage(previousConfig, nextConfig) {
             if (typeof deleteDivisionOfflineMedia === "function") {
                 deleteDivisionOfflineMedia(id).catch(() => {});
             }
-            if (typeof queueProjectPersist === "function") {
-                if (typeof persistPlayersToProjectFolder === "function") {
-                    queueProjectPersist(() => persistPlayersToProjectFolder(id, []));
-                }
-                if (typeof persistAuctionToProjectFolder === "function") {
-                    queueProjectPersist(() => persistAuctionToProjectFolder(id, null));
-                }
+            // persist* helpers already enqueue — call once (nested enqueue deadlocks).
+            if (typeof persistPlayersToProjectFolder === "function") {
+                persistPlayersToProjectFolder(id, []);
+            }
+            if (typeof persistAuctionToProjectFolder === "function") {
+                persistAuctionToProjectFolder(id, null);
             }
         });
     } catch (_) {
@@ -1015,16 +1118,10 @@ async function getAuctionConfig() {
 
     migrateLegacyDivisionStorage(config.activeDivisionId);
 
-    // Persist migrated shape once so later reads see divisions
+    // Keep local cache in sync after hydrate/normalize — do NOT write back to disk here.
+    // Disk already won via hydrate; writing would let a stale tab race and wipe divisions.
     try {
-        const current = localStorage.getItem(AUCTION_CONFIG_KEY);
-        const normalizedJson = JSON.stringify(config);
-        if (current !== normalizedJson) {
-            localStorage.setItem(AUCTION_CONFIG_KEY, normalizedJson);
-            if (typeof queueProjectPersist === "function" && typeof persistConfigToProjectFolder === "function") {
-                queueProjectPersist(() => persistConfigToProjectFolder(config));
-            }
-        }
+        localStorage.setItem(AUCTION_CONFIG_KEY, JSON.stringify(config));
     } catch (_) {
         // ignore
     }
@@ -1062,6 +1159,7 @@ function saveAuctionConfig(config) {
                 auctionOrder: incoming.auctionOrder,
                 shuffleWithinCategory: incoming.shuffleWithinCategory,
                 playerWheelEnabled: incoming.playerWheelEnabled,
+                playerFields: incoming.playerFields,
                 categorySequence: incoming.categorySequence,
                 categories: incoming.categories
             }
@@ -1083,8 +1181,8 @@ function saveAuctionConfig(config) {
     migrateLegacyDivisionStorage(normalized.activeDivisionId);
     if (previous) purgeRemovedDivisionStorage(previous, normalized);
     localStorage.setItem(AUCTION_CONFIG_KEY, JSON.stringify(normalized));
-    if (typeof queueProjectPersist === "function" && typeof persistConfigToProjectFolder === "function") {
-        queueProjectPersist(() => persistConfigToProjectFolder(normalized));
+    if (typeof persistConfigToProjectFolder === "function") {
+        persistConfigToProjectFolder(normalized);
     }
     return normalized;
 }

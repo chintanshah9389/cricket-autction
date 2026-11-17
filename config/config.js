@@ -10,6 +10,9 @@ const tournamentLogoClearBtn = document.getElementById("tournament-logo-clear-bt
 const useCategoryPrices = document.getElementById("use-category-prices");
 const shuffleWithinCategory = document.getElementById("shuffle-within-category");
 const playerWheelEnabled = document.getElementById("player-wheel-enabled");
+const playerFieldsGrid = document.getElementById("player-fields-grid");
+const playerFieldsHeading = document.getElementById("player-fields-heading");
+const playerFieldsHelp = document.getElementById("player-fields-help");
 const shuffleWithinWrap = document.getElementById("shuffle-within-wrap");
 const sequenceEditorWrap = document.getElementById("sequence-editor-wrap");
 const sequenceEditor = document.getElementById("sequence-editor");
@@ -73,6 +76,7 @@ function captureDivisionFieldsFromForm() {
     active.auctionOrder = getSelectedAuctionOrder();
     active.shuffleWithinCategory = shuffleWithinCategory.checked;
     active.playerWheelEnabled = playerWheelEnabled.checked;
+    active.playerFields = readPlayerFieldsFromForm(active.playerFields);
     active.categorySequence = draftSequence.slice();
     active.categories = JSON.parse(JSON.stringify(draftCategories));
 }
@@ -88,6 +92,7 @@ function applyDivisionFieldsToForm(division) {
     draftSequence = (division.categorySequence || Object.keys(draftCategories)).slice();
     setAuctionOrder(division.auctionOrder);
     refreshKittyPreview();
+    renderPlayerFieldsEditor(division);
 }
 
 function getDivisionTeamCount(division) {
@@ -155,6 +160,12 @@ function refreshDivisionScopedLabels() {
     if (categoriesHeading) {
         categoriesHeading.textContent = `Auction Categories — ${name} (${categoryCount})`;
     }
+    if (playerFieldsHeading) {
+        playerFieldsHeading.textContent = `Player fields — ${name}`;
+    }
+    if (playerFieldsHelp) {
+        playerFieldsHelp.innerHTML = `For <strong>${name}</strong> only: choose what shows on the auction desk and what is required when adding/editing players. Name, ID, and Category stay on. Uploading Excel on the Players page turns <em>Show on auction</em> on for columns in the sheet and off for the rest — then Start New Auction to apply on the desk.`;
+    }
 }
 
 function renderDivisionTabs() {
@@ -183,15 +194,16 @@ function renderDivisionTabs() {
     }
 }
 
-function switchDraftDivision(divisionId) {
+async function switchDraftDivision(divisionId) {
     if (divisionId === draftActiveDivisionId) return;
     captureDivisionFieldsFromForm();
     draftActiveDivisionId = divisionId;
+    await syncDraftPlayerFieldsFromRoster(divisionId);
     applyDivisionFieldsToForm(getDraftActiveDivision());
     renderAll();
     const active = getDraftActiveDivision();
     if (saveStatus && active) {
-        saveStatus.textContent = `Switched to ${active.name}: ${getDivisionTeamCount(active)} teams, kitty ${formatDivisionKitty(getDivisionKitty(active))}. Edit then Save.`;
+        saveStatus.textContent = `Switched to ${active.name}: ${getDivisionTeamCount(active)} teams, kitty ${formatDivisionKitty(getDivisionKitty(active))}. Player fields follow this division’s Excel/roster. Edit then Save.`;
     }
 }
 
@@ -325,6 +337,85 @@ function refreshKittyPreview() {
     refreshDivisionScopedLabels();
 }
 
+function getPlayerFieldDefs(playerFields = null) {
+    if (typeof listPlayerFieldDefs === "function") {
+        return listPlayerFieldDefs(playerFields);
+    }
+    return typeof PLAYER_FIELD_DEFS !== "undefined" && Array.isArray(PLAYER_FIELD_DEFS)
+        ? PLAYER_FIELD_DEFS
+        : [];
+}
+
+function readPlayerFieldsFromForm(existingFields = null) {
+    const previous =
+        typeof normalizePlayerFields === "function"
+            ? normalizePlayerFields(existingFields || {})
+            : existingFields || {};
+    const fields = {};
+    getPlayerFieldDefs(previous).forEach((def) => {
+        const visibleEl = document.getElementById(`pf-visible-${def.key}`);
+        const requiredEl = document.getElementById(`pf-required-${def.key}`);
+        const visible = visibleEl ? visibleEl.checked : true;
+        const required = visible && requiredEl ? requiredEl.checked : false;
+        const entry = { visible, required };
+        if (def.custom || String(def.key).startsWith("x_")) {
+            entry.custom = true;
+            entry.label = previous[def.key]?.label || def.label;
+        }
+        fields[def.key] = entry;
+    });
+    return typeof normalizePlayerFields === "function" ? normalizePlayerFields(fields) : fields;
+}
+
+function renderPlayerFieldsEditor(division) {
+    if (!playerFieldsGrid) return;
+    const fields =
+        typeof normalizePlayerFields === "function"
+            ? normalizePlayerFields(division?.playerFields)
+            : division?.playerFields || {};
+    playerFieldsGrid.innerHTML = getPlayerFieldDefs(fields)
+        .map((def) => {
+            const entry = fields[def.key] || { visible: true, required: false };
+            const visible = entry.visible !== false;
+            const required = visible && entry.required === true;
+            return `
+                <article class="player-field-card" data-field="${def.key}">
+                    <strong>${def.label}</strong>
+                    <div class="player-field-toggles">
+                        <label>
+                            <input type="checkbox" id="pf-visible-${def.key}" data-pf-visible="${def.key}" ${visible ? "checked" : ""}>
+                            <span>Show on auction</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" id="pf-required-${def.key}" data-pf-required="${def.key}" ${required ? "checked" : ""} ${visible ? "" : "disabled"}>
+                            <span>Required</span>
+                        </label>
+                    </div>
+                </article>
+            `;
+        })
+        .join("");
+
+    playerFieldsGrid.querySelectorAll("[data-pf-visible]").forEach((input) => {
+        input.addEventListener("change", () => {
+            const key = input.dataset.pfVisible;
+            const requiredEl = document.getElementById(`pf-required-${key}`);
+            if (requiredEl) {
+                requiredEl.disabled = !input.checked;
+                if (!input.checked) requiredEl.checked = false;
+            }
+            const active = getDraftActiveDivision();
+            if (active) active.playerFields = readPlayerFieldsFromForm(active.playerFields);
+        });
+    });
+    playerFieldsGrid.querySelectorAll("[data-pf-required]").forEach((input) => {
+        input.addEventListener("change", () => {
+            const active = getDraftActiveDivision();
+            if (active) active.playerFields = readPlayerFieldsFromForm(active.playerFields);
+        });
+    });
+}
+
 function moveCategory(index, direction) {
     const target = index + direction;
     if (target < 0 || target >= draftSequence.length) return;
@@ -375,12 +466,14 @@ function renderTeamCards() {
         const card = document.createElement("article");
         card.className = "team-config-card";
         card.innerHTML = `
-            <span class="team-config-id">#${team.team_id}</span>
+            <div class="team-config-badge">
+                <img class="team-logo-preview ${hasUpload ? "" : "is-empty"}" src="${logoSrc}" alt="${team.team_name} logo" onerror="this.classList.add('is-empty'); this.removeAttribute('src');">
+                <span class="team-config-id">#${team.team_id}</span>
+            </div>
             <div class="team-config-main">
                 <input class="team-name-input" type="text" value="${team.team_name}" aria-label="Team name">
                 <input class="team-color-input" type="color" value="${team.color || "#3498db"}" title="Team color">
                 <div class="team-config-logo-row">
-                    <img class="team-logo-preview ${hasUpload ? "" : "is-empty"}" src="${logoSrc}" alt="${team.team_name} logo" onerror="this.classList.add('is-empty'); this.removeAttribute('src');">
                     <button type="button" class="team-logo-upload-btn" data-upload-logo="${index}">Upload logo</button>
                     <input class="team-logo-file" type="file" accept="image/*" data-logo-file="${index}">
                     <button type="button" class="team-logo-clear-btn" data-clear-logo="${index}" ${hasUpload ? "" : "disabled"}>Clear logo</button>
@@ -626,6 +719,7 @@ function renderAll() {
     renderTeamCards();
     renderSequenceEditor();
     renderCategoryCards();
+    renderPlayerFieldsEditor(getDraftActiveDivision());
     refreshOrderUI();
     refreshDivisionScopedLabels();
 }
@@ -641,11 +735,71 @@ function readFormConfig() {
     };
 }
 
+async function loadDivisionPlayersForFieldSync(divisionId) {
+    let players = typeof loadStoredPlayers === "function" ? loadStoredPlayers(divisionId) || [] : [];
+    if (players.length) return players;
+    if (typeof fetchProjectSnapshot !== "function") return [];
+    try {
+        const snapshot = await fetchProjectSnapshot();
+        const entry = (snapshot.divisions || []).find((item) => item.id === divisionId);
+        if (Array.isArray(entry?.players) && entry.players.length) {
+            players = entry.players;
+            try {
+                localStorage.setItem(`auctionPlayers:${divisionId}`, JSON.stringify(players));
+            } catch (_) {
+                // ignore cache write failures
+            }
+        }
+    } catch (_) {
+        return [];
+    }
+    return players;
+}
+
+async function syncDraftPlayerFieldsFromRoster(divisionId = draftActiveDivisionId) {
+    if (typeof applyPlayerFieldsFromSpreadsheet !== "function") return false;
+    if (typeof buildPlayerFieldPresenceFromRoster !== "function") return false;
+    const division = draftDivisions.find((item) => item.id === divisionId);
+    if (!division) return false;
+    const players = await loadDivisionPlayersForFieldSync(divisionId);
+    if (!players.length) return false;
+    const presence = buildPlayerFieldPresenceFromRoster(players, []);
+    const before = JSON.stringify(division.playerFields || {});
+    const tempConfig = {
+        divisions: draftDivisions,
+        activeDivisionId: divisionId
+    };
+    const updated = applyPlayerFieldsFromSpreadsheet(tempConfig, divisionId, presence);
+    const nextDivision =
+        typeof getActiveDivision === "function"
+            ? getActiveDivision(setActiveDivisionId?.(updated, divisionId) || updated)
+            : (updated.divisions || []).find((item) => item.id === divisionId);
+    if (!nextDivision) return false;
+    division.playerFields = nextDivision.playerFields;
+    return before !== JSON.stringify(division.playerFields || {});
+}
+
 async function loadForm() {
+    if (typeof hydrateLocalStorageFromProjectFolder === "function") {
+        await hydrateLocalStorageFromProjectFolder();
+    }
     const config = await getAuctionConfig();
     draftTournament = JSON.parse(JSON.stringify(config.tournament || DEFAULT_TOURNAMENT));
     draftDivisions = JSON.parse(JSON.stringify(config.divisions || []));
     draftActiveDivisionId = config.activeDivisionId || draftDivisions[0]?.id || "div_1";
+    const synced = await syncDraftPlayerFieldsFromRoster(draftActiveDivisionId);
+    if (synced) {
+        // Keep Config toggles + disk aligned with Excel/roster columns
+        try {
+            saveAuctionConfig({
+                tournament: draftTournament,
+                divisions: draftDivisions,
+                activeDivisionId: draftActiveDivisionId
+            });
+        } catch (_) {
+            // still show synced toggles in the form
+        }
+    }
     tournamentNameInput.value = draftTournament.name || "";
     tournamentYearInput.value = draftTournament.year || "";
     applyDivisionFieldsToForm(getDraftActiveDivision());

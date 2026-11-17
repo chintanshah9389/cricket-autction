@@ -329,15 +329,25 @@ async function deleteAllDivisionPhotoFolders() {
     }
 }
 
-async function deletePlayerPhotoFile(divisionId, code) {
+async function deletePlayerPhotoFile(divisionId, code, photoRef = "") {
     const id = String(divisionId || "").trim();
-    const playerCode = String(code || "").trim();
-    if (!id || !playerCode) return;
+    let playerCode = String(code || "").trim();
+    if (!playerCode && photoRef) {
+        const base = String(photoRef).split(/[\\/]/).pop() || "";
+        playerCode = base.replace(/\.[^.]+$/, "").trim();
+    }
+    if (!id || !playerCode) return false;
     const ready = await checkAssetsApiReady();
-    if (!ready) return;
-    await fetch(`/api/photos/${encodeURIComponent(id)}/${encodeURIComponent(playerCode)}`, {
-        method: "DELETE"
-    }).catch(() => {});
+    if (!ready) return false;
+    const response = await fetch(
+        `/api/photos/${encodeURIComponent(id)}/${encodeURIComponent(playerCode)}`,
+        { method: "DELETE" }
+    );
+    if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `Could not delete photo for ${playerCode}.`);
+    }
+    return true;
 }
 
 async function listDivisionOfflineMedia(divisionId) {

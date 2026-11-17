@@ -379,9 +379,15 @@ let playerPhoto = document.getElementById("player-image")
 let playerRole = document.getElementById("player-role");
 let playerLocation = document.getElementById("player-location");
 let playerMobile = document.getElementById("player-mobile");
+let playerAge = document.getElementById("player-age");
+let playerAgeCategory = document.getElementById("player-age-category");
+let playerBatting = document.getElementById("player-batting");
+let playerBowling = document.getElementById("player-bowling");
 let playerCategory = document.getElementById("player-category");
 let playerId = document.getElementById("player-id");
 let playerBasePrice = document.getElementById("base-price");
+let playerBasePriceSection = document.getElementById("base-price-section");
+let playerPhotoStage = document.querySelector(".player-stage") || document.getElementById("player-image")?.closest(".player-photo-card");
 
 let currentBidAmount = document.getElementById("current-bid");
 let currentBidTeam = document.getElementById("current-bid-team");
@@ -432,11 +438,30 @@ async function handleWelcomeStartNew() {
     if (welcomeConfigCache) {
         const divisionId = welcomeConfigCache.activeDivisionId;
         localStorage.removeItem(getAuctionDataStorageKey(divisionId));
-        if (typeof queueProjectPersist === "function" && typeof persistAuctionToProjectFolder === "function") {
-            queueProjectPersist(() => persistAuctionToProjectFolder(divisionId, null));
+        if (divisionId === "div_1") localStorage.removeItem("auctionData");
+        if (typeof invalidateDivisionAuctionProgress === "function") {
+            invalidateDivisionAuctionProgress(divisionId);
+        } else if (typeof persistAuctionToProjectFolder === "function") {
+            persistAuctionToProjectFolder(divisionId, null);
+        }
+        // Re-read local config (avoid disk hydrate racing an in-flight Excel field save)
+        try {
+            const raw = localStorage.getItem("auctionConfig");
+            if (raw) {
+                welcomeConfigCache =
+                    typeof normalizeConfig === "function"
+                        ? normalizeConfig(JSON.parse(raw))
+                        : JSON.parse(raw);
+                if (divisionId && typeof setActiveDivisionId === "function") {
+                    welcomeConfigCache = setActiveDivisionId(welcomeConfigCache, divisionId);
+                }
+            }
+        } catch (_) {
+            // keep cached config
         }
         await loadAuctionStateForActiveDivision(welcomeConfigCache);
         showTournamentDetails();
+        refreshWelcomeDivisionActions();
     }
     startMainApplication();
 }
@@ -482,7 +507,8 @@ function refreshWelcomeDivisionActions() {
 
     if (welcomeResumeBtn) welcomeResumeBtn.hidden = !hasSaved;
     if (welcomeResetBtn) welcomeResetBtn.hidden = !hasSaved;
-    if (welcomeStartNewBtn) welcomeStartNewBtn.hidden = hasSaved;
+    // Always offer Start New so Excel re-uploads can load without Reset
+    if (welcomeStartNewBtn) welcomeStartNewBtn.hidden = false;
     if (welcomeDivisionNote) {
         const teamCount = (active.teams || []).length;
         const playerCount =
@@ -490,7 +516,7 @@ function refreshWelcomeDivisionActions() {
                 ? (loadStoredPlayers(active.id) || []).length
                 : 0;
         welcomeDivisionNote.textContent = hasSaved
-            ? `${active.name}: ${teamCount} teams, ${playerCount} players — saved auction found — resume or reset.`
+            ? `${active.name}: ${teamCount} teams, ${playerCount} players — saved auction found — resume, or Start New Auction to reload the latest Excel roster.`
             : `${active.name}: ${teamCount} teams, ${playerCount} players — no saved auction — start fresh.`;
     }
 }
@@ -535,7 +561,7 @@ async function selectWelcomeDivision(divisionId) {
 async function loadAuctionStateForActiveDivision(auctionConfig) {
     const division = getActiveDivision(auctionConfig);
     migrateLegacyDivisionStorage?.(division.id);
-    const savedDataJSON = localStorage.getItem(getAuctionDataStorageKey(division.id));
+    let savedDataJSON = localStorage.getItem(getAuctionDataStorageKey(division.id));
 
     history = { undoStack: [], redoStack: [] };
     state = {
@@ -551,8 +577,34 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         divisionName: division.name
     };
 
-    if (savedDataJSON) {
-        const savedData = JSON.parse(savedDataJSON);
+    let useSaved = Boolean(savedDataJSON);
+    let savedData = null;
+    if (useSaved) {
+        try {
+            savedData = JSON.parse(savedDataJSON);
+        } catch (_) {
+            useSaved = false;
+            savedData = null;
+        }
+    }
+
+    // Stale/empty snapshot after Excel upload — prefer live roster over frozen empty state
+    if (useSaved) {
+        const savedPlayers = savedData?.auctionState?.players || [];
+        const roster =
+            typeof loadStoredPlayers === "function" ? loadStoredPlayers(division.id) : null;
+        if ((!Array.isArray(savedPlayers) || savedPlayers.length === 0) &&
+            Array.isArray(roster) &&
+            roster.length > 0) {
+            useSaved = false;
+            localStorage.removeItem(getAuctionDataStorageKey(division.id));
+            if (typeof invalidateDivisionAuctionProgress === "function") {
+                invalidateDivisionAuctionProgress(division.id);
+            }
+        }
+    }
+
+    if (useSaved && savedData) {
         state = savedData.auctionState;
         history = savedData.historyData || history;
         if (!state.allPlayers) {
@@ -636,19 +688,123 @@ async function setPlayerPhotoElement(imgEl, photoRef) {
     imgEl.src = value && !/^idb:/i.test(value) ? value : "assets/placeholder.png";
 }
 
+function getAuctionPlayerFieldsConfig() {
+    const config = typeof getActiveConfig === "function" ? getActiveConfig(state) : state?.config;
+    if (config?.playerFields) return config.playerFields;
+    if (typeof normalizePlayerFields === "function") return normalizePlayerFields(null);
+    return {};
+}
+
+function isAuctionPlayerFieldVisible(fieldKey) {
+    if (typeof isPlayerFieldVisible === "function") {
+        return isPlayerFieldVisible(getActiveConfig?.(state) || state?.config, fieldKey);
+    }
+    const fields = getAuctionPlayerFieldsConfig();
+    if (!fields[fieldKey]) return true;
+    return fields[fieldKey].visible !== false;
+}
+
+function getAuctionCustomPlayerFieldDefs() {
+    const fields = getAuctionPlayerFieldsConfig();
+    const defs =
+        typeof listPlayerFieldDefs === "function"
+            ? listPlayerFieldDefs(fields)
+            : [];
+    return defs.filter(
+        (def) =>
+            (def.custom === true || String(def.key).startsWith("x_")) &&
+            isAuctionPlayerFieldVisible(def.key)
+    );
+}
+
+function ensureAuctionCustomPlayerFieldNodes() {
+    const metaBar = document.getElementById("players-data-section");
+    if (!metaBar) return;
+    const customDefs = getAuctionCustomPlayerFieldDefs();
+    const wanted = new Set(customDefs.map((def) => def.key));
+
+    metaBar.querySelectorAll("[data-player-field][data-custom-field='true']").forEach((el) => {
+        const key = el.getAttribute("data-player-field");
+        if (!wanted.has(key)) el.remove();
+    });
+
+    customDefs.forEach((def) => {
+        let node = metaBar.querySelector(`[data-player-field="${def.key}"]`);
+        if (!node) {
+            node = document.createElement("article");
+            node.className = "player-stat";
+            node.setAttribute("data-player-field", def.key);
+            node.setAttribute("data-custom-field", "true");
+            node.innerHTML = `
+                <div class="player-data-head"><span>${def.label}</span></div>
+                <span class="player-data-info" id="player-field-${def.key}">—</span>
+            `;
+            metaBar.appendChild(node);
+        } else {
+            const labelEl = node.querySelector(".player-data-head span");
+            if (labelEl) labelEl.textContent = def.label;
+            const valueEl = node.querySelector(".player-data-info");
+            if (valueEl && !valueEl.id) valueEl.id = `player-field-${def.key}`;
+        }
+    });
+}
+
+function applyAuctionPlayerFieldVisibility() {
+    ensureAuctionCustomPlayerFieldNodes();
+    document.querySelectorAll("[data-player-field]").forEach((el) => {
+        const key = el.getAttribute("data-player-field");
+        el.hidden = !isAuctionPlayerFieldVisible(key);
+    });
+    if (playerBasePriceSection) {
+        playerBasePriceSection.hidden = !isAuctionPlayerFieldVisible("basePrice");
+    }
+    if (playerPhotoStage) {
+        playerPhotoStage.hidden = !isAuctionPlayerFieldVisible("photo");
+    } else if (playerPhoto) {
+        playerPhoto.hidden = !isAuctionPlayerFieldVisible("photo");
+    }
+}
+
 function showPlayerDetails(i) {
     triggerAnim(document.querySelector(".player-stage"), "player-swap");
+    applyAuctionPlayerFieldVisibility();
 
-    playerName.innerText = state.players[i].name;
-    playerRole.innerText = state.players[i].role;
-    setPlayerPhotoElement(playerPhoto, state.players[i].photo);
-    playerPhoto.alt = state.players[i].name;
+    const player = state.players[i];
+    playerName.innerText = player.name;
+    if (playerRole) playerRole.innerText = player.role || "—";
+    setPlayerPhotoElement(playerPhoto, player.photo);
+    if (playerPhoto) playerPhoto.alt = player.name;
     if (playerLocation) {
-        playerLocation.innerText = state.players[i].currentClub || "—";
+        playerLocation.innerText = player.currentClub || "—";
     }
     if (playerMobile) {
-        playerMobile.innerText = state.players[i].mobile || "—";
+        playerMobile.innerText = player.mobile || "—";
     }
+    if (playerAge) {
+        playerAge.innerText = player.age != null && player.age !== ""
+            ? String(player.age)
+            : "—";
+    }
+    if (playerAgeCategory) {
+        playerAgeCategory.innerText = player.ageCategory || "—";
+    }
+    if (playerBatting) {
+        playerBatting.innerText = player.battingStyle || "—";
+    }
+    if (playerBowling) {
+        playerBowling.innerText = player.bowlingStyle || "—";
+    }
+    getAuctionCustomPlayerFieldDefs().forEach((def) => {
+        const valueEl =
+            document.getElementById(`player-field-${def.key}`) ||
+            document.querySelector(`[data-player-field="${def.key}"] .player-data-info`);
+        if (!valueEl) return;
+        const value =
+            typeof getPlayerFieldDisplayValue === "function"
+                ? getPlayerFieldDisplayValue(player, def.key)
+                : player?.customFields?.[def.key];
+        valueEl.innerText = value != null && String(value).trim() !== "" ? String(value) : "—";
+    });
     const categoryName = normalizeCategoryName(state.players[i].category);
     const categoryMeta = getCategoryConfig(getActiveConfig(state), categoryName);
     playerCategory.innerText = categoryName;
@@ -887,8 +1043,8 @@ function saveData() {
     };
     const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
     localStorage.setItem(getAuctionDataStorageKey(divisionId), JSON.stringify(data));
-    if (typeof queueProjectPersist === "function" && typeof persistAuctionToProjectFolder === "function") {
-        queueProjectPersist(() => persistAuctionToProjectFolder(divisionId, data));
+    if (typeof persistAuctionToProjectFolder === "function") {
+        persistAuctionToProjectFolder(divisionId, data);
     }
     console.log("All data saved...");
 }

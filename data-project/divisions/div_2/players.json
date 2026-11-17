@@ -13,6 +13,10 @@
     "mobile": "8369208657",
     "age": 21,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "3"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -32,6 +36,10 @@
     "mobile": "7977331915",
     "age": 20,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "4"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -51,6 +59,10 @@
     "mobile": "9321801241",
     "age": 18,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "6"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -70,6 +82,10 @@
     "mobile": "9930371070",
     "age": 15,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "8"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -89,6 +105,10 @@
     "mobile": "9022263919",
     "age": 15,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "10"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -108,6 +128,10 @@
     "mobile": "9372684223",
     "age": 23,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "12"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -127,6 +151,10 @@
     "mobile": "7400259272",
     "age": 15,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "15"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -146,6 +174,10 @@
     "mobile": "8355934515",
     "age": 21,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "19"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -165,6 +197,10 @@
     "mobile": "8097372660",
     "age": 22,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "20"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -184,6 +220,10 @@
     "mobile": "7021741270",
     "age": 23,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "25"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -203,6 +243,10 @@
     "mobile": "9619294840",
     "age": 16,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "26"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -222,6 +266,10 @@
     "mobile": "8104580317",
     "age": 20,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "29"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -241,6 +289,10 @@
     "mobile": "9324990669",
     "age": 15,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "33"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -260,6 +312,10 @@
     "mobile": "8369394159",
     "age": 20,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "36"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -279,6 +335,10 @@
     "mobile": "7021958451",
     "age": 22,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "37"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -298,6 +358,10 @@
     "mobile": "9320020200",
     "age": 19,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "39"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -317,6 +381,10 @@
     "mobile": "9768284646",
     "age": 16,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "40"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -336,6 +404,10 @@
     "mobile": "7977185251",
     "age": 17,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "42"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -355,6 +427,10 @@
     "mobile": "9152053671",
     "age": 22,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "43"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -374,6 +450,10 @@
     "mobile": "9152808100",
     "age": 16,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "44"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -393,6 +473,10 @@
     "mobile": "7045574430",
     "age": 22,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "46"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -412,6 +496,10 @@
     "mobile": "9082460641",
     "age": 20,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "50"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -431,6 +519,10 @@
     "mobile": "9869062728",
     "age": 21,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "55"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -450,6 +542,10 @@
     "mobile": "7977313651",
     "age": 15,
     "basePrice": 300000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "56"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -469,6 +565,10 @@
     "mobile": "7977007985",
     "age": 29,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "1"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -488,6 +588,10 @@
     "mobile": "9821744632",
     "age": 33,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "2"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -507,6 +611,10 @@
     "mobile": "9326389705",
     "age": 24,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "5"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -526,6 +634,10 @@
     "mobile": "9769106243",
     "age": 29,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "7"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -545,6 +657,10 @@
     "mobile": "9022896516",
     "age": 32,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "11"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -564,6 +680,10 @@
     "mobile": "7021279719",
     "age": 30,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "13"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -583,6 +703,10 @@
     "mobile": "8080583112",
     "age": 32,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "17"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -602,6 +726,10 @@
     "mobile": "8879275352",
     "age": 30,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "23"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -621,6 +749,10 @@
     "mobile": "9022762996",
     "age": 26,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "24"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -640,6 +772,10 @@
     "mobile": "9870771209",
     "age": 33,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "27"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -659,6 +795,10 @@
     "mobile": "9833538127",
     "age": 29,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "28"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -678,6 +818,10 @@
     "mobile": "9033361318",
     "age": 29,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "35"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -697,6 +841,10 @@
     "mobile": "8879148090",
     "age": 29,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "38"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -716,6 +864,10 @@
     "mobile": "9619714320",
     "age": 29,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "41"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -735,6 +887,10 @@
     "mobile": "9326320448",
     "age": 24,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "45"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -754,6 +910,10 @@
     "mobile": "9960217435",
     "age": 32,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "49"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -773,6 +933,10 @@
     "mobile": "9619378988",
     "age": 32,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "51"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -792,6 +956,10 @@
     "mobile": "8657433288",
     "age": 24,
     "basePrice": 500000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "57"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -811,6 +979,10 @@
     "mobile": "9167961127",
     "age": 43,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "9"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -830,6 +1002,10 @@
     "mobile": "9979455361",
     "age": 40,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "14"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -849,6 +1025,10 @@
     "mobile": "9892330554",
     "age": 51,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "16"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -868,6 +1048,10 @@
     "mobile": "9699135099",
     "age": 35,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "18"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -887,6 +1071,10 @@
     "mobile": "9324344331",
     "age": 48,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "21"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -906,6 +1094,10 @@
     "mobile": "8169989176",
     "age": 45,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "22"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -925,6 +1117,10 @@
     "mobile": "8169475567",
     "age": 47,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "30"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -944,6 +1140,10 @@
     "mobile": "9870202759",
     "age": 37,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "31"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -963,6 +1163,10 @@
     "mobile": "7021589802",
     "age": 40,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "32"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -982,6 +1186,10 @@
     "mobile": "9699229646",
     "age": 38,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "34"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -1001,6 +1209,10 @@
     "mobile": "9321131193",
     "age": 38,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "47"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -1020,6 +1232,10 @@
     "mobile": "9967811108",
     "age": 36,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "48"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -1039,6 +1255,10 @@
     "mobile": "9920121458",
     "age": 42,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "52"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -1058,6 +1278,10 @@
     "mobile": "9833806793",
     "age": 36,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "53"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -1077,6 +1301,10 @@
     "mobile": "9869027175",
     "age": 53,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "54"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -1096,6 +1324,10 @@
     "mobile": "9769699692",
     "age": 34,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "58"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,
@@ -1115,6 +1347,10 @@
     "mobile": "9833224507",
     "age": 45,
     "basePrice": 2000000,
+    "customFields": {
+      "x_gender": "Female",
+      "x_seat": "59"
+    },
     "status": "not-auctioned",
     "bids": [],
     "finalPrice": null,

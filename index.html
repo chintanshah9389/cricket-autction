@@ -90,17 +90,33 @@
                     </header>
 
                     <div class="sections player-meta-bar" id="players-data-section">
-                        <article class="player-stat">
+                        <article class="player-stat" data-player-field="role">
                             <div class="player-data-head"><span>Role</span></div>
                             <span class="player-data-info" id="player-role">Batter</span>
                         </article>
-                        <article class="player-stat">
+                        <article class="player-stat" data-player-field="currentClub">
                             <div class="player-data-head"><span>Location</span></div>
                             <span class="player-data-info" id="player-location">—</span>
                         </article>
-                        <article class="player-stat">
+                        <article class="player-stat" data-player-field="mobile">
                             <div class="player-data-head"><span>Mobile</span></div>
                             <span class="player-data-info" id="player-mobile">—</span>
+                        </article>
+                        <article class="player-stat" data-player-field="age" hidden>
+                            <div class="player-data-head"><span>Age</span></div>
+                            <span class="player-data-info" id="player-age">—</span>
+                        </article>
+                        <article class="player-stat" data-player-field="ageCategory" hidden>
+                            <div class="player-data-head"><span>Age cat.</span></div>
+                            <span class="player-data-info" id="player-age-category">—</span>
+                        </article>
+                        <article class="player-stat" data-player-field="battingStyle" hidden>
+                            <div class="player-data-head"><span>Batting</span></div>
+                            <span class="player-data-info" id="player-batting">—</span>
+                        </article>
+                        <article class="player-stat" data-player-field="bowlingStyle" hidden>
+                            <div class="player-data-head"><span>Bowling</span></div>
+                            <span class="player-data-info" id="player-bowling">—</span>
                         </article>
                     </div>
 
@@ -345,12 +361,12 @@
         </div>
     </div>
 
-    <script src="js/money.js?v=13"></script>
-    <script src="js/config-store.js?v=13"></script>
-    <script src="js/project-store.js?v=13"></script>
-    <script src="js/players-store.js?v=13"></script>
-    <script src="js/offline-store.js?v=13"></script>
-    <script src="app.js?v=13"></script>
+    <script src="js/money.js?v=17"></script>
+    <script src="js/config-store.js?v=23"></script>
+    <script src="js/project-store.js?v=22"></script>
+    <script src="js/players-store.js?v=28"></script>
+    <script src="js/offline-store.js?v=20"></script>
+    <script src="app.js?v=23"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

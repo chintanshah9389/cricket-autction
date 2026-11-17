@@ -348,7 +348,7 @@ body.teams-drawer-locked .big-container {
 #players-data-section,
 .player-meta-bar {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 0;
     align-items: stretch;
     width: 100%;
@@ -372,7 +372,12 @@ body.teams-drawer-locked .big-container {
     box-shadow: none;
 }
 
-.player-stat:last-child {
+.player-stat[hidden] {
+    display: none !important;
+}
+
+.player-stat:last-child,
+.player-stat:nth-last-child(1 of :not([hidden])) {
     border-right: none;
 }
 

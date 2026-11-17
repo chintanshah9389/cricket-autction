@@ -32,12 +32,36 @@ const fixCategoriesFromIdBtn = document.getElementById("fix-categories-from-id-b
 const exportPackBtn = document.getElementById("export-pack-btn");
 const importPackBtn = document.getElementById("import-pack-btn");
 const packFile = document.getElementById("pack-file");
+const bulkDeleteBtn = document.getElementById("bulk-delete-btn");
+const excelColumnsHelp = document.getElementById("excel-columns-help");
 
 let playersCache = [];
 let editingKey = "";
 let teamLookup = new Map(); // team_id -> { name, color }
 let activeDivisionId = "div_1";
 let divisionsCache = [];
+let selectedPlayerKeys = new Set();
+let lastDetectedExcelColumns = [];
+
+function getActiveDivisionConfigSlice() {
+    return divisionsCache.find((item) => item.id === activeDivisionId) || null;
+}
+
+function updateExcelColumnsHelp(detectedColumns = null) {
+    if (!excelColumnsHelp) return;
+    if (Array.isArray(detectedColumns) && detectedColumns.length) {
+        lastDetectedExcelColumns = detectedColumns.slice();
+    }
+    const expected =
+        typeof getExpectedSpreadsheetColumns === "function"
+            ? getExpectedSpreadsheetColumns(getActiveDivisionConfigSlice()?.playerFields)
+            : ["ID", "Player", "CATEGORY"];
+    if (lastDetectedExcelColumns.length) {
+        excelColumnsHelp.textContent = `Excel headers: ${lastDetectedExcelColumns.join(", ")}. Matched fields for this division: ${expected.join(", ")}.`;
+    } else {
+        excelColumnsHelp.textContent = `Expected columns for this division: ${expected.join(", ")}. Upload Excel to detect sheet headers automatically.`;
+    }
+}
 
 function setOfflineStatus(message, isError = false) {
     if (!offlineStatus) return;
@@ -86,6 +110,7 @@ function renderPlayersDivisionTabs() {
             if (division.id === activeDivisionId) return;
             activeDivisionId = division.id;
             playersCache = [];
+            selectedPlayerKeys = new Set();
             try {
                 const config = await getAuctionConfig();
                 const next = setActiveDivisionId(config, activeDivisionId);
@@ -94,8 +119,10 @@ function renderPlayersDivisionTabs() {
                 // still switch local view
             }
             // Load this division first, then refresh tab counts
+            lastDetectedExcelColumns = [];
             await refreshPlayers();
             renderPlayersDivisionTabs();
+            updateExcelColumnsHelp();
         });
         playersDivisionTabs.appendChild(button);
     });
@@ -267,6 +294,65 @@ function escapeHtml(value) {
         .replace(/"/g, "&quot;");
 }
 
+function getActiveDivisionPlayerFields() {
+    const division = divisionsCache.find((item) => item.id === activeDivisionId);
+    if (typeof normalizePlayerFields === "function") {
+        return normalizePlayerFields(division?.playerFields);
+    }
+    return division?.playerFields || {};
+}
+
+function applyPlayersFormFieldPolicy() {
+    const fields = getActiveDivisionPlayerFields();
+    const map = {
+        role: "form-role",
+        currentClub: "form-club",
+        mobile: "form-mobile",
+        age: "form-age",
+        ageCategory: "form-age-category",
+        battingStyle: "form-batting",
+        bowlingStyle: "form-bowling",
+        basePrice: "form-base-price",
+        photo: "form-photo"
+    };
+    Object.keys(map).forEach((key) => {
+        const wrap = document.querySelector(`[data-player-field="${key}"]`);
+        const input = document.getElementById(map[key]);
+        const visible = fields[key]?.visible !== false;
+        const required = visible && fields[key]?.required === true;
+        if (wrap) wrap.hidden = !visible;
+        if (input) {
+            if (required) input.setAttribute("required", "required");
+            else input.removeAttribute("required");
+        }
+    });
+}
+
+function validateRequiredPlayerFields(player) {
+    const fields = getActiveDivisionPlayerFields();
+    const checks = [
+        { key: "role", value: player.role, label: "Role" },
+        { key: "currentClub", value: player.currentClub, label: "Location" },
+        { key: "mobile", value: player.mobile, label: "Mobile" },
+        { key: "age", value: player.age, label: "Age" },
+        { key: "ageCategory", value: player.ageCategory, label: "Age category" },
+        { key: "battingStyle", value: player.battingStyle, label: "Batting" },
+        { key: "bowlingStyle", value: player.bowlingStyle, label: "Bowling" },
+        { key: "basePrice", value: player.basePrice, label: "Base price" },
+        { key: "photo", value: player.photo, label: "Photo" }
+    ];
+    for (const item of checks) {
+        const required = fields[item.key]?.visible !== false && fields[item.key]?.required === true;
+        if (!required) continue;
+        const empty =
+            item.value == null ||
+            item.value === "" ||
+            item.value === "N/A";
+        if (empty) return `${item.label} is required for this division.`;
+    }
+    return null;
+}
+
 function getFormPlayer() {
     const code = document.getElementById("form-code").value.trim();
     const baseRaw = document.getElementById("form-base-price").value.trim();
@@ -401,51 +487,270 @@ function getFilteredPlayers() {
     });
 }
 
+function playerRowKey(player) {
+    return String(player?.code || player?.id || "");
+}
+
+const PLAYERS_TABLE_DATA_COLUMNS = [
+    { key: "photo", label: "Photo" },
+    { key: "role", label: "Role" },
+    { key: "age", label: "Age" },
+    { key: "ageCategory", label: "Age cat." },
+    { key: "mobile", label: "Mobile" },
+    { key: "currentClub", label: "Location" },
+    { key: "basePrice", label: "Base" },
+    { key: "battingStyle", label: "Batting" },
+    { key: "bowlingStyle", label: "Bowling" }
+];
+
+function playerFieldHasValue(player, fieldKey) {
+    if (typeof playerRecordHasFieldValue === "function") {
+        return playerRecordHasFieldValue(player, fieldKey);
+    }
+    if (!player) return false;
+    const value =
+        typeof getPlayerFieldDisplayValue === "function"
+            ? getPlayerFieldDisplayValue(player, fieldKey)
+            : player[fieldKey];
+    if (value == null) return false;
+    const text = String(value).trim();
+    if (!text || text === "—" || text.toUpperCase() === "N/A") return false;
+    if (fieldKey === "photo" && /placeholder\.png/i.test(text)) return false;
+    return true;
+}
+
+function mapExcelHeadersToFieldKeys(headers) {
+    const keys = new Set();
+    const aliases =
+        typeof PLAYER_FIELD_ALIASES === "object" && PLAYER_FIELD_ALIASES ? PLAYER_FIELD_ALIASES : {};
+    (headers || []).forEach((header) => {
+        const normalized =
+            typeof normalizeHeaderKey === "function"
+                ? normalizeHeaderKey(header)
+                : String(header || "")
+                      .trim()
+                      .toLowerCase();
+        if (typeof isKnownSpreadsheetHeader === "function" && !isKnownSpreadsheetHeader(header)) {
+            const key =
+                String(header).startsWith("x_")
+                    ? header
+                    : typeof toCustomFieldKey === "function"
+                      ? toCustomFieldKey(header)
+                      : header;
+            keys.add(key);
+            return;
+        }
+        Object.keys(aliases).forEach((fieldKey) => {
+            const list = aliases[fieldKey] || [];
+            if (list.some((alias) => normalizeHeaderKey(alias) === normalized)) {
+                keys.add(fieldKey);
+            }
+        });
+    });
+    return keys;
+}
+
+/** Data columns follow Config playerFields (synced from Excel/roster), with Excel/data as fallback. */
+function getDynamicPlayersDataColumns(players = playersCache) {
+    const fields = getActiveDivisionPlayerFields();
+    const excelKeys = mapExcelHeadersToFieldKeys(lastDetectedExcelColumns);
+    const baseColumns = PLAYERS_TABLE_DATA_COLUMNS.filter(({ key }) => {
+        if (fields?.[key]?.visible === true) return true;
+        if (excelKeys.has(key)) return true;
+        return (players || []).some((player) => playerFieldHasValue(player, key));
+    });
+
+    const knownKeys = new Set(baseColumns.map((col) => col.key));
+    const customColumns = [];
+    const addCustom = (key, label) => {
+        if (!key || knownKeys.has(key)) return;
+        knownKeys.add(key);
+        customColumns.push({
+            key,
+            label:
+                label ||
+                fields?.[key]?.label ||
+                (typeof getPlayerFieldLabel === "function"
+                    ? getPlayerFieldLabel(key, fields)
+                    : key)
+        });
+    };
+
+    Object.keys(fields || {}).forEach((key) => {
+        if (!(fields[key]?.custom === true || String(key).startsWith("x_"))) return;
+        if (fields[key]?.visible === false && !excelKeys.has(key)) return;
+        if (fields[key]?.visible === true || excelKeys.has(key) || (players || []).some((p) => playerFieldHasValue(p, key))) {
+            addCustom(key, fields[key]?.label);
+        }
+    });
+    excelKeys.forEach((key) => {
+        if (!String(key).startsWith("x_")) return;
+        addCustom(key);
+    });
+    (players || []).forEach((player) => {
+        Object.keys(player?.customFields || {}).forEach((key) => {
+            if (playerFieldHasValue(player, key)) addCustom(key);
+        });
+    });
+
+    return [...baseColumns, ...customColumns];
+}
+
+/** Keep Config “Show on auction” toggles aligned with Excel/roster for this division. */
+async function syncConfigPlayerFieldsFromRoster() {
+    if (typeof applyPlayerFieldsFromSpreadsheet !== "function") return null;
+    const presence =
+        typeof buildPlayerFieldPresenceFromRoster === "function"
+            ? buildPlayerFieldPresenceFromRoster(playersCache, lastDetectedExcelColumns)
+            : null;
+    if (!presence) return null;
+
+    let config = await getAuctionConfig();
+    if (typeof setActiveDivisionId === "function") {
+        config = setActiveDivisionId(config, activeDivisionId);
+    }
+    const beforeDiv = typeof getActiveDivision === "function" ? getActiveDivision(config) : null;
+    const before = JSON.stringify(beforeDiv?.playerFields || {});
+    config = applyPlayerFieldsFromSpreadsheet(config, activeDivisionId, presence);
+    const afterDiv = typeof getActiveDivision === "function" ? getActiveDivision(config) : null;
+    const after = JSON.stringify(afterDiv?.playerFields || {});
+    if (before !== after) {
+        saveAuctionConfig(config);
+        if (typeof flushProjectPersistQueue === "function") {
+            await flushProjectPersistQueue();
+        }
+    }
+    divisionsCache = listDivisions(config);
+    return config;
+}
+
+function getPlayersTableHeadRow() {
+    return document.getElementById("players-table-head-row");
+}
+
+function renderPlayersTableHeader(dataColumns) {
+    const headRow = getPlayersTableHeadRow();
+    if (!headRow) return;
+    const dataHeads = dataColumns
+        .map((col) => `<th data-col-field="${escapeHtml(col.key)}">${escapeHtml(col.label)}</th>`)
+        .join("");
+    headRow.innerHTML = `
+        <th class="col-select">
+            <input id="select-all-players" type="checkbox" title="Select all shown" aria-label="Select all shown players">
+        </th>
+        <th>Code</th>
+        <th>Player</th>
+        <th>Category</th>
+        ${dataHeads}
+        <th>Status</th>
+        <th>Team</th>
+        <th>Sold for</th>
+        <th>Actions</th>
+    `;
+    const selectAll = document.getElementById("select-all-players");
+    selectAll?.addEventListener("change", () => {
+        const filtered = getFilteredPlayers();
+        if (selectAll.checked) {
+            filtered.forEach((player) => {
+                const key = playerRowKey(player);
+                if (key) selectedPlayerKeys.add(key);
+            });
+        } else {
+            filtered.forEach((player) => selectedPlayerKeys.delete(playerRowKey(player)));
+        }
+        renderPlayersTable();
+    });
+}
+
+function formatPlayersTableCell(player, fieldKey) {
+    if (fieldKey === "photo") {
+        return `<img src="${resolvePhotoSrc(player.photo)}" data-photo-ref="${escapeHtml(player.photo || "")}" alt="" onerror="this.src='../assets/placeholder.png'">`;
+    }
+    if (fieldKey === "basePrice") {
+        if (player.basePrice != null && typeof showAmount === "function") {
+            return escapeHtml(showAmount(player.basePrice));
+        }
+        return escapeHtml(player.basePrice ?? "—");
+    }
+    const value =
+        typeof getPlayerFieldDisplayValue === "function"
+            ? getPlayerFieldDisplayValue(player, fieldKey)
+            : player?.[fieldKey];
+    if (value == null || String(value).trim() === "") return "—";
+    return escapeHtml(String(value));
+}
+
+function syncBulkDeleteControls(filtered = getFilteredPlayers()) {
+    const visibleKeys = filtered.map(playerRowKey).filter(Boolean);
+    const selectedVisible = visibleKeys.filter((key) => selectedPlayerKeys.has(key));
+    const selectAllPlayersEl = document.getElementById("select-all-players");
+    if (bulkDeleteBtn) {
+        const count = selectedPlayerKeys.size;
+        bulkDeleteBtn.disabled = count === 0;
+        bulkDeleteBtn.textContent = count ? `Delete selected (${count})` : "Delete selected";
+    }
+    if (selectAllPlayersEl) {
+        selectAllPlayersEl.checked = visibleKeys.length > 0 && selectedVisible.length === visibleKeys.length;
+        selectAllPlayersEl.indeterminate =
+            selectedVisible.length > 0 && selectedVisible.length < visibleKeys.length;
+    }
+}
+
 function renderPlayersTable() {
     const filtered = getFilteredPlayers();
+    const validKeys = new Set(playersCache.map(playerRowKey).filter(Boolean));
+    selectedPlayerKeys = new Set([...selectedPlayerKeys].filter((key) => validKeys.has(key)));
+
     const breakdown = formatCategoryBreakdown(playersCache);
+    const selectedNote = selectedPlayerKeys.size ? ` · ${selectedPlayerKeys.size} selected` : "";
     playersCount.textContent =
         `${playersCache.length} player${playersCache.length === 1 ? "" : "s"}` +
         (filtered.length !== playersCache.length ? ` · showing ${filtered.length}` : "") +
+        selectedNote +
         (breakdown ? ` · ${breakdown}` : "");
+
+    const dataColumns = getDynamicPlayersDataColumns(playersCache);
+    // Fixed: select + code + player + category + status + team + sold + actions (=8)
+    const colCount = 8 + dataColumns.length;
+    renderPlayersTableHeader(dataColumns);
 
     if (!filtered.length) {
         playersTableBody.innerHTML = `
             <tr>
-                <td colspan="16" style="text-align:center;color:#73849a;padding:28px;white-space:normal;">
+                <td colspan="${colCount}" style="text-align:center;color:#73849a;padding:28px;white-space:normal;">
                     No players found. Reload data/players.json, upload CSV/Excel, or add a player.
                 </td>
             </tr>
         `;
+        syncBulkDeleteControls(filtered);
         return;
     }
 
     playersTableBody.innerHTML = filtered.map((player) => {
-        const key = player.code || player.id;
+        const key = playerRowKey(player);
         const isEditing = String(key) === String(editingKey);
-        const baseText = player.basePrice != null && typeof showAmount === "function"
-            ? showAmount(player.basePrice)
-            : (player.basePrice ?? "—");
+        const isSelected = selectedPlayerKeys.has(key);
         const soldText = player.soldFor != null && typeof showAmount === "function"
             ? showAmount(player.soldFor)
             : (player.soldFor != null ? String(player.soldFor) : "—");
         const teamName = player.teamName || (player.status === "sold" ? getTeamName(player.team) : "");
         const teamColor = getTeamColor(player.team);
         const status = player.status || "not-auctioned";
+        const dataCells = dataColumns
+            .map(
+                (col) =>
+                    `<td data-col-field="${escapeHtml(col.key)}">${formatPlayersTableCell(player, col.key)}</td>`
+            )
+            .join("");
         return `
-            <tr class="${isEditing ? "is-editing" : ""}" data-row-key="${escapeHtml(key)}">
-                <td><img src="${resolvePhotoSrc(player.photo)}" data-photo-ref="${escapeHtml(player.photo || "")}" alt="" onerror="this.src='../assets/placeholder.png'"></td>
+            <tr class="${isEditing ? "is-editing" : ""}${isSelected ? " is-selected" : ""}" data-row-key="${escapeHtml(key)}">
+                <td class="col-select">
+                    <input type="checkbox" class="row-select" data-select-key="${escapeHtml(key)}" ${isSelected ? "checked" : ""} aria-label="Select ${escapeHtml(player.name || key)}">
+                </td>
                 <td>${escapeHtml(player.code || player.id)}</td>
                 <td class="player-cell"><strong>${escapeHtml(player.name)}</strong></td>
-                <td>${escapeHtml(player.role || "—")}</td>
                 <td>${escapeHtml(displayCategoryName(player.category))}</td>
-                <td>${escapeHtml(player.age ?? "—")}</td>
-                <td>${escapeHtml(player.ageCategory || "—")}</td>
-                <td>${escapeHtml(player.mobile || "—")}</td>
-                <td>${escapeHtml(player.currentClub || "—")}</td>
-                <td>${escapeHtml(baseText)}</td>
-                <td>${escapeHtml(player.battingStyle || "—")}</td>
-                <td>${escapeHtml(player.bowlingStyle || "—")}</td>
+                ${dataCells}
                 <td><span class="status-pill" data-status="${escapeHtml(status)}">${escapeHtml(status)}</span></td>
                 <td>
                     <span class="team-pill" data-empty="${teamName ? "false" : "true"}" style="${teamName ? `background:${teamColor}22;color:${teamColor}` : ""}">
@@ -463,6 +768,8 @@ function renderPlayersTable() {
         `;
     }).join("");
 
+    syncBulkDeleteControls(filtered);
+
     if (typeof hydratePhotoElements === "function") {
         hydratePhotoElements(playersTableBody, {
             divisionId: activeDivisionId,
@@ -472,13 +779,27 @@ function renderPlayersTable() {
     refreshOfflinePhotoStatus();
 }
 
-function persistAndRefresh(list, message) {
-    const saved = saveStoredPlayers(list, activeDivisionId);
+function persistAndRefresh(list, message, options = {}) {
+    const saved = saveStoredPlayers(list, activeDivisionId, options);
     playersCache = enrichPlayers(saved);
     updateFilterOptions();
     renderPlayersTable();
     renderPlayersDivisionTabs();
     if (message) setStatus(message);
+    return saved;
+}
+
+async function persistAndRefreshToDisk(list, message, options = {}) {
+    const saved =
+        typeof saveStoredPlayersToDisk === "function"
+            ? await saveStoredPlayersToDisk(list, activeDivisionId, options)
+            : saveStoredPlayers(list, activeDivisionId, options);
+    playersCache = enrichPlayers(saved);
+    updateFilterOptions();
+    renderPlayersTable();
+    renderPlayersDivisionTabs();
+    if (message) setStatus(message);
+    return saved;
 }
 
 async function fetchFilePlayers() {
@@ -490,6 +811,12 @@ async function fetchFilePlayers() {
 }
 
 async function refreshPlayers({ preferFile = false } = {}) {
+    try {
+        const config = await getAuctionConfig();
+        divisionsCache = typeof listDivisions === "function" ? listDivisions(config) : config.divisions || divisionsCache;
+    } catch (_) {
+        // keep previous divisionsCache
+    }
     const divisionName =
         divisionsCache.find((division) => division.id === activeDivisionId)?.name || "division";
     try {
@@ -500,6 +827,7 @@ async function refreshPlayers({ preferFile = false } = {}) {
                 `Loaded ${filePlayers.length} players from data/players.json into ${divisionName}`
             );
             resetForm();
+            applyPlayersFormFieldPolicy();
             renderPlayersDivisionTabs();
             return;
         }
@@ -507,9 +835,14 @@ async function refreshPlayers({ preferFile = false } = {}) {
         // Always use this division's own list (including empty). Never borrow Main's file pool.
         const stored = loadStoredPlayers(activeDivisionId);
         playersCache = enrichPlayers(Array.isArray(stored) ? stored : []);
+        if (playersCache.length) {
+            await syncConfigPlayerFieldsFromRoster();
+        }
         updateFilterOptions();
         renderPlayersTable();
+        applyPlayersFormFieldPolicy();
         renderPlayersDivisionTabs();
+        updateExcelColumnsHelp();
         const soldCount = playersCache.filter((p) => p.status === "sold").length;
         setStatus(
             playersCache.length
@@ -521,6 +854,7 @@ async function refreshPlayers({ preferFile = false } = {}) {
         playersCache = [];
         updateFilterOptions();
         renderPlayersTable();
+        applyPlayersFormFieldPolicy();
         renderPlayersDivisionTabs();
         setStatus(error.message || "Could not load players.", true);
     }
@@ -550,10 +884,39 @@ async function runImport(mode) {
     try {
         setStatus(`Reading ${file.name}...`);
         const rows = await parseSpreadsheetFile(file);
+        const detectedColumns =
+            typeof getDetectedSpreadsheetColumns === "function"
+                ? getDetectedSpreadsheetColumns(rows)
+                : Object.keys(rows[0] || {});
+        updateExcelColumnsHelp(detectedColumns);
         const hasCategoryCol = rows.some((row) => rowHasCategoryColumn?.(row));
-        const config = await getAuctionConfig();
+        let config = await getAuctionConfig();
+
+        // Turn on auction Player fields that exist in this Excel/CSV
+        if (typeof detectPlayerFieldPresenceFromRows === "function" &&
+            typeof applyPlayerFieldsFromSpreadsheet === "function") {
+            const presence = detectPlayerFieldPresenceFromRows(rows);
+            config = applyPlayerFieldsFromSpreadsheet(config, activeDivisionId, presence);
+            if (typeof setActiveDivisionId === "function") {
+                config = setActiveDivisionId(config, activeDivisionId);
+            }
+            saveAuctionConfig(config);
+            if (typeof flushProjectPersistQueue === "function") {
+                await flushProjectPersistQueue();
+            }
+            divisionsCache = listDivisions(config);
+            updateExcelColumnsHelp(detectedColumns);
+            applyPlayersFormFieldPolicy();
+        }
+
         let saved = importPlayerRows(rows, { mode, config, divisionId: activeDivisionId });
         const catSummary = formatCategoryBreakdown(saved);
+        const shownFields =
+            typeof getExpectedSpreadsheetColumns === "function"
+                ? getExpectedSpreadsheetColumns(
+                      divisionsCache.find((d) => d.id === activeDivisionId)?.playerFields
+                  ).join(", ")
+                : "";
         const risingCount = saved.filter(
             (player) => normalizeCategoryName(player.category) === "RISING STAR"
         ).length;
@@ -583,20 +946,24 @@ async function runImport(mode) {
                     `Imported ${saved.length} players (${mode}). ${formatCategoryBreakdown(saved)}. ` +
                         `Photos: ${result.cached}` +
                         (result.failed ? `, ${result.failed} skipped` : "") +
-                        ". Start New Auction to apply."
+                        `. Config “Show on auction” synced${shownFields ? ` (${shownFields})` : ""}. Start New Auction to apply on the desk.`
                 );
             } catch (photoError) {
                 setStatus(
-                    `Imported ${saved.length} players (${mode}). ${catSummary}. Photos not saved yet — ${photoError.message || "start node server.js and click Save photos to assets."}`,
+                    `Imported ${saved.length} players (${mode}). ${catSummary}. Photos not saved yet — ${photoError.message || "start node server.js and click Save photos to assets."} Config fields synced; then Start New Auction.`,
                     true
                 );
             }
         } else {
-            setStatus(`Imported ${saved.length} players (${mode}). ${catSummary}. Start New Auction to apply.`);
+            setStatus(
+                `Imported ${saved.length} players (${mode}). ${catSummary}. Config “Show on auction” synced${shownFields ? ` (${shownFields})` : ""}. Start New Auction to load on the desk.`
+            );
         }
         playersCache = enrichPlayers(saved);
         updateFilterOptions();
         renderPlayersTable();
+        applyPlayersFormFieldPolicy();
+        renderPlayersDivisionTabs();
         resetForm();
     } catch (error) {
         console.error(error);
@@ -621,27 +988,61 @@ function toCsvValue(value) {
 }
 
 function exportPlayersCsv(list) {
-    const headers = [
-        "ID", "Skill", "Player", "Mobile", "Age", "Location",
-        "Player photo", "CATEGORY", "AGE-CATEGORY", "Batting", "Bowling", "Base price", "Status"
+    const fieldKeys = ["id", "name", "category", ...((typeof getVisiblePlayerFieldKeys === "function"
+        ? getVisiblePlayerFieldKeys(getActiveDivisionConfigSlice()?.playerFields)
+        : ["role", "mobile", "age", "currentClub", "photo", "ageCategory", "battingStyle", "bowlingStyle", "basePrice"]))];
+    const order = [
+        "id",
+        "role",
+        "name",
+        "mobile",
+        "age",
+        "currentClub",
+        "photo",
+        "category",
+        "ageCategory",
+        "battingStyle",
+        "bowlingStyle",
+        "basePrice"
     ];
+    const ordered = order.filter((key) => fieldKeys.includes(key));
+    const headerMap =
+        typeof PLAYER_FIELD_EXPORT_HEADERS === "object" && PLAYER_FIELD_EXPORT_HEADERS
+            ? PLAYER_FIELD_EXPORT_HEADERS
+            : {
+                  id: "ID",
+                  name: "Player",
+                  role: "Skill",
+                  category: "CATEGORY",
+                  currentClub: "Location",
+                  mobile: "Mobile",
+                  age: "Age",
+                  ageCategory: "AGE-CATEGORY",
+                  battingStyle: "Batting",
+                  bowlingStyle: "Bowling",
+                  basePrice: "Base price",
+                  photo: "Player photo"
+              };
+    const headers = [...ordered.map((key) => headerMap[key] || key), "Status"];
     const lines = [headers.join(",")];
     list.forEach((player) => {
-        lines.push([
-            player.code || player.id,
-            player.role,
-            player.name,
-            player.mobile,
-            player.age,
-            player.currentClub,
-            player.photo,
-            player.category,
-            player.ageCategory,
-            player.battingStyle,
-            player.bowlingStyle,
-            player.basePrice,
-            player.status
-        ].map(toCsvValue).join(","));
+        const values = ordered.map((key) => {
+            if (key === "id") return player.code || player.id;
+            if (key === "name") return player.name;
+            if (key === "role") return player.role;
+            if (key === "category") return player.category;
+            if (key === "currentClub") return player.currentClub;
+            if (key === "mobile") return player.mobile;
+            if (key === "age") return player.age;
+            if (key === "ageCategory") return player.ageCategory;
+            if (key === "battingStyle") return player.battingStyle;
+            if (key === "bowlingStyle") return player.bowlingStyle;
+            if (key === "basePrice") return player.basePrice;
+            if (key === "photo") return player.photo;
+            return "";
+        });
+        values.push(player.status);
+        lines.push(values.map(toCsvValue).join(","));
     });
     downloadTextFile("players-export.csv", lines.join("\n"), "text/csv");
 }
@@ -655,15 +1056,66 @@ function findPlayer(key) {
 async function deletePlayerByKey(key) {
     const victim = findPlayer(key);
     const code = victim ? String(victim.code || victim.id || key) : String(key);
-    if (typeof deletePlayerPhotoFile === "function") {
-        await deletePlayerPhotoFile(activeDivisionId, code).catch(() => {});
+    try {
+        if (typeof deletePlayerPhotoFile === "function") {
+            await deletePlayerPhotoFile(activeDivisionId, code, victim?.photo).catch(() => {});
+        }
+        const next = playersCache.filter(
+            (player) => String(player.code) !== String(key) && String(player.id) !== String(key)
+        );
+        selectedPlayerKeys.delete(String(key));
+        await persistAndRefreshToDisk(next, "Player deleted from list and disk.", {
+            resetAuction: true
+        });
+        if (String(editingKey) === String(key)) resetForm();
+        refreshOfflinePhotoStatus();
+    } catch (error) {
+        setStatus(error.message || "Could not delete player from disk.", true);
     }
-    const next = playersCache.filter(
-        (player) => String(player.code) !== String(key) && String(player.id) !== String(key)
+}
+
+async function deleteSelectedPlayers() {
+    const keys = [...selectedPlayerKeys];
+    if (!keys.length) {
+        setStatus("Select at least one player to delete.", true);
+        return;
+    }
+    if (
+        !confirm(
+            `Delete ${keys.length} selected player${keys.length === 1 ? "" : "s"} from this division and from disk (players.json + photos)?`
+        )
+    ) {
+        return;
+    }
+
+    const keySet = new Set(keys.map(String));
+    const victims = playersCache.filter(
+        (player) => keySet.has(String(player.code)) || keySet.has(String(player.id))
     );
-    persistAndRefresh(next, "Player deleted.");
-    if (String(editingKey) === String(key)) resetForm();
-    refreshOfflinePhotoStatus();
+
+    try {
+        if (typeof deletePlayerPhotoFile === "function") {
+            for (const player of victims) {
+                const code = String(player.code || player.id || "");
+                if (!code) continue;
+                await deletePlayerPhotoFile(activeDivisionId, code, player.photo).catch(() => {});
+            }
+        }
+
+        const next = playersCache.filter(
+            (player) => !keySet.has(String(player.code)) && !keySet.has(String(player.id))
+        );
+        if (editingKey && keySet.has(String(editingKey))) resetForm();
+        selectedPlayerKeys = new Set();
+        await persistAndRefreshToDisk(
+            next,
+            `Deleted ${victims.length} player${victims.length === 1 ? "" : "s"} from list and disk.`,
+            { resetAuction: true }
+        );
+        refreshOfflinePhotoStatus();
+    } catch (error) {
+        setStatus(error.message || "Could not delete selected players from disk.", true);
+    }
 }
 
 importReplaceBtn.addEventListener("click", () => runImport("replace"));
@@ -674,7 +1126,12 @@ reloadFileBtn.addEventListener("click", () => {
 });
 
 downloadTemplateBtn.addEventListener("click", () => {
-    downloadTextFile("players-template.csv", getPlayersTemplateCsv(), "text/csv");
+    const fields = getActiveDivisionConfigSlice()?.playerFields;
+    downloadTextFile(
+        "players-template.csv",
+        getPlayersTemplateCsv(fields),
+        "text/csv"
+    );
 });
 
 exportJsonBtn.addEventListener("click", () => {
@@ -701,16 +1158,24 @@ clearPlayersBtn.addEventListener("click", async () => {
         if (typeof deleteDivisionOfflineMedia === "function") {
             await deleteDivisionOfflineMedia(activeDivisionId);
         }
-    } catch (_) {
-        // still clear player list even if folder delete fails
+        if (typeof clearStoredPlayersFromDisk === "function") {
+            await clearStoredPlayersFromDisk(activeDivisionId);
+        } else {
+            clearStoredPlayers(activeDivisionId);
+            if (typeof flushProjectPersistQueue === "function") {
+                await flushProjectPersistQueue();
+            }
+        }
+        playersCache = [];
+        selectedPlayerKeys = new Set();
+        updateFilterOptions();
+        renderPlayersTable();
+        resetForm();
+        setStatus("Player list, players.json, and division photo folder cleared on disk.");
+        refreshOfflinePhotoStatus();
+    } catch (error) {
+        setStatus(error.message || "Could not clear players from disk.", true);
     }
-    clearStoredPlayers(activeDivisionId);
-    playersCache = [];
-    updateFilterOptions();
-    renderPlayersTable();
-    resetForm();
-    setStatus("Player list and division photo folder cleared.");
-    refreshOfflinePhotoStatus();
 });
 
 playersSearch.addEventListener("input", renderPlayersTable);
@@ -718,6 +1183,30 @@ categoryFilter.addEventListener("change", renderPlayersTable);
 roleFilter.addEventListener("change", renderPlayersTable);
 statusFilter?.addEventListener("change", renderPlayersTable);
 teamFilter?.addEventListener("change", renderPlayersTable);
+
+bulkDeleteBtn?.addEventListener("click", () => {
+    deleteSelectedPlayers();
+});
+
+playersTableBody.addEventListener("change", (event) => {
+    const checkbox = event.target.closest(".row-select");
+    if (!checkbox) return;
+    const key = String(checkbox.dataset.selectKey || "");
+    if (!key) return;
+    if (checkbox.checked) selectedPlayerKeys.add(key);
+    else selectedPlayerKeys.delete(key);
+    const row = checkbox.closest("tr");
+    if (row) row.classList.toggle("is-selected", checkbox.checked);
+    syncBulkDeleteControls();
+    const filtered = getFilteredPlayers();
+    const selectedNote = selectedPlayerKeys.size ? ` · ${selectedPlayerKeys.size} selected` : "";
+    const breakdown = formatCategoryBreakdown(playersCache);
+    playersCount.textContent =
+        `${playersCache.length} player${playersCache.length === 1 ? "" : "s"}` +
+        (filtered.length !== playersCache.length ? ` · showing ${filtered.length}` : "") +
+        selectedNote +
+        (breakdown ? ` · ${breakdown}` : "");
+});
 
 document.getElementById("form-photo").addEventListener("input", (event) => {
     formPhotoPreview.src = resolvePhotoSrc(event.target.value);
@@ -758,6 +1247,11 @@ playerForm.addEventListener("submit", (event) => {
     const draft = getFormPlayer();
     if (!draft.name || !draft.code) {
         setStatus("Code and player name are required.", true);
+        return;
+    }
+    const requiredError = validateRequiredPlayerFields(draft);
+    if (requiredError) {
+        setStatus(requiredError, true);
         return;
     }
 

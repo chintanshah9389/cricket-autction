@@ -7,27 +7,43 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="partners.css">
+    <link rel="stylesheet" href="styles.css?v=14">
+    <link rel="stylesheet" href="partners.css?v=14">
 </head>
 <body>
-    <main class="config-page">
-        <header class="config-header">
-            <div>
-                <p class="eyebrow">Auction Desk</p>
-                <h1>Event Partners</h1>
-                <p class="subtitle">Add sponsors, upload logos, mark who to highlight on the showcase screen.</p>
-            </div>
-            <div class="header-links">
-                <a class="back-link" href="../partners/" target="_blank" rel="noopener">Open Showcase</a>
-                <a class="back-link" href="index.html">Configuration</a>
-                <a class="back-link" href="../index.html?showPartners=1">← Auction</a>
-            </div>
+    <div class="desk-shell">
+        <header class="desk-topbar">
+            <a class="desk-brand" href="../index.html?showPartners=1">
+                <span class="desk-brand-mark" aria-hidden="true"></span>
+                <span>
+                    <strong>Auction Desk</strong>
+                    <small>Partners</small>
+                </span>
+            </a>
+            <nav class="desk-nav" aria-label="Partners navigation">
+                <a class="desk-nav-link" href="index.html">Config</a>
+                <a class="desk-nav-link" href="players.html">Players</a>
+                <a class="desk-nav-link is-active" href="partners.html">Partners</a>
+                <a class="desk-nav-link desk-nav-accent" href="../partners/" target="_blank" rel="noopener">Showcase</a>
+                <a class="desk-nav-link desk-nav-back" href="../index.html?showPartners=1">← Auction</a>
+            </nav>
         </header>
 
-        <section class="config-card">
-            <h2 id="form-heading">Add Partner</h2>
-            <p class="help">Saved into <code>data-project/partners.json</code> with logos under <code>data-project/partners/logos/</code>.</p>
+    <main class="config-page">
+        <section class="page-hero">
+            <p class="eyebrow">Sponsors</p>
+            <h1>Event Partners</h1>
+            <p class="subtitle">Add sponsors, upload logos, and mark who to highlight on the showcase screen.</p>
+        </section>
+
+        <section class="config-panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">Editor</p>
+                    <h2 id="form-heading">Add Partner</h2>
+                </div>
+                <p class="help">Saved into <code>data-project/partners.json</code> with logos under <code>data-project/partners/logos/</code>.</p>
+            </div>
 
             <form id="partner-form" class="partner-form">
                 <input type="hidden" id="partner-edit-id" value="">
@@ -91,15 +107,19 @@
             <p id="partner-status" class="status" aria-live="polite"></p>
         </section>
 
-        <section class="config-card">
+        <section class="config-panel">
             <div class="partner-list-head">
-                <h2>All Partners</h2>
+                <div>
+                    <p class="panel-kicker">List</p>
+                    <h2>All Partners</h2>
+                </div>
                 <p class="help" id="partner-count">0 partners</p>
             </div>
             <div id="partners-list" class="partners-list"></div>
         </section>
     </main>
+    </div>
 
-    <script src="partners.js"></script>
+    <script src="partners.js?v=14"></script>
 </body>
 </html>

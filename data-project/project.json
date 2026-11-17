@@ -86,6 +86,44 @@
       "auctionOrder": "SEQUENCE",
       "shuffleWithinCategory": true,
       "playerWheelEnabled": true,
+      "playerFields": {
+        "role": {
+          "visible": true,
+          "required": false
+        },
+        "currentClub": {
+          "visible": true,
+          "required": false
+        },
+        "mobile": {
+          "visible": true,
+          "required": false
+        },
+        "age": {
+          "visible": true,
+          "required": false
+        },
+        "ageCategory": {
+          "visible": true,
+          "required": false
+        },
+        "battingStyle": {
+          "visible": false,
+          "required": false
+        },
+        "bowlingStyle": {
+          "visible": false,
+          "required": false
+        },
+        "basePrice": {
+          "visible": true,
+          "required": false
+        },
+        "photo": {
+          "visible": true,
+          "required": false
+        }
+      },
       "categories": {
         "RISING STAR": {
           "basePrice": 300000,
@@ -146,6 +184,56 @@
       "auctionOrder": "SEQUENCE",
       "shuffleWithinCategory": true,
       "playerWheelEnabled": true,
+      "playerFields": {
+        "role": {
+          "visible": true,
+          "required": false
+        },
+        "currentClub": {
+          "visible": true,
+          "required": false
+        },
+        "mobile": {
+          "visible": true,
+          "required": false
+        },
+        "age": {
+          "visible": true,
+          "required": false
+        },
+        "ageCategory": {
+          "visible": false,
+          "required": false
+        },
+        "battingStyle": {
+          "visible": false,
+          "required": false
+        },
+        "bowlingStyle": {
+          "visible": false,
+          "required": false
+        },
+        "basePrice": {
+          "visible": true,
+          "required": false
+        },
+        "photo": {
+          "visible": true,
+          "required": false
+        },
+        "x_gender": {
+          "visible": true,
+          "required": false,
+          "label": "Gender",
+          "custom": true
+        },
+        "x_seat": {
+          "visible": true,
+          "required": false,
+          "label": "Seat",
+          "custom": true
+        }
+      },
       "categories": {
         "RISING STAR": {
           "basePrice": 300000,
@@ -205,6 +293,56 @@
   "auctionOrder": "SEQUENCE",
   "shuffleWithinCategory": true,
   "playerWheelEnabled": true,
+  "playerFields": {
+    "role": {
+      "visible": true,
+      "required": false
+    },
+    "currentClub": {
+      "visible": true,
+      "required": false
+    },
+    "mobile": {
+      "visible": true,
+      "required": false
+    },
+    "age": {
+      "visible": true,
+      "required": false
+    },
+    "ageCategory": {
+      "visible": false,
+      "required": false
+    },
+    "battingStyle": {
+      "visible": false,
+      "required": false
+    },
+    "bowlingStyle": {
+      "visible": false,
+      "required": false
+    },
+    "basePrice": {
+      "visible": true,
+      "required": false
+    },
+    "photo": {
+      "visible": true,
+      "required": false
+    },
+    "x_gender": {
+      "visible": true,
+      "required": false,
+      "label": "Gender",
+      "custom": true
+    },
+    "x_seat": {
+      "visible": true,
+      "required": false,
+      "label": "Seat",
+      "custom": true
+    }
+  },
   "categories": {
     "RISING STAR": {
       "basePrice": 300000,
