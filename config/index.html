@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=17">
+    <link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body>
     <div class="desk-shell">
@@ -35,209 +35,286 @@
                 <p class="subtitle">Brand the event, then set each division’s teams, kitty, categories, and backup packs.</p>
             </section>
 
-            <section class="config-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">01 · Brand</p>
-                        <h2>Tournament Branding</h2>
+            <section class="config-panel is-open" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="true">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">01 · Brand</p>
+                            <h2>Tournament Branding</h2>
+                        </div>
+                        <p class="help">Shown on the auction screen, squads, and finish page.</p>
                     </div>
-                    <p class="help">Shown on the auction screen, squads, and finish page.</p>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body">
+                    <div class="branding-compose">
+                        <div class="branding-fields">
+                            <div class="branding-grid">
+                                <div>
+                                    <label for="tournament-name">Tournament name</label>
+                                    <input id="tournament-name" type="text" placeholder="ABCD Super League">
+                                </div>
+                                <div>
+                                    <label for="tournament-year">Year</label>
+                                    <input id="tournament-year" type="text" placeholder="2025">
+                                </div>
+                            </div>
+                            <p class="preview branding-title-preview" id="tournament-title-preview">ABCD Super League - 2025</p>
+                            <p class="help tight">Leave blank logo to use <code>assets/tournament-logo.png</code>.</p>
+                        </div>
+                        <div class="branding-logo-block">
+                            <img id="tournament-logo-preview" class="tournament-logo-preview is-empty" alt="Tournament logo preview">
+                            <div class="branding-logo-actions">
+                                <button type="button" id="tournament-logo-upload-btn" class="secondary-btn">Upload logo</button>
+                                <input id="tournament-logo-file" class="team-logo-file" type="file" accept="image/*">
+                                <button type="button" id="tournament-logo-clear-btn" class="ghost-btn" disabled>Clear</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+            </section>
 
-                <div class="branding-compose">
-                    <div class="branding-fields">
-                        <div class="branding-grid">
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">02 · Divisions</p>
+                            <h2>Auction Divisions</h2>
+                        </div>
+                        <p class="help">Up to 3 divisions. Each keeps its own teams, kitty, categories, players, and progress in <code>data-project/</code>.</p>
+                    </div>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body" hidden>
+                    <div class="division-toolbar">
+                        <div class="division-tabs" id="division-tabs" role="tablist" aria-label="Auction divisions"></div>
+                        <div class="division-toolbar-actions">
+                            <button type="button" id="add-division-btn" class="secondary-btn">Add</button>
+                            <button type="button" id="rename-division-btn" class="ghost-btn">Rename</button>
+                            <button type="button" id="remove-division-btn" class="link-danger">Remove</button>
+                        </div>
+                    </div>
+                    <p class="help tight" id="active-division-label">Editing: Main Auction</p>
+                    <div class="division-summary" id="division-summary" aria-live="polite"></div>
+
+                    <div class="tool-strip">
+                        <div class="tool-group">
+                            <h3 class="tool-label">Division pack</h3>
+                            <p class="help tight">Active division only — teams, media, players, progress.</p>
+                            <div class="upload-actions">
+                                <button type="button" id="export-division-pack-btn" class="secondary-btn">Export</button>
+                                <button type="button" id="import-division-pack-btn" class="secondary-btn">Import</button>
+                                <input id="division-pack-file" type="file" accept=".json,application/json" hidden>
+                            </div>
+                        </div>
+                        <div class="tool-group">
+                            <h3 class="tool-label">Entire project pack</h3>
+                            <p class="help tight">All divisions + branding + partners + every logo/photo/video.</p>
+                            <div class="upload-actions">
+                                <button type="button" id="export-project-pack-btn" class="secondary-btn">Export</button>
+                                <button type="button" id="import-project-pack-btn" class="secondary-btn">Import</button>
+                                <input id="project-pack-file" type="file" accept=".json,application/json" hidden>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="help" id="division-pack-status" aria-live="polite"></p>
+                </div>
+            </section>
+
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">03 · Budget</p>
+                            <h2 id="team-kitty-heading">Team Kitty</h2>
+                        </div>
+                        <p class="help" id="team-kitty-help">Budget for the active division only.</p>
+                    </div>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body" hidden>
+                    <label for="team-kitty">Team kitty (Rs)</label>
+                    <div class="input-row">
+                        <input id="team-kitty" type="text" placeholder="1cr or 10000000">
+                        <span id="team-kitty-preview" class="preview money-chip">Rs 0</span>
+                    </div>
+
+                    <div class="preset-row">
+                        <button type="button" data-kitty="5000000">50 L</button>
+                        <button type="button" data-kitty="10000000">1 Cr</button>
+                        <button type="button" data-kitty="20000000">2 Cr</button>
+                        <button type="button" data-kitty="50000000">5 Cr</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">04 · Roster</p>
+                            <h2 id="teams-heading">Teams</h2>
+                        </div>
+                        <p class="help" id="teams-help">Roster for the active division only. Switch tabs above to edit another.</p>
+                    </div>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body" hidden>
+                    <div class="team-config-list" id="team-config-list"></div>
+                    <p class="help team-empty-hint" id="team-empty-hint" hidden>No teams in this division yet. Add teams below.</p>
+
+                    <div class="inline-add">
+                        <h3 class="section-subtitle">Add team</h3>
+                        <div class="add-category-row add-team-row">
+                            <input id="new-team-name" type="text" placeholder="Team name">
+                            <input id="new-team-color" type="color" value="#3498db" title="Team color">
+                            <button type="button" id="add-team-btn" class="secondary-btn">Add Team</button>
+                        </div>
+                        <p class="help tight">After saving, use Reset / Start New Auction on the desk so that division picks up the roster.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">05 · Icon / Caption</p>
+                            <h2 id="icon-caption-heading">Icon &amp; Caption</h2>
+                        </div>
+                        <p class="help" id="icon-caption-help">Optional. Leave off if you don’t use Icon / Caption. When enabled, you can assign Icon and/or Caption per team — both are optional.</p>
+                    </div>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body" hidden>
+                    <label class="checkbox-row">
+                        <input id="icon-caption-enabled" type="checkbox">
+                        <span>Use Icon / Caption for this division (optional feature)</span>
+                    </label>
+
+                    <div id="icon-caption-settings" class="icon-caption-settings" hidden>
+                        <div class="icon-caption-fees">
                             <div>
-                                <label for="tournament-name">Tournament name</label>
-                                <input id="tournament-name" type="text" placeholder="ABCD Super League">
+                                <label for="icon-fee">Icon fee (Rs)</label>
+                                <div class="input-row">
+                                    <input id="icon-fee" type="text" placeholder="e.g. 20L or 2000000">
+                                    <span id="icon-fee-preview" class="preview money-chip">Rs 0</span>
+                                </div>
                             </div>
                             <div>
-                                <label for="tournament-year">Year</label>
-                                <input id="tournament-year" type="text" placeholder="2025">
+                                <label for="caption-fee">Caption fee (Rs)</label>
+                                <div class="input-row">
+                                    <input id="caption-fee" type="text" placeholder="e.g. 15L or 1500000">
+                                    <span id="caption-fee-preview" class="preview money-chip">Rs 0</span>
+                                </div>
                             </div>
                         </div>
-                        <p class="preview branding-title-preview" id="tournament-title-preview">ABCD Super League - 2025</p>
-                        <p class="help tight">Leave blank logo to use <code>assets/tournament-logo.png</code>.</p>
+
+                        <label class="checkbox-row">
+                            <input id="icon-caption-count-quota" type="checkbox" checked>
+                            <span>Count Icon / Caption toward category max (e.g. Evergreen 4 → 1 Icon leaves 3)</span>
+                        </label>
+
+                        <h3 class="section-subtitle">Assign players to teams</h3>
+                        <p class="help tight">Search and pick a player only if you want. Leave blank for no Icon or no Caption. Assigned players leave the auction pool and join the team at the fee above.</p>
+                        <div id="icon-caption-team-list" class="icon-caption-team-list"></div>
+                        <p class="help tight">Showcase page: <a href="../icon-caption/" target="_blank" rel="noopener">Open Icon &amp; Caption board</a></p>
                     </div>
-                    <div class="branding-logo-block">
-                        <img id="tournament-logo-preview" class="tournament-logo-preview is-empty" alt="Tournament logo preview">
-                        <div class="branding-logo-actions">
-                            <button type="button" id="tournament-logo-upload-btn" class="secondary-btn">Upload logo</button>
-                            <input id="tournament-logo-file" class="team-logo-file" type="file" accept="image/*">
-                            <button type="button" id="tournament-logo-clear-btn" class="ghost-btn" disabled>Clear</button>
+                </div>
+            </section>
+
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">06 · Order</p>
+                            <h2 id="auction-order-heading">Auction Order</h2>
                         </div>
+                        <p class="help" id="auction-order-help">Random shuffle, or a fixed category sequence for this division.</p>
                     </div>
-                </div>
-            </section>
-
-            <section class="config-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">02 · Divisions</p>
-                        <h2>Auction Divisions</h2>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body" hidden>
+                    <div class="order-options">
+                        <label class="order-option">
+                            <input type="radio" name="auction-order" value="SEQUENCE" checked>
+                            <span>
+                                <strong>Category Sequence</strong>
+                                <small>Auction categories in the order you set below</small>
+                            </span>
+                        </label>
+                        <label class="order-option">
+                            <input type="radio" name="auction-order" value="RANDOM">
+                            <span>
+                                <strong>Random</strong>
+                                <small>Shuffle all players into one mixed auction order</small>
+                            </span>
+                        </label>
                     </div>
-                    <p class="help">Up to 3 divisions. Each keeps its own teams, kitty, categories, players, and progress in <code>data-project/</code>.</p>
-                </div>
 
-                <div class="division-toolbar">
-                    <div class="division-tabs" id="division-tabs" role="tablist" aria-label="Auction divisions"></div>
-                    <div class="division-toolbar-actions">
-                        <button type="button" id="add-division-btn" class="secondary-btn">Add</button>
-                        <button type="button" id="rename-division-btn" class="ghost-btn">Rename</button>
-                        <button type="button" id="remove-division-btn" class="link-danger">Remove</button>
+                    <div id="sequence-editor-wrap">
+                        <h3 class="section-subtitle">Category auction sequence</h3>
+                        <p class="help tight">Use ↑ ↓ to set order.</p>
+                        <ol class="sequence-editor" id="sequence-editor"></ol>
                     </div>
-                </div>
-                <p class="help tight" id="active-division-label">Editing: Main Auction</p>
-                <div class="division-summary" id="division-summary" aria-live="polite"></div>
 
-                <div class="tool-strip">
-                    <div class="tool-group">
-                        <h3 class="tool-label">Division pack</h3>
-                        <p class="help tight">Active division only — teams, media, players, progress.</p>
-                        <div class="upload-actions">
-                            <button type="button" id="export-division-pack-btn" class="secondary-btn">Export</button>
-                            <button type="button" id="import-division-pack-btn" class="secondary-btn">Import</button>
-                            <input id="division-pack-file" type="file" accept=".json,application/json" hidden>
-                        </div>
-                    </div>
-                    <div class="tool-group">
-                        <h3 class="tool-label">Entire project pack</h3>
-                        <p class="help tight">All divisions + branding + partners + every logo/photo/video.</p>
-                        <div class="upload-actions">
-                            <button type="button" id="export-project-pack-btn" class="secondary-btn">Export</button>
-                            <button type="button" id="import-project-pack-btn" class="secondary-btn">Import</button>
-                            <input id="project-pack-file" type="file" accept=".json,application/json" hidden>
-                        </div>
-                    </div>
-                </div>
-                <p class="help" id="division-pack-status" aria-live="polite"></p>
-            </section>
-
-            <section class="config-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">03 · Budget</p>
-                        <h2 id="team-kitty-heading">Team Kitty</h2>
-                    </div>
-                    <p class="help" id="team-kitty-help">Budget for the active division only.</p>
-                </div>
-
-                <label for="team-kitty">Team kitty (Rs)</label>
-                <div class="input-row">
-                    <input id="team-kitty" type="text" placeholder="1cr or 10000000">
-                    <span id="team-kitty-preview" class="preview money-chip">Rs 0</span>
-                </div>
-
-                <div class="preset-row">
-                    <button type="button" data-kitty="5000000">50 L</button>
-                    <button type="button" data-kitty="10000000">1 Cr</button>
-                    <button type="button" data-kitty="20000000">2 Cr</button>
-                    <button type="button" data-kitty="50000000">5 Cr</button>
-                </div>
-            </section>
-
-            <section class="config-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">04 · Roster</p>
-                        <h2 id="teams-heading">Teams</h2>
-                    </div>
-                    <p class="help" id="teams-help">Roster for the active division only. Switch tabs above to edit another.</p>
-                </div>
-
-                <div class="team-config-list" id="team-config-list"></div>
-                <p class="help team-empty-hint" id="team-empty-hint" hidden>No teams in this division yet. Add teams below.</p>
-
-                <div class="inline-add">
-                    <h3 class="section-subtitle">Add team</h3>
-                    <div class="add-category-row add-team-row">
-                        <input id="new-team-name" type="text" placeholder="Team name">
-                        <input id="new-team-color" type="color" value="#3498db" title="Team color">
-                        <button type="button" id="add-team-btn" class="secondary-btn">Add Team</button>
-                    </div>
-                    <p class="help tight">After saving, use Reset / Start New Auction on the desk so that division picks up the roster.</p>
-                </div>
-            </section>
-
-            <section class="config-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">05 · Order</p>
-                        <h2 id="auction-order-heading">Auction Order</h2>
-                    </div>
-                    <p class="help" id="auction-order-help">Random shuffle, or a fixed category sequence for this division.</p>
-                </div>
-
-                <div class="order-options">
-                    <label class="order-option">
-                        <input type="radio" name="auction-order" value="SEQUENCE" checked>
-                        <span>
-                            <strong>Category Sequence</strong>
-                            <small>Auction categories in the order you set below</small>
-                        </span>
+                    <label class="checkbox-row" id="shuffle-within-wrap">
+                        <input id="shuffle-within-category" type="checkbox" checked>
+                        <span>Shuffle players randomly inside each category</span>
                     </label>
-                    <label class="order-option">
-                        <input type="radio" name="auction-order" value="RANDOM">
-                        <span>
-                            <strong>Random</strong>
-                            <small>Shuffle all players into one mixed auction order</small>
-                        </span>
+
+                    <label class="checkbox-row">
+                        <input id="player-wheel-enabled" type="checkbox" checked>
+                        <span>Show player wheel spin when the next player is revealed</span>
                     </label>
                 </div>
-
-                <div id="sequence-editor-wrap">
-                    <h3 class="section-subtitle">Category auction sequence</h3>
-                    <p class="help tight">Use ↑ ↓ to set order.</p>
-                    <ol class="sequence-editor" id="sequence-editor"></ol>
-                </div>
-
-                <label class="checkbox-row" id="shuffle-within-wrap">
-                    <input id="shuffle-within-category" type="checkbox" checked>
-                    <span>Shuffle players randomly inside each category</span>
-                </label>
-
-                <label class="checkbox-row">
-                    <input id="player-wheel-enabled" type="checkbox" checked>
-                    <span>Show player wheel spin when the next player is revealed</span>
-                </label>
             </section>
 
-            <section class="config-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">06 · Player fields</p>
-                        <h2 id="player-fields-heading">Player fields on auction</h2>
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">07 · Player fields</p>
+                            <h2 id="player-fields-heading">Player fields on auction</h2>
+                        </div>
+                        <p class="help" id="player-fields-help">Per division: Show on auction / Required. Excel upload on Players syncs these toggles from sheet columns; auction desk hides or shows the same fields after Start New Auction. Name, ID, and Category stay on.</p>
                     </div>
-                    <p class="help" id="player-fields-help">Per division: Show on auction / Required. Excel upload on Players syncs these toggles from sheet columns; auction desk hides or shows the same fields after Start New Auction. Name, ID, and Category stay on.</p>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body" hidden>
+                    <div class="player-fields-grid" id="player-fields-grid"></div>
                 </div>
-                <div class="player-fields-grid" id="player-fields-grid"></div>
             </section>
 
-            <section class="config-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">07 · Categories</p>
-                        <h2 id="categories-heading">Auction Categories</h2>
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">08 · Categories</p>
+                            <h2 id="categories-heading">Auction Categories</h2>
+                        </div>
+                        <p class="help">Base price and max players per team for each category.</p>
                     </div>
-                    <p class="help">Base price and max players per team for each category.</p>
-                </div>
+                    <span class="panel-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="panel-body" hidden>
+                    <label class="checkbox-row">
+                        <input id="use-category-prices" type="checkbox" checked>
+                        <span>Apply category base prices on new auction</span>
+                    </label>
 
-                <label class="checkbox-row">
-                    <input id="use-category-prices" type="checkbox" checked>
-                    <span>Apply category base prices on new auction</span>
-                </label>
+                    <div class="category-config-grid" id="category-config-grid"></div>
 
-                <div class="category-config-grid" id="category-config-grid"></div>
-
-                <div class="inline-add">
-                    <h3 class="section-subtitle">Add auction category</h3>
-                    <div class="add-category-row">
-                        <input id="new-category-name" type="text" placeholder="Category name (e.g. ICON)">
-                        <input id="new-category-base" type="text" placeholder="Base price (e.g. 50L)">
-                        <input id="new-category-max" type="number" min="0" step="1" value="2" placeholder="Max players">
-                        <button type="button" id="add-category-btn" class="secondary-btn">Add Category</button>
+                    <div class="inline-add">
+                        <h3 class="section-subtitle">Add auction category</h3>
+                        <div class="add-category-row">
+                            <input id="new-category-name" type="text" placeholder="Category name (e.g. ICON)">
+                            <input id="new-category-base" type="text" placeholder="Base price (e.g. 50L)">
+                            <input id="new-category-max" type="number" min="0" step="1" value="2" placeholder="Max players">
+                            <button type="button" id="add-category-btn" class="secondary-btn">Add Category</button>
+                        </div>
+                        <p class="help tight">Manage player names via <a href="players.html">Players / Upload</a>.</p>
                     </div>
-                    <p class="help tight">Manage player names via <a href="players.html">Players / Upload</a>.</p>
                 </div>
             </section>
 
@@ -257,11 +334,11 @@
     </div>
 
     <script src="../js/money.js?v=17"></script>
-    <script src="../js/config-store.js?v=24"></script>
+    <script src="../js/config-store.js?v=27"></script>
     <script src="../js/project-store.js?v=23"></script>
     <script src="../js/players-store.js?v=28"></script>
     <script src="../js/offline-store.js?v=21"></script>
-    <script src="config.js?v=29"></script>
+    <script src="config.js?v=34"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

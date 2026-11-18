@@ -322,21 +322,42 @@ body.desk-menu-open {
 
 .desk-menu-nav {
     display: grid;
-    gap: 12px;
+    gap: 10px;
+}
+
+.desk-menu-section {
+    margin: 8px 2px 0;
+    color: rgba(255, 255, 255, 0.55);
+    font-family: var(--font-player);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.desk-menu-section:first-child {
+    margin-top: 0;
 }
 
 .desk-menu-item {
     width: 100%;
-    min-height: 58px;
+    min-height: 54px;
     border: none;
     border-radius: 16px;
     color: #fff;
     font-family: var(--font-display);
-    font-size: 1.2rem;
+    font-size: 1.15rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     cursor: pointer;
     transition: transform 0.15s ease, filter 0.15s ease;
+    display: grid;
+    place-items: center;
+    text-decoration: none;
+    text-align: center;
+    box-sizing: border-box;
+    padding: 12px 16px;
+    background: linear-gradient(180deg, #5b6b8a, #16325c);
 }
 
 .desk-menu-item:hover:not(:disabled) {
@@ -349,12 +370,61 @@ body.desk-menu-open {
     cursor: not-allowed;
 }
 
-#reset-button { background: linear-gradient(180deg, #73849a, #40556f); }
+.desk-menu-item[hidden] {
+    display: none !important;
+}
+
+.desk-menu-link {
+    background: linear-gradient(180deg, #6d7cff, #4f5bd5);
+}
+
+.desk-menu-danger {
+    background: linear-gradient(180deg, #e35d6a, #b42318);
+}
+
+#welcome-config-link,
 #config-button { background: linear-gradient(180deg, #6d7cff, #4f5bd5); }
+#welcome-partners-link,
+#desk-partners-link { background: linear-gradient(180deg, #2eb7c9, #12a39a); }
+#welcome-partners-showcase-link,
+#desk-partners-showcase-link { background: linear-gradient(180deg, #38bdf8, #0284c7); }
 #players-button { background: linear-gradient(180deg, #7c3aed, #5b21b6); }
-#teams-button { background: linear-gradient(180deg, #2eb7c9, #12a39a); }
+#teams-button { background: linear-gradient(180deg, #14b8a6, #0f766e); }
+#icon-caption-page-button { background: linear-gradient(180deg, #f59e0b, #b45309); }
 #skip-button { background: linear-gradient(180deg, #5b6b8a, #16325c); }
 #next-category-button { background: linear-gradient(180deg, #0f766e, #115e59); }
+#reset-button,
+#welcome-reset-btn,
+#welcome-reset-project-btn,
+#desk-reset-project-btn { background: linear-gradient(180deg, #e35d6a, #b42318); }
+
+.welcome-menu-trigger {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 90;
+}
+
+body.welcome-menu-open {
+    overflow: hidden;
+}
+
+body.welcome-menu-open .welcome-menu-trigger .desk-menu-burger i:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+}
+
+body.welcome-menu-open .welcome-menu-trigger .desk-menu-burger i:nth-child(2) {
+    opacity: 0;
+}
+
+body.welcome-menu-open .welcome-menu-trigger .desk-menu-burger i:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+}
+
+body:not(.welcome-active) .welcome-menu-trigger,
+body:not(.welcome-active) #welcome-menu-overlay {
+    display: none !important;
+}
 
 #header-section {
     justify-content: flex-start;
@@ -2441,10 +2511,13 @@ body:not(.welcome-active) #welcome-screen {
 /* While checking / when offline: do not show auction welcome actions */
 html.boot-pending .welcome-brand,
 html.boot-pending .welcome-online,
+html.boot-pending .welcome-menu-trigger,
 html.boot-offline .welcome-brand,
 html.boot-offline .welcome-online,
+html.boot-offline .welcome-menu-trigger,
 body.server-offline-only .welcome-brand,
-body.server-offline-only .welcome-online {
+body.server-offline-only .welcome-online,
+body.server-offline-only .welcome-menu-trigger {
     display: none !important;
 }
 

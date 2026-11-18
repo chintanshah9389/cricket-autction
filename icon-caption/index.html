@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Icon &amp; Caption</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=8">
+</head>
+<body>
+    <div class="shell">
+        <header class="topbar">
+            <a class="back" href="../">← Desk</a>
+            <div class="topbar-brand">
+                <img id="tournament-logo" src="../assets/tournament-logo.svg" alt="">
+                <div>
+                    <p id="division-label">WOMENS</p>
+                    <h1>Icons</h1>
+                </div>
+            </div>
+            <div class="topbar-tools">
+                <div class="fee-chips" id="fee-chips" hidden>
+                    <span id="icon-fee-chip"></span>
+                    <span id="caption-fee-chip"></span>
+                </div>
+                <div class="division-tabs" id="division-tabs"></div>
+                <div class="view-tabs">
+                    <button type="button" class="view-tab is-active" data-view="teams">All</button>
+                    <button type="button" class="view-tab" data-view="icons">Icons</button>
+                    <button type="button" class="view-tab" data-view="captions">Captions</button>
+                </div>
+                <a class="back" href="../config/">Config</a>
+            </div>
+        </header>
+
+        <p class="status" id="status-text">Loading…</p>
+        <main class="gallery" id="board"></main>
+    </div>
+
+    <script src="../js/money.js?v=17"></script>
+    <script src="../js/config-store.js?v=27"></script>
+    <script src="../js/project-store.js?v=23"></script>
+    <script src="../js/players-store.js?v=28"></script>
+    <script src="../js/offline-store.js?v=21"></script>
+    <script src="script.js?v=6"></script>
+</body>
+</html>

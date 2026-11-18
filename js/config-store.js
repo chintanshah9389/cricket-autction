@@ -117,6 +117,13 @@ function isPlayerFieldRequired(configOrDivision, fieldKey) {
     return fields[fieldKey].visible !== false && fields[fieldKey].required === true;
 }
 
+const DEFAULT_ICON_CAPTION = {
+    enabled: false,
+    iconFee: 0,
+    captionFee: 0,
+    countTowardCategoryQuota: true
+};
+
 const DEFAULT_DIVISION_SETTINGS = {
     teamKitty: 10000000,
     useCategoryBasePrices: true,
@@ -124,6 +131,7 @@ const DEFAULT_DIVISION_SETTINGS = {
     shuffleWithinCategory: true,
     playerWheelEnabled: true,
     playerFields: buildDefaultPlayerFields(),
+    iconCaption: { ...DEFAULT_ICON_CAPTION },
     categorySequence: DEFAULT_CATEGORY_SEQUENCE.slice(),
     categories: {
         "RISING STAR": { basePrice: 500000, maxPlayers: 3 },
@@ -489,15 +497,37 @@ function normalizeTeams(rawTeams) {
                 DEFAULT_TEAM_COLORS[index % DEFAULT_TEAM_COLORS.length];
             const logo = normalizeTeamLogo(team?.logo);
             const video = normalizeTeamVideo(team?.video);
+            const iconPlayerId = normalizeAssignablePlayerId(team?.iconPlayerId);
+            const captionPlayerId = normalizeAssignablePlayerId(team?.captionPlayerId);
             return {
                 team_id: teamId,
                 team_name: teamName || `Team ${index + 1}`,
                 color,
                 ...(logo ? { logo } : {}),
-                ...(video ? { video } : {})
+                ...(video ? { video } : {}),
+                ...(iconPlayerId != null ? { iconPlayerId } : {}),
+                ...(captionPlayerId != null ? { captionPlayerId } : {})
             };
         })
         .filter((team) => team.team_name);
+}
+
+function normalizeAssignablePlayerId(value) {
+    if (value == null || value === "") return null;
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) return asNumber;
+    const asText = String(value).trim();
+    return asText || null;
+}
+
+function normalizeIconCaptionSettings(raw) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    return {
+        enabled: Boolean(source.enabled),
+        iconFee: Math.max(0, Number(source.iconFee) || 0),
+        captionFee: Math.max(0, Number(source.captionFee) || 0),
+        countTowardCategoryQuota: source.countTowardCategoryQuota !== false
+    };
 }
 
 function nextAvailableTeamId(teams) {
@@ -516,6 +546,7 @@ function buildDivisionSettingsFromRaw(raw) {
         shuffleWithinCategory: raw?.shuffleWithinCategory !== false,
         playerWheelEnabled: raw?.playerWheelEnabled !== false,
         playerFields: normalizePlayerFields(raw?.playerFields),
+        iconCaption: normalizeIconCaptionSettings(raw?.iconCaption),
         categories,
         categorySequence: normalizeCategorySequence(raw?.categorySequence, categories)
     };
@@ -567,6 +598,7 @@ function flattenActiveDivision(config) {
         shuffleWithinCategory: active.shuffleWithinCategory,
         playerWheelEnabled: active.playerWheelEnabled,
         playerFields: normalizePlayerFields(active.playerFields),
+        iconCaption: normalizeIconCaptionSettings(active.iconCaption),
         categories: active.categories,
         categorySequence: active.categorySequence
     };
@@ -722,6 +754,7 @@ function addDivision(config, name = "") {
             shuffleWithinCategory: active.shuffleWithinCategory,
             playerWheelEnabled: active.playerWheelEnabled,
             playerFields: JSON.parse(JSON.stringify(normalizePlayerFields(active.playerFields))),
+            iconCaption: { ...normalizeIconCaptionSettings(active.iconCaption), enabled: false },
             categorySequence: active.categorySequence,
             categories: JSON.parse(JSON.stringify(active.categories))
         },
@@ -898,6 +931,8 @@ function buildFreshTeamsFromConfig(config) {
         color: team.color,
         ...(team.logo ? { logo: team.logo } : {}),
         ...(team.video ? { video: team.video } : {}),
+        ...(team.iconPlayerId != null ? { iconPlayerId: team.iconPlayerId } : {}),
+        ...(team.captionPlayerId != null ? { captionPlayerId: team.captionPlayerId } : {}),
         team_budget: kitty,
         remaining_budget: kitty,
         player_bought: 0,
@@ -957,6 +992,10 @@ function reconcileAuctionTeamsFromConfig(state, config) {
             else delete next.logo;
             if (team.video) next.video = team.video;
             else delete next.video;
+            if (team.iconPlayerId != null) next.iconPlayerId = team.iconPlayerId;
+            else delete next.iconPlayerId;
+            if (team.captionPlayerId != null) next.captionPlayerId = team.captionPlayerId;
+            else delete next.captionPlayerId;
             return next;
         }
         return {
@@ -965,6 +1004,8 @@ function reconcileAuctionTeamsFromConfig(state, config) {
             color: team.color,
             ...(team.logo ? { logo: team.logo } : {}),
             ...(team.video ? { video: team.video } : {}),
+            ...(team.iconPlayerId != null ? { iconPlayerId: team.iconPlayerId } : {}),
+            ...(team.captionPlayerId != null ? { captionPlayerId: team.captionPlayerId } : {}),
             team_budget: kitty,
             remaining_budget: kitty,
             player_bought: 0,
@@ -1181,10 +1222,93 @@ function saveAuctionConfig(config) {
     migrateLegacyDivisionStorage(normalized.activeDivisionId);
     if (previous) purgeRemovedDivisionStorage(previous, normalized);
     localStorage.setItem(AUCTION_CONFIG_KEY, JSON.stringify(normalized));
+    syncIconCaptionIdsIntoLiveAuctions(normalized);
     if (typeof persistConfigToProjectFolder === "function") {
         persistConfigToProjectFolder(normalized);
     }
     return normalized;
+}
+
+/**
+ * Keep live auction team icon/caption IDs aligned with saved config.
+ * Clearing Caption in Config + Save must drop stale IDs from auction state too.
+ */
+function syncIconCaptionIdsIntoLiveAuctions(config) {
+    const normalized = normalizeConfig(config || {});
+    (normalized.divisions || []).forEach((division) => {
+        if (!division?.id) return;
+        const dataKey =
+            typeof getDivisionAuctionDataKey === "function"
+                ? getDivisionAuctionDataKey(division.id)
+                : `auctionData:${division.id}`;
+        let raw = null;
+        try {
+            raw = localStorage.getItem(dataKey);
+        } catch (_) {
+            raw = null;
+        }
+        if (!raw) return;
+
+        let payload = null;
+        try {
+            payload = JSON.parse(raw);
+        } catch (_) {
+            return;
+        }
+        const state = payload?.auctionState;
+        if (!state || !Array.isArray(state.teams)) return;
+
+        const configTeams = Array.isArray(division.teams) ? division.teams : [];
+        const byId = new Map(configTeams.map((team) => [Number(team.team_id), team]));
+        const assigned = new Map();
+
+        state.teams.forEach((team) => {
+            const source = byId.get(Number(team.team_id));
+            if (!source) {
+                delete team.iconPlayerId;
+                delete team.captionPlayerId;
+                return;
+            }
+            if (source.iconPlayerId != null) {
+                team.iconPlayerId = source.iconPlayerId;
+                assigned.set(String(source.iconPlayerId), "icon");
+            } else {
+                delete team.iconPlayerId;
+            }
+            if (source.captionPlayerId != null) {
+                team.captionPlayerId = source.captionPlayerId;
+                assigned.set(String(source.captionPlayerId), "caption");
+            } else {
+                delete team.captionPlayerId;
+            }
+        });
+
+        const master = Array.isArray(state.allPlayers)
+            ? state.allPlayers
+            : Array.isArray(state.players)
+              ? state.players
+              : [];
+        master.forEach((player) => {
+            const role = String(player?.preAssignRole || "").toLowerCase();
+            if (role !== "icon" && role !== "caption") return;
+            const expected = assigned.get(String(player.id));
+            if (expected !== role) delete player.preAssignRole;
+        });
+
+        if (payload.config && typeof payload.config === "object") {
+            payload.config = normalized;
+        }
+        payload.auctionState = state;
+
+        try {
+            localStorage.setItem(dataKey, JSON.stringify(payload));
+        } catch (_) {
+            // ignore quota errors
+        }
+        if (typeof persistAuctionToProjectFolder === "function") {
+            persistAuctionToProjectFolder(division.id, payload);
+        }
+    });
 }
 
 function getActiveConfig(state) {
@@ -1224,17 +1348,132 @@ function getCategoryConfig(config, categoryName) {
     };
 }
 
+function sameAssignablePlayerId(a, b) {
+    if (a == null || b == null) return false;
+    return String(a) === String(b) || Number(a) === Number(b);
+}
+
+function findPlayerByAssignableId(list, playerId) {
+    if (playerId == null || playerId === "") return null;
+    return (list || []).find((player) => sameAssignablePlayerId(player?.id, playerId)) || null;
+}
+
+function isIconCaptionPreAssignedPlayer(player) {
+    const role = String(player?.preAssignRole || "").toLowerCase();
+    return role === "icon" || role === "caption";
+}
+
 function countTeamPlayersInCategory(state, teamId, categoryName) {
     const name = normalizeCategoryName(categoryName);
     const team = state.teams.find((t) => t.team_id === teamId);
     if (!team) return 0;
 
+    const config = getActiveConfig(state);
+    const iconCaption = normalizeIconCaptionSettings(config?.iconCaption);
+    const countPreAssign = iconCaption.countTowardCategoryQuota !== false;
     const master = state.allPlayers || state.players || [];
+
     return team.players.reduce((count, playerId) => {
-        const player = master.find((p) => p.id === playerId);
+        const player = findPlayerByAssignableId(master, playerId);
         if (!player) return count;
+        if (!countPreAssign && isIconCaptionPreAssignedPlayer(player)) return count;
         return normalizeCategoryName(player.category) === name ? count + 1 : count;
     }, 0);
+}
+
+/**
+ * Pre-assign Icon / Caption players to teams: mark sold, deduct fee, drop from queue.
+ * Called from applyConfigToAuctionState on Start New Auction / Reset.
+ */
+function applyIconCaptionAssignments(state, config) {
+    if (!state) return state;
+    const normalized = normalizeConfig(config || state.config || {});
+    const division = getActiveDivision(normalized);
+    const settings = normalizeIconCaptionSettings(division.iconCaption);
+    const master = Array.isArray(state.allPlayers) && state.allPlayers.length
+        ? state.allPlayers
+        : Array.isArray(state.players)
+          ? state.players
+          : [];
+
+    // Clear previous pre-assign marks so re-apply is clean
+    master.forEach((player) => {
+        if (!isIconCaptionPreAssignedPlayer(player)) return;
+        delete player.preAssignRole;
+        if (player.status === "sold" && (player.finalPrice === settings.iconFee || player.finalPrice === settings.captionFee)) {
+            // leave sold if still on a team roster; apply below will re-set
+        }
+    });
+
+    if (!settings.enabled) {
+        state.config = normalized;
+        return state;
+    }
+
+    if (!Array.isArray(state.teams)) state.teams = buildFreshTeamsFromConfig(normalized);
+    if (!Array.isArray(state.soldPlayers)) state.soldPlayers = [];
+
+    const usedPlayerIds = new Set();
+
+    const assignRole = (team, playerId, role, fee) => {
+        if (playerId == null || playerId === "") return;
+        if ([...usedPlayerIds].some((id) => sameAssignablePlayerId(id, playerId))) {
+            console.warn(`Icon/Caption: player ${playerId} already assigned; skipping ${role} for ${team.team_name}`);
+            return;
+        }
+        const player = findPlayerByAssignableId(master, playerId);
+        if (!player) {
+            console.warn(`Icon/Caption: player ${playerId} not found for ${team.team_name} ${role}`);
+            return;
+        }
+
+        const amount = Math.max(0, Number(fee) || 0);
+        player.status = "sold";
+        player.team = team.team_id;
+        player.finalPrice = amount;
+        player.bids = [{ team: team.team_id, amount }];
+        player.preAssignRole = role;
+
+        if (!Array.isArray(team.players)) team.players = [];
+        const alreadyOnTeam = team.players.some((id) => sameAssignablePlayerId(id, player.id));
+        if (!alreadyOnTeam) {
+            team.players.push(player.id);
+            team.player_bought = (Number(team.player_bought) || 0) + 1;
+            team.total_cost = (Number(team.total_cost) || 0) + amount;
+            team.remaining_budget = (Number(team.team_budget) || 0) - (Number(team.total_cost) || 0);
+        } else {
+            player.finalPrice = amount;
+            player.bids = [{ team: team.team_id, amount }];
+        }
+
+        if (!state.soldPlayers.some((id) => sameAssignablePlayerId(id, player.id))) {
+            state.soldPlayers.push(player.id);
+        }
+        state.soldCount = state.soldPlayers.length;
+        usedPlayerIds.add(player.id);
+    };
+
+    state.teams.forEach((team) => {
+        const configTeam =
+            getConfigTeams(normalized).find((entry) => Number(entry.team_id) === Number(team.team_id)) ||
+            team;
+        assignRole(team, configTeam.iconPlayerId, "icon", settings.iconFee);
+        assignRole(team, configTeam.captionPlayerId, "caption", settings.captionFee);
+    });
+
+    // Live queue: only unsettled players (pre-assigned are sold)
+    if (master.length) {
+        state.allPlayers = master;
+        const remaining = master.filter((player) => {
+            const status = String(player.status || "").toLowerCase();
+            return status !== "sold" && status !== "unsold" && status !== "skipped";
+        });
+        state.players = orderPlayersForAuction(remaining, normalized);
+        state.auctionCount = 0;
+    }
+
+    state.config = normalized;
+    return state;
 }
 
 function getCategoryQuotaStatus(state, teamId, categoryName) {
@@ -1373,5 +1612,6 @@ function applyConfigToAuctionState(state, config) {
     }
 
     state.config = normalized;
+    applyIconCaptionAssignments(state, normalized);
     return state;
 }

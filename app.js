@@ -2707,6 +2707,7 @@ function setDeskMenuOpen(open) {
     const trigger = document.getElementById("desk-menu-trigger");
     const overlay = document.getElementById("desk-menu-overlay");
     if (!trigger || !overlay) return;
+    if (open) setWelcomeMenuOpen(false);
     overlay.hidden = !open;
     overlay.setAttribute("aria-hidden", open ? "false" : "true");
     trigger.setAttribute("aria-expanded", open ? "true" : "false");
@@ -2715,6 +2716,36 @@ function setDeskMenuOpen(open) {
 
 function toggleDeskMenu() {
     setDeskMenuOpen(!isDeskMenuOpen());
+}
+
+function isWelcomeMenuOpen() {
+    const overlay = document.getElementById("welcome-menu-overlay");
+    return Boolean(overlay && !overlay.hidden);
+}
+
+function setWelcomeMenuOpen(open) {
+    const trigger = document.getElementById("welcome-menu-trigger");
+    const overlay = document.getElementById("welcome-menu-overlay");
+    if (!trigger || !overlay) return;
+    if (open) setDeskMenuOpen(false);
+    overlay.hidden = !open;
+    overlay.setAttribute("aria-hidden", open ? "false" : "true");
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    document.body.classList.toggle("welcome-menu-open", open);
+}
+
+function toggleWelcomeMenu() {
+    setWelcomeMenuOpen(!isWelcomeMenuOpen());
+}
+
+function bindMenuSheet(overlay, closeFn) {
+    if (!overlay) return;
+    overlay.querySelectorAll(".desk-menu-item").forEach((item) => {
+        item.addEventListener("click", () => {
+            if (item.disabled) return;
+            closeFn();
+        });
+    });
 }
 
 function initDeskMenu() {
@@ -2729,12 +2760,22 @@ function initDeskMenu() {
 
     document.getElementById("desk-menu-close")?.addEventListener("click", () => setDeskMenuOpen(false));
     document.getElementById("desk-menu-backdrop")?.addEventListener("click", () => setDeskMenuOpen(false));
+    bindMenuSheet(overlay, () => setDeskMenuOpen(false));
+}
 
-    overlay.querySelectorAll(".desk-menu-item").forEach((btn) => {
-        btn.addEventListener("click", () => {
-            if (!btn.disabled) setDeskMenuOpen(false);
-        });
+function initWelcomeMenu() {
+    const trigger = document.getElementById("welcome-menu-trigger");
+    const overlay = document.getElementById("welcome-menu-overlay");
+    if (!trigger || !overlay) return;
+
+    trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleWelcomeMenu();
     });
+
+    document.getElementById("welcome-menu-close")?.addEventListener("click", () => setWelcomeMenuOpen(false));
+    document.getElementById("welcome-menu-backdrop")?.addEventListener("click", () => setWelcomeMenuOpen(false));
+    bindMenuSheet(overlay, () => setWelcomeMenuOpen(false));
 }
 
 function initTeamsDrawer() {
@@ -3908,6 +3949,10 @@ const initApp = async () => {
     welcomeResetProjectBtn?.addEventListener("click", () => {
         resetEntireProjectFlow();
     });
+    document.getElementById("desk-reset-project-btn")?.addEventListener("click", () => {
+        resetEntireProjectFlow();
+    });
+    initWelcomeMenu();
     partnersIntroContinue?.addEventListener("click", hidePartnersIntro);
     document.getElementById("team-sold-video-continue")?.addEventListener("click", hideTeamSoldVideo);
 
@@ -3990,6 +4035,9 @@ const initApp = async () => {
     }
     document.getElementById("players-button")?.addEventListener("click", () => {
         window.open("config/players.html", "_blank");
+    });
+    document.getElementById("icon-caption-page-button")?.addEventListener("click", () => {
+        window.open("icon-caption/", "_blank");
     });
 
     resetButton.addEventListener("click", () => resetAll());

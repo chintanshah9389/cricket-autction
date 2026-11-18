@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=41">
+    <link rel="stylesheet" href="styles.css?v=43">
     <link rel="stylesheet" href="animations.css?v=18">
     <script>
         // Block welcome chrome until we know the local server is up.
@@ -49,6 +49,31 @@
     </section>
 
     <section id="welcome-screen" class="welcome-screen" aria-label="Auction welcome">
+        <button type="button" class="desk-menu-trigger welcome-menu-trigger" id="welcome-menu-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="welcome-menu-overlay" title="Open menu">
+            <span class="desk-menu-burger" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="sr-only">Menu</span>
+        </button>
+
+        <div class="desk-menu-overlay" id="welcome-menu-overlay" hidden aria-hidden="true">
+            <button type="button" class="desk-menu-backdrop" id="welcome-menu-backdrop" aria-label="Close menu"></button>
+            <div class="desk-menu-sheet" role="dialog" aria-modal="true" aria-labelledby="welcome-menu-title">
+                <div class="desk-menu-head">
+                    <div>
+                        <p class="desk-menu-label">Auction desk</p>
+                        <h2 id="welcome-menu-title">Menu</h2>
+                    </div>
+                    <button type="button" class="desk-menu-close" id="welcome-menu-close" aria-label="Close menu">×</button>
+                </div>
+                <nav class="desk-menu-nav" aria-label="Setup and reset">
+                    <a class="desk-menu-item desk-menu-link" id="welcome-config-link" href="config/">Configuration</a>
+                    <a class="desk-menu-item desk-menu-link" id="welcome-partners-link" href="config/partners.html">Event Partners</a>
+                    <a class="desk-menu-item desk-menu-link" id="welcome-partners-showcase-link" href="partners/" target="_blank" rel="noopener">Partners Showcase</a>
+                    <button type="button" class="desk-menu-item desk-menu-danger" id="welcome-reset-btn" hidden>Reset Division Data</button>
+                    <button type="button" class="desk-menu-item desk-menu-danger" id="welcome-reset-project-btn">Reset Entire Project</button>
+                </nav>
+            </div>
+        </div>
+
         <div class="welcome-stage">
             <header class="welcome-brand">
                 <div class="welcome-logo-plate">
@@ -78,15 +103,6 @@
                     <div class="welcome-actions-primary">
                         <button type="button" id="welcome-resume-btn" class="welcome-btn welcome-btn-primary" hidden>Resume Auction</button>
                         <button type="button" id="welcome-start-new-btn" class="welcome-btn welcome-btn-primary" hidden>Start New Auction</button>
-                    </div>
-                    <div class="welcome-actions-setup" aria-label="Setup links">
-                        <a id="welcome-config-link" class="welcome-btn welcome-btn-secondary" href="config/">Configuration</a>
-                        <a id="welcome-partners-link" class="welcome-btn welcome-btn-secondary" href="config/partners.html">Event Partners</a>
-                        <a id="welcome-partners-showcase-link" class="welcome-btn welcome-btn-secondary" href="partners/" target="_blank" rel="noopener">Partners Showcase</a>
-                    </div>
-                    <div class="welcome-actions-danger" aria-label="Reset actions">
-                        <button type="button" id="welcome-reset-btn" class="welcome-btn welcome-btn-danger" hidden>Reset Division Data</button>
-                        <button type="button" id="welcome-reset-project-btn" class="welcome-btn welcome-btn-danger">Reset Entire Project</button>
                     </div>
                 </div>
             </div>
@@ -121,12 +137,19 @@
                     <button type="button" class="desk-menu-close" id="desk-menu-close" aria-label="Close menu">×</button>
                 </div>
                 <nav class="desk-menu-nav" aria-label="Desk actions">
-                    <button type="button" class="desk-menu-item" id="reset-button">RESET</button>
-                    <button type="button" class="desk-menu-item" id="config-button">CONFIG</button>
-                    <button type="button" class="desk-menu-item" id="players-button" title="Upload / manage players">PLAYERS</button>
-                    <button type="button" class="desk-menu-item" id="teams-button">TEAMS</button>
-                    <button type="button" class="desk-menu-item" id="skip-button">SKIP</button>
-                    <button type="button" class="desk-menu-item" id="next-category-button" title="Jump to another category anytime">NEXT CAT</button>
+                    <p class="desk-menu-section">Setup</p>
+                    <button type="button" class="desk-menu-item" id="config-button">Configuration</button>
+                    <a class="desk-menu-item desk-menu-link" id="desk-partners-link" href="config/partners.html">Event Partners</a>
+                    <a class="desk-menu-item desk-menu-link" id="desk-partners-showcase-link" href="partners/" target="_blank" rel="noopener">Partners Showcase</a>
+                    <button type="button" class="desk-menu-item" id="players-button" title="Upload / manage players">Players</button>
+                    <button type="button" class="desk-menu-item" id="teams-button">Teams</button>
+                    <button type="button" class="desk-menu-item" id="icon-caption-page-button" title="Icon & Caption showcase">Icon / Caption</button>
+                    <p class="desk-menu-section">Auction</p>
+                    <button type="button" class="desk-menu-item" id="skip-button">Skip</button>
+                    <button type="button" class="desk-menu-item" id="next-category-button" title="Jump to another category anytime">Next Category</button>
+                    <p class="desk-menu-section">Reset</p>
+                    <button type="button" class="desk-menu-item desk-menu-danger" id="reset-button">Reset Division Data</button>
+                    <button type="button" class="desk-menu-item desk-menu-danger" id="desk-reset-project-btn">Reset Entire Project</button>
                 </nav>
             </div>
         </div>
@@ -516,11 +539,11 @@
     </div>
 
     <script src="js/money.js?v=17"></script>
-    <script src="js/config-store.js?v=25"></script>
+    <script src="js/config-store.js?v=27"></script>
     <script src="js/project-store.js?v=23"></script>
     <script src="js/players-store.js?v=28"></script>
     <script src="js/offline-store.js?v=21"></script>
-    <script src="app.js?v=51"></script>
+    <script src="app.js?v=53"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

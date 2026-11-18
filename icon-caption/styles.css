@@ -1,0 +1,505 @@
+:root {
+    --ink: #10233d;
+    --ink-soft: #3d5470;
+    --muted: #6f8299;
+    --paper: #f3f7fb;
+    --paper-2: #e4edf7;
+    --paper-3: #ffffff;
+    --pitch: #0f9d94;
+    --pitch-deep: #12325f;
+    --pitch-soft: #d5f1ed;
+    --bid: #d89a12;
+    --sky: #1b93cf;
+    --line: rgba(18, 50, 95, 0.12);
+    --shadow: 0 14px 36px rgba(16, 40, 72, 0.1);
+    --font-display: "Teko", sans-serif;
+    --font-player: "Sora", sans-serif;
+    --font-body: "Hind", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--ink);
+    font-family: var(--font-body);
+    background:
+        radial-gradient(ellipse 80% 50% at 12% -8%, rgba(15, 157, 148, 0.22), transparent 55%),
+        radial-gradient(ellipse 70% 45% at 92% 8%, rgba(27, 147, 207, 0.2), transparent 50%),
+        radial-gradient(ellipse 60% 40% at 70% 100%, rgba(216, 154, 18, 0.14), transparent 55%),
+        linear-gradient(165deg, #f7fbff 0%, var(--paper) 40%, #eaf3f8 100%);
+    position: relative;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: url("../assets/tournament-logo.svg") center 40% / min(380px, 48vw) no-repeat;
+    opacity: 0.045;
+}
+
+.shell {
+    position: relative;
+    z-index: 1;
+    width: min(1680px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 18px 0 40px;
+}
+
+.topbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 18px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+}
+
+.topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.topbar-brand img {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    border-radius: 50%;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 8px 22px rgba(18, 50, 95, 0.12);
+}
+
+.topbar-brand p {
+    margin: 0;
+    color: var(--sky);
+    font-family: var(--font-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 0.95rem;
+}
+
+.topbar-brand h1 {
+    margin: 0;
+    color: var(--pitch-deep);
+    font-family: var(--font-display);
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    letter-spacing: 0.06em;
+    line-height: 0.9;
+    text-transform: uppercase;
+    background: linear-gradient(120deg, var(--pitch-deep), var(--sky) 55%, var(--pitch));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.topbar-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.back {
+    color: var(--pitch-deep);
+    text-decoration: none;
+    font-family: var(--font-player);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 10px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(8px);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.back:hover {
+    border-color: var(--sky);
+    box-shadow: 0 0 0 3px rgba(27, 147, 207, 0.18);
+    transform: translateY(-1px);
+}
+
+.fee-chips,
+.division-tabs,
+.view-tabs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.fee-chips span,
+.division-tab,
+.view-tab {
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.8);
+    color: var(--ink-soft);
+    border-radius: 999px;
+    padding: 9px 12px;
+    font-family: var(--font-player);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.division-tab:hover,
+.view-tab:hover {
+    border-color: rgba(15, 157, 148, 0.45);
+    box-shadow: 0 0 0 3px rgba(15, 157, 148, 0.12);
+}
+
+.division-tab.is-active,
+.view-tab.is-active {
+    background: linear-gradient(135deg, var(--pitch), var(--sky));
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 8px 18px rgba(15, 157, 148, 0.28);
+}
+
+.view-tab[hidden],
+.fee-chips span[hidden],
+.fee-chips[hidden] {
+    display: none !important;
+}
+
+.status {
+    margin: 0 0 16px;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.gallery {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 28px;
+    align-items: stretch;
+}
+
+.poster {
+    --accent: var(--pitch);
+    --accent-soft: color-mix(in srgb, var(--accent) 22%, white);
+    position: relative;
+    min-height: min(72vh, 680px);
+    border-radius: 28px;
+    overflow: hidden;
+    isolation: isolate;
+    background:
+        linear-gradient(160deg, var(--accent-soft), #fff 48%, color-mix(in srgb, var(--accent) 10%, #f8fbff));
+    box-shadow: var(--shadow);
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+    animation:
+        poster-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+        highlight-pulse 2.8s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * 70ms), calc(0.55s + var(--i, 0) * 70ms);
+    transition: transform 0.28s ease, box-shadow 0.28s ease;
+}
+
+.poster::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    border-radius: inherit;
+    padding: 2px;
+    background: linear-gradient(
+        120deg,
+        color-mix(in srgb, var(--accent) 85%, white),
+        var(--sky),
+        var(--bid),
+        var(--pitch),
+        color-mix(in srgb, var(--accent) 85%, white)
+    );
+    background-size: 300% 300%;
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: border-flow 4.5s linear infinite;
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+.poster::after {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    z-index: 0;
+    background: radial-gradient(circle at 70% 18%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 42%);
+    pointer-events: none;
+}
+
+.poster:hover {
+    transform: translateY(-6px) scale(1);
+    box-shadow:
+        0 28px 50px rgba(16, 40, 72, 0.16),
+        0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.poster:hover::before {
+    opacity: 1;
+    animation-duration: 2.2s;
+}
+
+.poster-photo {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 18%;
+    z-index: 0;
+    filter: saturate(1.04) contrast(1.03);
+}
+
+.poster-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--accent) 18%, transparent) 0%,
+            rgba(255, 255, 255, 0.08) 38%,
+            rgba(16, 35, 61, 0.78) 100%
+        );
+}
+
+.poster-role {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    z-index: 3;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--sky)));
+    color: #fff;
+    font-family: var(--font-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 1.05rem;
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.poster-team {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    z-index: 3;
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #fff;
+    border: 4px solid color-mix(in srgb, var(--accent) 55%, white);
+    box-shadow:
+        0 14px 30px rgba(16, 40, 72, 0.18),
+        0 0 0 6px color-mix(in srgb, var(--accent) 16%, transparent);
+    animation: logo-glow 2.8s ease-in-out infinite;
+}
+
+.poster-team img {
+    width: 86px;
+    height: 86px;
+    object-fit: contain;
+}
+
+.poster-copy {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+    display: grid;
+    grid-template-rows: auto minmax(2.4em, auto) auto auto;
+    gap: 8px;
+    align-content: end;
+    min-height: 168px;
+    padding: 14px 14px 12px;
+    color: #fff;
+    border-radius: 20px;
+    background:
+        linear-gradient(
+            145deg,
+            color-mix(in srgb, var(--accent) 72%, #10233d) 0%,
+            rgba(16, 35, 61, 0.94) 55%,
+            rgba(10, 22, 40, 0.96) 100%
+        );
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, white);
+    box-shadow:
+        0 14px 28px rgba(8, 18, 32, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(10px);
+}
+
+.poster-copy .team-name {
+    margin: 0;
+    display: block;
+    width: 100%;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 88%, white);
+    color: #fff;
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.poster-copy h2 {
+    margin: 0;
+    min-height: 2.2em;
+    font-family: var(--font-player);
+    font-size: clamp(1.45rem, 2.2vw, 1.9rem);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-align: center;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.poster-copy .meta {
+    margin: 0;
+    min-height: 1.35em;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.poster-copy .fee {
+    margin: 0;
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-family: var(--font-display);
+    font-size: 1.85rem;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    text-align: center;
+    color: #10233d;
+    background: linear-gradient(135deg, #ffe7a3, #f0c14b);
+    box-shadow: 0 8px 18px rgba(216, 154, 18, 0.35);
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    padding: 64px 24px;
+    text-align: center;
+    border-radius: 28px;
+    color: var(--ink-soft);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), var(--pitch-soft));
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+}
+
+.empty-state a { color: var(--sky); font-weight: 700; }
+
+@keyframes poster-in {
+    from {
+        opacity: 0;
+        transform: translateY(18px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes border-flow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+@keyframes highlight-pulse {
+    0%, 100% {
+        filter: brightness(1);
+    }
+    50% {
+        filter: brightness(1.03);
+    }
+}
+
+@keyframes logo-glow {
+    0%, 100% {
+        box-shadow:
+            0 14px 30px rgba(16, 40, 72, 0.18),
+            0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    50% {
+        box-shadow:
+            0 16px 34px rgba(16, 40, 72, 0.2),
+            0 0 0 10px color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .poster,
+    .poster::before,
+    .poster-team {
+        animation: none !important;
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@media (max-width: 1100px) {
+    .gallery {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+    }
+
+    .poster {
+        min-height: 560px;
+    }
+}
+
+@media (max-width: 860px) {
+    .gallery {
+        grid-template-columns: 1fr;
+        gap: 22px;
+    }
+
+    .poster {
+        min-height: 520px;
+    }
+
+    .poster-team {
+        width: 78px;
+        height: 78px;
+    }
+
+    .poster-team img {
+        width: 60px;
+        height: 60px;
+    }
+}

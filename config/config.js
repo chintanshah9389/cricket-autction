@@ -48,11 +48,22 @@ const exportProjectPackBtn = document.getElementById("export-project-pack-btn");
 const importProjectPackBtn = document.getElementById("import-project-pack-btn");
 const projectPackFile = document.getElementById("project-pack-file");
 const divisionPackStatus = document.getElementById("division-pack-status");
+const iconCaptionEnabled = document.getElementById("icon-caption-enabled");
+const iconCaptionSettings = document.getElementById("icon-caption-settings");
+const iconFeeInput = document.getElementById("icon-fee");
+const iconFeePreview = document.getElementById("icon-fee-preview");
+const captionFeeInput = document.getElementById("caption-fee");
+const captionFeePreview = document.getElementById("caption-fee-preview");
+const iconCaptionCountQuota = document.getElementById("icon-caption-count-quota");
+const iconCaptionTeamList = document.getElementById("icon-caption-team-list");
+const iconCaptionHeading = document.getElementById("icon-caption-heading");
+const iconCaptionHelp = document.getElementById("icon-caption-help");
 
 let draftCategories = {};
 let draftSequence = [];
 let draftTeams = [];
 let draftTournament = { name: "ABCD Super League", year: "2025" };
+let draftDivisionPlayers = [];
 let draftDivisions = [];
 let draftActiveDivisionId = "div_1";
 
@@ -67,9 +78,11 @@ function getDraftActiveDivision() {
 function captureDivisionFieldsFromForm() {
     syncDraftFromCards();
     syncDraftFromTeamCards();
+    syncIconCaptionAssignmentsFromForm();
     const active = getDraftActiveDivision();
     if (!active) return;
 
+    active.iconCaption = readIconCaptionFromForm(active.iconCaption);
     active.teams = JSON.parse(JSON.stringify(draftTeams));
     active.teamKitty = parseMoneyInput(teamKittyInput.value);
     active.useCategoryBasePrices = useCategoryPrices.checked;
@@ -92,7 +105,9 @@ function applyDivisionFieldsToForm(division) {
     draftSequence = (division.categorySequence || Object.keys(draftCategories)).slice();
     setAuctionOrder(division.auctionOrder);
     refreshKittyPreview();
+    applyIconCaptionToForm(division.iconCaption);
     renderPlayerFieldsEditor(division);
+    void refreshIconCaptionPlayersAndRender();
 }
 
 function getDivisionTeamCount(division) {
@@ -156,6 +171,10 @@ function refreshDivisionScopedLabels() {
     if (auctionOrderHeading) auctionOrderHeading.textContent = `Auction Order — ${name}`;
     if (auctionOrderHelp) {
         auctionOrderHelp.textContent = `Choose random order, or set the exact category sequence for ${name}.`;
+    }
+    if (iconCaptionHeading) iconCaptionHeading.textContent = `Icon & Caption — ${name}`;
+    if (iconCaptionHelp) {
+        iconCaptionHelp.innerHTML = `Optional for <strong>${name}</strong>. Turn on only if you want Icon / Caption. Each team can take Icon, Caption, both, or neither. Fees deduct on Start New Auction.`;
     }
     if (categoriesHeading) {
         categoriesHeading.textContent = `Auction Categories — ${name} (${categoryCount})`;
@@ -455,6 +474,7 @@ function removeTeam(index) {
     draftTeams.splice(index, 1);
     saveStatus.textContent = `Removed ${removed?.team_name || "team"}. Click Save to keep this change.`;
     renderTeamCards();
+    renderIconCaptionAssignments();
     renderDivisionTabs();
 }
 
@@ -618,6 +638,7 @@ function addTeam() {
     newTeamColor.value = DEFAULT_TEAM_COLORS[draftTeams.length % DEFAULT_TEAM_COLORS.length];
     saveStatus.textContent = `Added ${name} to ${getDraftActiveDivision()?.name || "this division"}. Click Save to keep this change.`;
     renderTeamCards();
+    renderIconCaptionAssignments();
     renderDivisionTabs();
 }
 
@@ -713,6 +734,356 @@ function syncDraftFromCards() {
     });
 }
 
+function readIconCaptionFromForm(fallback = {}) {
+    syncIconCaptionAssignmentsFromForm();
+    const normalized =
+        typeof normalizeIconCaptionSettings === "function"
+            ? normalizeIconCaptionSettings(fallback)
+            : {
+                  enabled: false,
+                  iconFee: 0,
+                  captionFee: 0,
+                  countTowardCategoryQuota: true
+              };
+    return {
+        enabled: Boolean(iconCaptionEnabled?.checked),
+        iconFee: parseMoneyInput(iconFeeInput?.value) || 0,
+        captionFee: parseMoneyInput(captionFeeInput?.value) || 0,
+        countTowardCategoryQuota: iconCaptionCountQuota ? iconCaptionCountQuota.checked : normalized.countTowardCategoryQuota !== false
+    };
+}
+
+function applyIconCaptionToForm(settings) {
+    const normalized =
+        typeof normalizeIconCaptionSettings === "function"
+            ? normalizeIconCaptionSettings(settings)
+            : {
+                  enabled: false,
+                  iconFee: 0,
+                  captionFee: 0,
+                  countTowardCategoryQuota: true,
+                  ...(settings || {})
+              };
+    if (iconCaptionEnabled) iconCaptionEnabled.checked = Boolean(normalized.enabled);
+    setInputFromRupees(iconFeeInput, normalized.iconFee || 0);
+    setInputFromRupees(captionFeeInput, normalized.captionFee || 0);
+    if (iconCaptionCountQuota) {
+        iconCaptionCountQuota.checked = normalized.countTowardCategoryQuota !== false;
+    }
+    refreshIconCaptionFeePreviews();
+    syncIconCaptionSettingsVisibility();
+}
+
+function refreshIconCaptionFeePreviews() {
+    const iconFee = parseMoneyInput(iconFeeInput?.value);
+    const captionFee = parseMoneyInput(captionFeeInput?.value);
+    if (iconFeePreview) {
+        iconFeePreview.textContent = Number.isFinite(iconFee) ? formatMoney(iconFee) : "Invalid";
+    }
+    if (captionFeePreview) {
+        captionFeePreview.textContent = Number.isFinite(captionFee) ? formatMoney(captionFee) : "Invalid";
+    }
+}
+
+function syncIconCaptionSettingsVisibility() {
+    if (!iconCaptionSettings) return;
+    iconCaptionSettings.hidden = !iconCaptionEnabled?.checked;
+}
+
+function playerOptionLabel(player) {
+    const code =
+        typeof getPlayerDisplayCode === "function"
+            ? getPlayerDisplayCode(player)
+            : player?.code || player?.id || "";
+    const category = displayCategoryName(player?.category || "");
+    return `${player?.name || "Player"} · ${code} · ${category}`;
+}
+
+function resolveConfigPlayerPhotoSrc(photo) {
+    const value = String(photo || "").trim();
+    if (!value || /placeholder\.png/i.test(value)) return "../assets/placeholder.png";
+    if (/^(https?:|data:|blob:)/i.test(value)) return value;
+    if (value.startsWith("../") || value.startsWith("/")) return value;
+    if (value.startsWith("assets/") || value.startsWith("data-project/")) return `../${value}`;
+    return `../${value.replace(/^\.\//, "")}`;
+}
+
+function findDraftDivisionPlayer(playerId) {
+    if (playerId == null || playerId === "") return null;
+    return (draftDivisionPlayers || []).find((player) => String(player.id) === String(playerId)) || null;
+}
+
+function normalizeAssignableFormId(value) {
+    if (value == null || value === "") return null;
+    return Number.isFinite(Number(value)) ? Number(value) : String(value);
+}
+
+function setTeamAssignableRole(teamIndex, role, playerId) {
+    if (!draftTeams[teamIndex]) return;
+    const key = role === "caption" ? "captionPlayerId" : "iconPlayerId";
+    const normalized = normalizeAssignableFormId(playerId);
+    if (normalized == null) delete draftTeams[teamIndex][key];
+    else draftTeams[teamIndex][key] = normalized;
+}
+
+function syncIconCaptionAssignmentsFromForm() {
+    if (!iconCaptionTeamList) return;
+    iconCaptionTeamList.querySelectorAll("[data-icon-team-index]").forEach((row) => {
+        const index = Number(row.dataset.iconTeamIndex);
+        if (!draftTeams[index]) return;
+        const iconValue = row.querySelector("[data-icon-player]")?.value || "";
+        const captionValue = row.querySelector("[data-caption-player]")?.value || "";
+        setTeamAssignableRole(index, "icon", iconValue);
+        setTeamAssignableRole(index, "caption", captionValue);
+    });
+}
+
+function getIconCaptionTakenIds(exceptTeamIndex = -1, exceptRole = "") {
+    const taken = new Set();
+    draftTeams.forEach((team, index) => {
+        if (team.iconPlayerId != null && team.iconPlayerId !== "") {
+            if (!(index === exceptTeamIndex && exceptRole === "icon")) {
+                taken.add(String(team.iconPlayerId));
+            }
+        }
+        if (team.captionPlayerId != null && team.captionPlayerId !== "") {
+            if (!(index === exceptTeamIndex && exceptRole === "caption")) {
+                taken.add(String(team.captionPlayerId));
+            }
+        }
+    });
+    return taken;
+}
+
+function filterDraftPlayersForPicker(query, takenIds, selectedId) {
+    const needle = String(query || "").trim().toLowerCase();
+    const selectedKey = selectedId == null || selectedId === "" ? "" : String(selectedId);
+    return (draftDivisionPlayers || []).filter((player) => {
+        const id = String(player.id);
+        if (id !== selectedKey && takenIds.has(id)) return false;
+        if (!needle) return true;
+        const haystack = [
+            player.name,
+            player.code,
+            typeof getPlayerDisplayCode === "function" ? getPlayerDisplayCode(player) : "",
+            player.category,
+            player.currentClub,
+            player.role,
+            player.mobile
+        ]
+            .map((value) => String(value || "").toLowerCase())
+            .join(" ");
+        return haystack.includes(needle);
+    });
+}
+
+function renderPlayerSearchResults(menuEl, players, selectedId) {
+    if (!menuEl) return;
+    const selectedKey = selectedId == null || selectedId === "" ? "" : String(selectedId);
+    if (!players.length) {
+        menuEl.innerHTML = `<div class="player-search-empty">No matching players</div>`;
+        return;
+    }
+    menuEl.innerHTML = players
+        .slice(0, 60)
+        .map((player) => {
+            const id = String(player.id);
+            const active = id === selectedKey ? "is-active" : "";
+            const photo = resolveConfigPlayerPhotoSrc(player.photo);
+            return `
+                <button type="button" class="player-search-option ${active}" data-player-id="${id}">
+                    <img src="${photo}" alt="" onerror="this.src='../assets/placeholder.png'">
+                    <span>
+                        <strong>${player.name || "Player"}</strong>
+                        <small>${playerOptionLabel(player)}</small>
+                    </span>
+                </button>
+            `;
+        })
+        .join("");
+}
+
+function closeAllPlayerSearchMenus(exceptPicker = null) {
+    iconCaptionTeamList?.querySelectorAll(".player-search-picker").forEach((picker) => {
+        if (exceptPicker && picker === exceptPicker) return;
+        picker.classList.remove("is-open", "is-open-up");
+        const menu = picker.querySelector(".player-search-menu");
+        if (menu) menu.hidden = true;
+    });
+}
+
+function updatePlayerSearchTrigger(picker, playerId) {
+    const trigger = picker.querySelector(".player-search-trigger");
+    const hidden = picker.querySelector('input[type="hidden"]');
+    const img = picker.querySelector(".player-search-trigger img");
+    const label = picker.querySelector(".player-search-trigger-label");
+    const clearBtn = picker.querySelector(".player-search-clear");
+    if (!trigger || !hidden) return;
+
+    const player = findDraftDivisionPlayer(playerId);
+    hidden.value = player ? String(player.id) : "";
+    if (img) {
+        img.src = player
+            ? resolveConfigPlayerPhotoSrc(player.photo)
+            : "../assets/placeholder.png";
+    }
+    if (label) {
+        label.innerHTML = player
+            ? `<strong>${player.name || "Player"}</strong><small>${playerOptionLabel(player)}</small>`
+            : `<strong>None</strong><small>Optional — leave empty</small>`;
+    }
+    if (clearBtn) clearBtn.hidden = !player;
+    trigger.classList.toggle("is-empty", !player);
+}
+
+function buildPlayerSearchPickerHtml({ teamIndex, role, selectedId, teamName }) {
+    const player = findDraftDivisionPlayer(selectedId);
+    const photo = player
+        ? resolveConfigPlayerPhotoSrc(player.photo)
+        : "../assets/placeholder.png";
+    const title = role === "caption" ? "Caption" : "Icon";
+    return `
+        <div class="player-search-field">
+            <span class="player-search-field-label">${title} <em>(optional)</em></span>
+            <div class="player-search-picker" data-team-index="${teamIndex}" data-role="${role}">
+                <input type="hidden" data-${role}-player value="${player ? String(player.id) : ""}">
+                <button type="button" class="player-search-trigger ${player ? "" : "is-empty"}" aria-label="${teamName} ${title}">
+                    <img src="${photo}" alt="" onerror="this.src='../assets/placeholder.png'">
+                    <span class="player-search-trigger-label">
+                        ${
+                            player
+                                ? `<strong>${player.name || "Player"}</strong><small>${playerOptionLabel(player)}</small>`
+                                : `<strong>None</strong><small>Optional — leave empty</small>`
+                        }
+                    </span>
+                </button>
+                <button type="button" class="player-search-clear" title="Clear" ${player ? "" : "hidden"}>×</button>
+                <div class="player-search-menu" hidden>
+                    <input type="search" class="player-search-input" placeholder="Search name, ID, club..." autocomplete="off">
+                    <div class="player-search-results"></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function bindPlayerSearchPicker(picker) {
+    const teamIndex = Number(picker.dataset.teamIndex);
+    const role = picker.dataset.role;
+    const trigger = picker.querySelector(".player-search-trigger");
+    const clearBtn = picker.querySelector(".player-search-clear");
+    const menu = picker.querySelector(".player-search-menu");
+    const searchInput = picker.querySelector(".player-search-input");
+    const results = picker.querySelector(".player-search-results");
+    const hidden = picker.querySelector('input[type="hidden"]');
+    if (!trigger || !menu || !searchInput || !results || !hidden) return;
+
+    const refreshResults = () => {
+        const taken = getIconCaptionTakenIds(teamIndex, role);
+        const matches = filterDraftPlayersForPicker(searchInput.value, taken, hidden.value);
+        renderPlayerSearchResults(results, matches, hidden.value);
+        results.querySelectorAll("[data-player-id]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                setTeamAssignableRole(teamIndex, role, btn.dataset.playerId);
+                updatePlayerSearchTrigger(picker, btn.dataset.playerId);
+                closeAllPlayerSearchMenus();
+                renderIconCaptionAssignments();
+            });
+        });
+    };
+
+    const positionMenu = () => {
+        picker.classList.remove("is-open-up");
+        menu.hidden = false;
+        const rect = trigger.getBoundingClientRect();
+        const menuHeight = Math.min(menu.scrollHeight || 320, 340);
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        if (spaceBelow < menuHeight + 24 && spaceAbove > spaceBelow) {
+            picker.classList.add("is-open-up");
+        }
+    };
+
+    const openMenu = () => {
+        closeAllPlayerSearchMenus(picker);
+        picker.classList.add("is-open");
+        searchInput.value = "";
+        refreshResults();
+        positionMenu();
+        setTimeout(() => searchInput.focus(), 20);
+    };
+
+    trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (picker.classList.contains("is-open")) closeAllPlayerSearchMenus();
+        else openMenu();
+    });
+
+    clearBtn?.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setTeamAssignableRole(teamIndex, role, "");
+        updatePlayerSearchTrigger(picker, null);
+        closeAllPlayerSearchMenus();
+        renderIconCaptionAssignments();
+    });
+
+    searchInput.addEventListener("input", refreshResults);
+    searchInput.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeAllPlayerSearchMenus();
+        }
+    });
+}
+
+function renderIconCaptionAssignments() {
+    if (!iconCaptionTeamList) return;
+    syncIconCaptionSettingsVisibility();
+    if (!draftTeams.length) {
+        iconCaptionTeamList.innerHTML = `<p class="help">Add teams first. Icon / Caption stays optional for each team.</p>`;
+        return;
+    }
+    if (!(draftDivisionPlayers || []).length) {
+        iconCaptionTeamList.innerHTML = `<p class="help">No players loaded for this division yet. Upload / manage players first.</p>`;
+        return;
+    }
+
+    iconCaptionTeamList.innerHTML = draftTeams
+        .map((team, index) => {
+            return `
+                <article class="icon-caption-team-card" data-icon-team-index="${index}">
+                    <strong>${team.team_name}</strong>
+                    <div class="icon-caption-picks">
+                        ${buildPlayerSearchPickerHtml({
+                            teamIndex: index,
+                            role: "icon",
+                            selectedId: team.iconPlayerId,
+                            teamName: team.team_name
+                        })}
+                        ${buildPlayerSearchPickerHtml({
+                            teamIndex: index,
+                            role: "caption",
+                            selectedId: team.captionPlayerId,
+                            teamName: team.team_name
+                        })}
+                    </div>
+                </article>
+            `;
+        })
+        .join("");
+
+    iconCaptionTeamList.querySelectorAll(".player-search-picker").forEach((picker) => {
+        bindPlayerSearchPicker(picker);
+    });
+}
+
+async function refreshIconCaptionPlayersAndRender() {
+    const divisionId = draftActiveDivisionId;
+    draftDivisionPlayers = await loadDivisionPlayersForFieldSync(divisionId);
+    renderIconCaptionAssignments();
+}
+
 function renderAll() {
     refreshTournamentPreview();
     renderDivisionTabs();
@@ -722,6 +1093,7 @@ function renderAll() {
     renderPlayerFieldsEditor(getDraftActiveDivision());
     refreshOrderUI();
     refreshDivisionScopedLabels();
+    void refreshIconCaptionPlayersAndRender();
 }
 
 function readFormConfig() {
@@ -892,6 +1264,17 @@ function saveForm() {
 }
 
 teamKittyInput.addEventListener("input", refreshKittyPreview);
+iconCaptionEnabled?.addEventListener("change", () => {
+    syncIconCaptionSettingsVisibility();
+    renderIconCaptionAssignments();
+});
+iconFeeInput?.addEventListener("input", refreshIconCaptionFeePreviews);
+captionFeeInput?.addEventListener("input", refreshIconCaptionFeePreviews);
+document.addEventListener("click", (event) => {
+    if (!iconCaptionTeamList) return;
+    if (event.target.closest?.(".player-search-picker")) return;
+    closeAllPlayerSearchMenus();
+});
 tournamentNameInput.addEventListener("input", refreshTournamentPreview);
 tournamentYearInput.addEventListener("input", refreshTournamentPreview);
 tournamentLogoUploadBtn.addEventListener("click", () => tournamentLogoFile.click());
@@ -1093,4 +1476,30 @@ document.getElementById("reset-project-btn")?.addEventListener("click", async ()
     }
 });
 
-document.addEventListener("DOMContentLoaded", loadForm);
+function initConfigAccordions() {
+    const panels = Array.from(document.querySelectorAll(".config-panel[data-accordion]"));
+    if (!panels.length) return;
+
+    const setOpen = (panel, open) => {
+        const toggle = panel.querySelector(".panel-toggle");
+        const body = panel.querySelector(".panel-body");
+        panel.classList.toggle("is-open", open);
+        if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        if (body) body.hidden = !open;
+    };
+
+    panels.forEach((panel) => {
+        const toggle = panel.querySelector(".panel-toggle");
+        if (!toggle) return;
+        toggle.addEventListener("click", () => {
+            const willOpen = !panel.classList.contains("is-open");
+            panels.forEach((other) => setOpen(other, other === panel ? willOpen : false));
+        });
+        setOpen(panel, panel.classList.contains("is-open"));
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    initConfigAccordions();
+    loadForm();
+});
