@@ -9,8 +9,26 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=15">
-    <link rel="stylesheet" href="animations.css?v=15">
+    <link rel="stylesheet" href="styles.css?v=41">
+    <link rel="stylesheet" href="animations.css?v=18">
+    <script>
+        // Block welcome chrome until we know the local server is up.
+        // If offline, only the "Server is offline" panel is allowed.
+        (function () {
+            document.documentElement.classList.add("boot-pending");
+            fetch("/api/project/health", { cache: "no-store" })
+                .then(function (res) {
+                    if (!res.ok) throw new Error("offline");
+                    document.documentElement.classList.add("boot-online");
+                })
+                .catch(function () {
+                    document.documentElement.classList.add("boot-offline");
+                })
+                .finally(function () {
+                    document.documentElement.classList.remove("boot-pending");
+                });
+        })();
+    </script>
 </head>
 <body class="welcome-active">
     <section id="partners-intro" class="partners-intro" hidden aria-label="Event partners">
@@ -32,20 +50,45 @@
 
     <section id="welcome-screen" class="welcome-screen" aria-label="Auction welcome">
         <div class="welcome-stage">
-            <img id="welcome-logo" class="welcome-logo" src="assets/tournament-logo.png" alt="Tournament logo">
-            <p class="welcome-eyebrow">Live Auction Desk</p>
-            <h1 id="welcome-title" class="welcome-title">Cricket Auction</h1>
-            <p class="welcome-lead">Choose an auction division, then resume, start fresh, or open configuration.</p>
-            <div class="welcome-divisions" id="welcome-divisions" role="tablist" aria-label="Auction divisions"></div>
-            <p class="welcome-division-note" id="welcome-division-note"></p>
-            <div class="welcome-actions">
-                <button type="button" id="welcome-resume-btn" class="welcome-btn welcome-btn-primary" hidden>Resume Auction</button>
-                <button type="button" id="welcome-start-new-btn" class="welcome-btn welcome-btn-primary" hidden>Start New Auction</button>
-                <a id="welcome-config-link" class="welcome-btn welcome-btn-secondary" href="config/">Configuration</a>
-                <a id="welcome-partners-link" class="welcome-btn welcome-btn-secondary" href="config/partners.html">Event Partners</a>
-                <a id="welcome-partners-showcase-link" class="welcome-btn welcome-btn-secondary" href="partners/" target="_blank" rel="noopener">Partners Showcase</a>
-                <button type="button" id="welcome-reset-btn" class="welcome-btn welcome-btn-danger" hidden>Reset Division Data</button>
-                <button type="button" id="welcome-reset-project-btn" class="welcome-btn welcome-btn-danger">Reset Entire Project</button>
+            <header class="welcome-brand">
+                <div class="welcome-logo-plate">
+                    <img id="welcome-logo" class="welcome-logo" src="assets/tournament-logo.svg" alt="Tournament logo">
+                </div>
+                <p class="welcome-eyebrow">Live Auction Desk</p>
+                <h1 id="welcome-title" class="welcome-title">Cricket Auction</h1>
+                <p class="welcome-lead">Pick a division, then resume or start fresh.</p>
+                <p id="server-status-banner" class="server-status-banner" data-state="checking" hidden>
+                    Checking local server…
+                </p>
+            </header>
+
+            <div id="offline-only-panel" class="offline-only-panel" hidden>
+                <strong>Server is offline</strong>
+                <p>The auction desk will not open from browser cache.</p>
+                <p class="offline-only-cmd">Run this in the project folder:</p>
+                <p><code>node server.js</code></p>
+                <p>Then open <code>http://localhost:3000</code></p>
+                <button type="button" id="offline-retry-btn" class="welcome-btn welcome-btn-primary">Retry</button>
+            </div>
+
+            <div class="welcome-online" id="welcome-online">
+                <div class="welcome-divisions" id="welcome-divisions" role="tablist" aria-label="Auction divisions"></div>
+                <p class="welcome-division-note" id="welcome-division-note"></p>
+                <div class="welcome-actions">
+                    <div class="welcome-actions-primary">
+                        <button type="button" id="welcome-resume-btn" class="welcome-btn welcome-btn-primary" hidden>Resume Auction</button>
+                        <button type="button" id="welcome-start-new-btn" class="welcome-btn welcome-btn-primary" hidden>Start New Auction</button>
+                    </div>
+                    <div class="welcome-actions-setup" aria-label="Setup links">
+                        <a id="welcome-config-link" class="welcome-btn welcome-btn-secondary" href="config/">Configuration</a>
+                        <a id="welcome-partners-link" class="welcome-btn welcome-btn-secondary" href="config/partners.html">Event Partners</a>
+                        <a id="welcome-partners-showcase-link" class="welcome-btn welcome-btn-secondary" href="partners/" target="_blank" rel="noopener">Partners Showcase</a>
+                    </div>
+                    <div class="welcome-actions-danger" aria-label="Reset actions">
+                        <button type="button" id="welcome-reset-btn" class="welcome-btn welcome-btn-danger" hidden>Reset Division Data</button>
+                        <button type="button" id="welcome-reset-project-btn" class="welcome-btn welcome-btn-danger">Reset Entire Project</button>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -53,72 +96,129 @@
     <div class="big-container" id="big-container" hidden>
         <header class="brand-bar">
             <div class="sections" id="logo-section">
-                <img src="assets/tournament-logo.png" alt="Tournament Logo" class="tournament-logo">
+                <img src="assets/tournament-logo.svg" alt="Tournament Logo" class="tournament-logo">
             </div>
             <div class="sections" id="header-section">
                 <span class="headline">SUPERSTAR'S PREMIER LEAGUE - 2025 AUCTION</span>
             </div>
+            <div class="brand-bar-tools">
+                <div id="desk-server-chip" class="desk-server-chip" data-state="checking" hidden title="Local data-project server status">SERVER…</div>
+                <button type="button" class="desk-menu-trigger" id="desk-menu-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="desk-menu-overlay" title="Open menu">
+                    <span class="desk-menu-burger" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="sr-only">Menu</span>
+                </button>
+            </div>
         </header>
+
+        <div class="desk-menu-overlay" id="desk-menu-overlay" hidden aria-hidden="true">
+            <button type="button" class="desk-menu-backdrop" id="desk-menu-backdrop" aria-label="Close menu"></button>
+            <div class="desk-menu-sheet" role="dialog" aria-modal="true" aria-labelledby="desk-menu-title">
+                <div class="desk-menu-head">
+                    <div>
+                        <p class="desk-menu-label">Auction desk</p>
+                        <h2 id="desk-menu-title">Menu</h2>
+                    </div>
+                    <button type="button" class="desk-menu-close" id="desk-menu-close" aria-label="Close menu">×</button>
+                </div>
+                <nav class="desk-menu-nav" aria-label="Desk actions">
+                    <button type="button" class="desk-menu-item" id="reset-button">RESET</button>
+                    <button type="button" class="desk-menu-item" id="config-button">CONFIG</button>
+                    <button type="button" class="desk-menu-item" id="players-button" title="Upload / manage players">PLAYERS</button>
+                    <button type="button" class="desk-menu-item" id="teams-button">TEAMS</button>
+                    <button type="button" class="desk-menu-item" id="skip-button">SKIP</button>
+                    <button type="button" class="desk-menu-item" id="next-category-button" title="Jump to another category anytime">NEXT CAT</button>
+                </nav>
+            </div>
+        </div>
 
         <main class="auction-body">
             <section class="player-stage">
-                <div class="sections" id="players-image-section">
-                    <div class="squareBox">
+                <aside class="player-spotlight" id="players-image-section">
+                    <div class="squareBox" id="player-photo-frame" data-status="live">
+                        <div class="photo-frame-glow" aria-hidden="true"></div>
                         <img src="assets/players-photo/player_101.jpg" alt="Player" class="player-image" id="player-image">
-                        <div class="sold-seal" id="sold-seal">SOLD</div>
-                        <div class="unsold-seal" id="unsold-seal">UNSOLD</div>
-                        <div class="photo-meta">
-                            <span class="photo-id-label">ID</span>
-                            <span id="player-id">CPL-R-01</span>
-                        </div>
+
                         <div class="photo-status-wrap">
                             <div class="player-status-chip" id="player-status-chip" data-status="live">LIVE</div>
                         </div>
+
+                        <div class="photo-caption">
+                            <p class="photo-player-name" id="photo-player-name">Player Name</p>
+                            <div class="photo-meta">
+                                <span class="photo-id-label">ID</span>
+                                <span id="player-id">CPL-R-01</span>
+                            </div>
+                        </div>
+
+                        <div class="sold-seal" id="sold-seal">
+                            <div class="sold-seal-scrim" aria-hidden="true"></div>
+                            <div class="sold-seal-burst" aria-hidden="true"></div>
+                            <div class="sold-seal-stamp">
+                                <div class="sold-seal-ink" aria-hidden="true"></div>
+                                <div class="sold-seal-logo-ring">
+                                    <img id="sold-team-badge-logo" alt="" class="sold-team-badge-logo">
+                                </div>
+                                <span class="seal-label">SOLD</span>
+                            </div>
+                            <div class="sold-team-badge" id="sold-team-badge" hidden>
+                                <span id="sold-team-badge-name" class="sold-team-badge-name"></span>
+                            </div>
+                            <span class="sold-seal-price" id="sold-seal-price" hidden></span>
+                        </div>
+                        <div class="unsold-seal" id="unsold-seal">UNSOLD</div>
                     </div>
-                </div>
+                </aside>
 
                 <div class="player-details">
                     <header class="player-hero" id="players-name-section">
-                        <p class="player-kicker">Now auctioning</p>
-                        <h2 class="player-name" id="player-name">Player Name</h2>
-                        <div class="player-tags">
-                            <div class="category-container">
-                                <span class="tag-label">Category</span>
-                                <span class="player-data-info category-text" id="player-category">RISING STAR</span>
+                        <div class="player-hero-top">
+                            <p class="player-kicker">Now auctioning</p>
+                            <div class="player-tags">
+                                <div class="category-container" id="player-category-wrap">
+                                    <span class="tag-label">Category</span>
+                                    <span class="player-data-info category-text" id="player-category">RISING STAR</span>
+                                    <span class="category-quota" id="player-category-quota">4 / team</span>
+                                    <span class="category-pool" id="player-category-pool">24 in pool</span>
+                                    <button type="button" class="category-jump-btn" id="category-jump-btn" title="Change category">Next category</button>
+                                    <button type="button" class="category-jump-btn" id="find-player-chip-btn" title="Search and auction any player">Find player</button>
+                                </div>
                             </div>
                         </div>
+                        <h2 class="player-name" id="player-name">Player Name</h2>
                     </header>
 
-                    <div class="sections player-meta-bar" id="players-data-section">
-                        <article class="player-stat" data-player-field="role">
-                            <div class="player-data-head"><span>Role</span></div>
-                            <span class="player-data-info" id="player-role">Batter</span>
-                        </article>
-                        <article class="player-stat" data-player-field="currentClub">
-                            <div class="player-data-head"><span>Location</span></div>
-                            <span class="player-data-info" id="player-location">—</span>
-                        </article>
-                        <article class="player-stat" data-player-field="mobile">
-                            <div class="player-data-head"><span>Mobile</span></div>
-                            <span class="player-data-info" id="player-mobile">—</span>
-                        </article>
-                        <article class="player-stat" data-player-field="age" hidden>
-                            <div class="player-data-head"><span>Age</span></div>
-                            <span class="player-data-info" id="player-age">—</span>
-                        </article>
-                        <article class="player-stat" data-player-field="ageCategory" hidden>
-                            <div class="player-data-head"><span>Age cat.</span></div>
-                            <span class="player-data-info" id="player-age-category">—</span>
-                        </article>
-                        <article class="player-stat" data-player-field="battingStyle" hidden>
-                            <div class="player-data-head"><span>Batting</span></div>
-                            <span class="player-data-info" id="player-batting">—</span>
-                        </article>
-                        <article class="player-stat" data-player-field="bowlingStyle" hidden>
-                            <div class="player-data-head"><span>Bowling</span></div>
-                            <span class="player-data-info" id="player-bowling">—</span>
-                        </article>
-                    </div>
+                    <section class="player-profile-panel" aria-label="Player details">
+                        <div class="player-meta-bar" id="players-data-section">
+                            <article class="player-stat" data-player-field="role">
+                                <div class="player-data-head"><span>Role</span></div>
+                                <span class="player-data-info" id="player-role">Batter</span>
+                            </article>
+                            <article class="player-stat" data-player-field="currentClub">
+                                <div class="player-data-head"><span>Location</span></div>
+                                <span class="player-data-info" id="player-location">—</span>
+                            </article>
+                            <article class="player-stat" data-player-field="mobile">
+                                <div class="player-data-head"><span>Mobile</span></div>
+                                <span class="player-data-info" id="player-mobile">—</span>
+                            </article>
+                            <article class="player-stat" data-player-field="age" hidden>
+                                <div class="player-data-head"><span>Age</span></div>
+                                <span class="player-data-info" id="player-age">—</span>
+                            </article>
+                            <article class="player-stat" data-player-field="ageCategory" hidden>
+                                <div class="player-data-head"><span>Age cat.</span></div>
+                                <span class="player-data-info" id="player-age-category">—</span>
+                            </article>
+                            <article class="player-stat" data-player-field="battingStyle" hidden>
+                                <div class="player-data-head"><span>Batting</span></div>
+                                <span class="player-data-info" id="player-batting">—</span>
+                            </article>
+                            <article class="player-stat" data-player-field="bowlingStyle" hidden>
+                                <div class="player-data-head"><span>Bowling</span></div>
+                                <span class="player-data-info" id="player-bowling">—</span>
+                            </article>
+                        </div>
+                    </section>
 
                     <div class="bid-board">
                         <div class="sections bid-card" id="base-price-section">
@@ -128,13 +228,24 @@
 
                         <div class="sections bid-card bid-card-live" id="current-bid-section" data-has-bidder="false">
                             <div class="current-bid-head">CURRENT BID</div>
-                            <div class="current-bid-info"><span id="current-bid">100K</span></div>
+                            <div class="current-bid-info">
+                                <img id="current-bid-team-logo" class="current-bid-team-logo" alt="" hidden>
+                                <span id="current-bid">100K</span>
+                            </div>
                             <div class="current-bid-team" id="current-bid-team-panel">
                                 <span class="current-bid-team-name" id="current-bid-team">—</span>
                                 <div class="current-bid-team-stats" id="current-bid-team-stats" hidden>
-                                    <div class="bid-team-stat" title="Remaining purse">
+                                    <div class="bid-team-stat" title="Total remaining purse">
                                         <em>Purse</em>
                                         <strong id="current-bid-team-purse">—</strong>
+                                    </div>
+                                    <div class="bid-team-stat" title="Reserved for remaining category minimums">
+                                        <em>Reserved</em>
+                                        <strong id="current-bid-team-reserved">—</strong>
+                                    </div>
+                                    <div class="bid-team-stat" title="Max you can bid now after category reserves">
+                                        <em>Spendable</em>
+                                        <strong id="current-bid-team-spendable">—</strong>
                                     </div>
                                     <div class="bid-team-stat" title="Players still to buy in this category">
                                         <em>Pending</em>
@@ -188,12 +299,8 @@
                 <button class="command-button" id="undo-button">UNDO</button>
                 <button class="command-button" id="redo-button">REDO</button>
             </div>
-            <button class="command-button" id="reset-button">RESET</button>
-            <button class="command-button" id="config-button">CONFIG</button>
-            <button class="command-button" id="players-button" title="Upload / manage players">PLAYERS</button>
-            <button class="command-button" id="teams-button">TEAMS</button>
-            <button class="command-button" id="skip-button">SKIP</button>
             <button class="command-button" id="spin-button" title="Open player wheel">SPIN</button>
+            <button class="command-button" id="find-player-button" title="Search and auction any player">FIND</button>
             <button class="command-button" id="unsold-pool-button" title="View unsold players by category">POOL</button>
             <button class="command-button" id="unsold-button">UNSOLD</button>
             <button class="command-button" id="sold-button">SOLD</button>
@@ -201,13 +308,23 @@
         </footer>
     </div>
 
-    <section id="team-sold-video" class="team-sold-video" hidden aria-label="Team sold celebration">
+    <section id="team-sold-video" class="team-sold-video" hidden aria-label="Team sold celebration" data-mode="logo">
+        <div class="team-sold-backdrop" aria-hidden="true"></div>
         <video id="team-sold-video-el" class="team-sold-video-media" muted playsinline></video>
+        <div class="team-sold-burst" aria-hidden="true"></div>
+        <div class="team-sold-center">
+            <p class="team-sold-eyebrow">Sold to</p>
+            <div class="team-sold-logo-wrap">
+                <img id="team-sold-logo" class="team-sold-logo" alt="">
+            </div>
+            <h2 class="team-sold-video-name" id="team-sold-video-name">Team</h2>
+            <p class="team-sold-price" id="team-sold-price"></p>
+            <p class="team-sold-video-meta" id="team-sold-video-meta"></p>
+        </div>
         <div class="team-sold-video-bar">
             <div class="team-sold-video-copy">
-                <p class="team-sold-video-eyebrow">Sold</p>
-                <h2 class="team-sold-video-name" id="team-sold-video-name">Team</h2>
-                <p class="team-sold-video-meta" id="team-sold-video-meta"></p>
+                <p class="team-sold-video-eyebrow">Auction result</p>
+                <p class="team-sold-bar-line" id="team-sold-bar-line">Player sold</p>
             </div>
             <button type="button" class="partners-intro-continue" id="team-sold-video-continue">Continue</button>
         </div>
@@ -281,6 +398,43 @@
             <div class="modal-buttons">
                 <button type="button" id="category-stay-btn" class="modal-submit-btn reset">Stay here</button>
                 <button type="button" id="category-continue-btn" class="modal-submit-btn resume">Go to next category</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="category-switch-modal" class="modal-overlay" style="display: none;" aria-hidden="true">
+        <div class="modal-content category-complete-modal">
+            <span class="modal-close" id="category-switch-close-btn">&times;</span>
+            <p class="modal-eyebrow">Change category</p>
+            <h2 id="category-switch-title">Jump to another category</h2>
+            <p id="category-switch-text">Leave the current category and auction another one now.</p>
+            <div id="category-switch-list" class="category-switch-list"></div>
+            <div class="modal-buttons" style="grid-template-columns: 1fr;">
+                <button type="button" id="category-switch-next-btn" class="modal-submit-btn resume">Go to next category</button>
+                <button type="button" id="category-switch-cancel-btn" class="modal-submit-btn reset">Stay here</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="find-player-modal" class="modal-overlay" style="display: none;" aria-hidden="true">
+        <div class="modal-content find-player-modal">
+            <span class="modal-close" id="find-player-close-btn">&times;</span>
+            <p class="modal-eyebrow">Custom player auction</p>
+            <h2>Find a player</h2>
+            <p id="find-player-text">Search by name, ID, or club and start that player's auction now.</p>
+            <div class="find-player-tools">
+                <input id="find-player-input" type="search" placeholder="Search name, ID, club..." autocomplete="off">
+                <select id="find-player-category" aria-label="Filter by category">
+                    <option value="">All categories</option>
+                </select>
+                <label class="find-player-include">
+                    <input type="checkbox" id="find-player-include-unsold" checked>
+                    <span>Include unsold / skipped</span>
+                </label>
+            </div>
+            <div id="find-player-results" class="find-player-results"></div>
+            <div class="modal-buttons" style="grid-template-columns: 1fr;">
+                <button type="button" id="find-player-cancel-btn" class="modal-submit-btn reset">Close</button>
             </div>
         </div>
     </div>
@@ -362,11 +516,11 @@
     </div>
 
     <script src="js/money.js?v=17"></script>
-    <script src="js/config-store.js?v=23"></script>
-    <script src="js/project-store.js?v=22"></script>
+    <script src="js/config-store.js?v=25"></script>
+    <script src="js/project-store.js?v=23"></script>
     <script src="js/players-store.js?v=28"></script>
-    <script src="js/offline-store.js?v=20"></script>
-    <script src="app.js?v=23"></script>
+    <script src="js/offline-store.js?v=21"></script>
+    <script src="app.js?v=51"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

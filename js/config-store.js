@@ -456,7 +456,7 @@ function getTournamentTitle(tournament) {
     return `${normalized.name} - ${normalized.year}`;
 }
 
-function getTournamentLogoSrc(tournament, defaultPath = "assets/tournament-logo.png") {
+function getTournamentLogoSrc(tournament, defaultPath = "assets/tournament-logo.svg") {
     const uploaded = normalizeTeamLogo(tournament?.logo);
     if (uploaded) return uploaded;
     return defaultPath;
@@ -468,7 +468,7 @@ function buildTournamentState(config, existing = null) {
         ...(existing && typeof existing === "object" ? existing : {}),
         name: tournament.name,
         year: tournament.year,
-        logo: tournament.logo || "assets/tournament-logo.png"
+        logo: tournament.logo || "assets/tournament-logo.svg"
     };
 }
 
@@ -1252,6 +1252,81 @@ function getCategoryQuotaStatus(state, teamId, categoryName) {
 
 function canTeamBuyCategory(state, teamId, categoryName) {
     return !getCategoryQuotaStatus(state, teamId, categoryName).isFull;
+}
+
+/**
+ * Kitty that must stay reserved so the team can still fill remaining category
+ * slots at each category's base price.
+ * When fillingCategory is set, that category's remaining need is reduced by 1
+ * (this purchase would fill one slot).
+ */
+function getTeamCategoryReserve(state, teamId, options = {}) {
+    const config = getActiveConfig(state);
+    const fillingCategory = options.fillingCategory
+        ? normalizeCategoryName(options.fillingCategory)
+        : null;
+    const sequence = getCategorySequence(config);
+    const names = sequence.length
+        ? sequence.map((name) => normalizeCategoryName(name))
+        : Object.keys(config.categories || {}).map((name) => normalizeCategoryName(name));
+
+    let reserve = 0;
+    let remainingSlots = 0;
+    const breakdown = [];
+
+    names.forEach((name) => {
+        const category = getCategoryConfig(config, name);
+        const maxPlayers = Number(category.maxPlayers) || 0;
+        if (maxPlayers <= 0) return;
+
+        const owned = countTeamPlayersInCategory(state, teamId, name);
+        let need = Math.max(0, maxPlayers - owned);
+        if (fillingCategory && name === fillingCategory) {
+            need = Math.max(0, need - 1);
+        }
+        const basePrice = Number(category.basePrice) || 0;
+        const amount = need * basePrice;
+        reserve += amount;
+        remainingSlots += need;
+        if (need > 0) {
+            breakdown.push({
+                name,
+                need,
+                basePrice,
+                amount
+            });
+        }
+    });
+
+    return {
+        reserve,
+        remainingSlots,
+        breakdown
+    };
+}
+
+function getTeamSpendableBudget(state, teamId, options = {}) {
+    const team = state?.teams?.find((item) => Number(item.team_id) === Number(teamId));
+    const purse = Number(team?.remaining_budget) || 0;
+    const { reserve, remainingSlots, breakdown } = getTeamCategoryReserve(state, teamId, options);
+    const spendable = Math.max(0, purse - reserve);
+    return {
+        purse,
+        reserve,
+        spendable,
+        remainingSlots,
+        breakdown
+    };
+}
+
+function canTeamAffordBid(state, teamId, amount, options = {}) {
+    const bidAmount = Number(amount) || 0;
+    const info = getTeamSpendableBudget(state, teamId, options);
+    return {
+        ...info,
+        amount: bidAmount,
+        ok: bidAmount > 0 && bidAmount <= info.spendable
+    };
 }
 
 function applyConfigToAuctionState(state, config) {

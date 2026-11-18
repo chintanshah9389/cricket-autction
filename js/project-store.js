@@ -92,8 +92,36 @@ async function resetProjectFolderOnDisk() {
     });
 }
 
-function applyProjectSnapshotToLocalStorage(snapshot) {
-    if (!snapshot) return;
+/** True when auction snapshot has a roster worth resuming. */
+function isMeaningfulAuctionSnapshot(auction) {
+    if (!auction || typeof auction !== "object") return false;
+    const players = auction.auctionState?.players || auction.players;
+    return Array.isArray(players) && players.length > 0;
+}
+
+function readLocalAuctionSnapshot(divisionId) {
+    const id = divisionId || "div_1";
+    try {
+        const raw = localStorage.getItem(`auctionData:${id}`);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return isMeaningfulAuctionSnapshot(parsed) ? parsed : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Apply disk snapshot to localStorage.
+ * Config + players: disk wins.
+ * Auction: disk wins when present; if disk has no auction.json, keep a meaningful
+ * local mid-auction cache so refresh does not wipe Resume.
+ */
+function applyProjectSnapshotToLocalStorage(snapshot, options = {}) {
+    if (!snapshot) return { preservedAuctionIds: [] };
+
+    const wipeMissingAuction = options.wipeMissingAuction === true;
+    const preservedAuctionIds = [];
 
     if (snapshot.project) {
         localStorage.setItem("auctionConfig", JSON.stringify(snapshot.project));
@@ -104,10 +132,16 @@ function applyProjectSnapshotToLocalStorage(snapshot) {
         const id = division.id || "div_1";
         seen.add(id);
         localStorage.setItem(`auctionPlayers:${id}`, JSON.stringify(division.players || []));
-        if (division.auction) {
+        if (isMeaningfulAuctionSnapshot(division.auction)) {
             localStorage.setItem(`auctionData:${id}`, JSON.stringify(division.auction));
         } else {
-            localStorage.removeItem(`auctionData:${id}`);
+            const localAuction = readLocalAuctionSnapshot(id);
+            if (!wipeMissingAuction && localAuction) {
+                // Keep browser mid-auction progress when disk has no auction.json yet
+                preservedAuctionIds.push(id);
+            } else {
+                localStorage.removeItem(`auctionData:${id}`);
+            }
         }
     });
 
@@ -124,6 +158,7 @@ function applyProjectSnapshotToLocalStorage(snapshot) {
         }
     }
     keysToRemove.forEach((key) => localStorage.removeItem(key));
+    return { preservedAuctionIds };
 }
 
 function isForceBlankProjectBoot() {
@@ -172,7 +207,7 @@ async function hydrateLocalStorageFromProjectFolder() {
 
     if (forceBlank) {
         clearAuctionLocalStorageCaches();
-        applyProjectSnapshotToLocalStorage(snapshot);
+        applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: true });
         try {
             sessionStorage.removeItem("auctionForceBlank");
         } catch (_) {
@@ -181,9 +216,27 @@ async function hydrateLocalStorageFromProjectFolder() {
         return { ok: true, blank: true, root: snapshot.root };
     }
 
-    // Disk always wins. Refresh the browser cache from data-project/.
-    applyProjectSnapshotToLocalStorage(snapshot);
-    return { ok: true, migrated: false, root: snapshot.root };
+    // Config/players: disk wins. Auction: keep local mid-progress if disk empty.
+    const applied = applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: false });
+    const preservedAuctionIds = applied?.preservedAuctionIds || [];
+
+    // Heal disk so the next refresh also finds Resume (auction.json was missing).
+    for (const id of preservedAuctionIds) {
+        const auction = readLocalAuctionSnapshot(id);
+        if (!auction) continue;
+        try {
+            await persistAuctionToProjectFolder(id, auction);
+        } catch (error) {
+            console.warn("Could not restore auction.json for", id, error?.message || error);
+        }
+    }
+
+    return {
+        ok: true,
+        migrated: false,
+        root: snapshot.root,
+        preservedAuctionIds
+    };
 }
 
 async function pushLocalStorageToProjectFolder() {

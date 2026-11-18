@@ -38,7 +38,13 @@ function divisionHasSavedAuction(divisionId) {
             migrateLegacyDivisionStorage(divisionId);
         }
         const raw = localStorage.getItem(getAuctionDataStorageKey(divisionId));
-        return Boolean(raw);
+        if (!raw) return false;
+        if (typeof isMeaningfulAuctionSnapshot === "function") {
+            return isMeaningfulAuctionSnapshot(JSON.parse(raw));
+        }
+        const parsed = JSON.parse(raw);
+        const players = parsed?.auctionState?.players;
+        return Array.isArray(players) && players.length > 0;
     } catch (_) {
         return false;
     }
@@ -423,17 +429,27 @@ function enterAuctionDesk() {
  * Starts the main UI after welcome. Auction state is already prepared in initApp.
  */
 function startMainApplication() {
+    if (!requireServerOnline("open the auction desk")) return;
     // Leave welcome first — renderUI() skips player details while welcome-active.
     enterAuctionDesk();
     renderUI();
     updateUndoRedoButtons();
 }
 
+function requireServerOnline(actionLabel = "continue") {
+    if (isServerOnline()) return true;
+    alert(`Cannot ${actionLabel}: local server is offline.\n\nRun: node server.js\nThen open http://localhost:3000 and retry.`);
+    updateServerStatusUI();
+    return false;
+}
+
 function handleWelcomeResume() {
+    if (!requireServerOnline("resume auction")) return;
     startMainApplication();
 }
 
 async function handleWelcomeStartNew() {
+    if (!requireServerOnline("start a new auction")) return;
     // Reload players/config from storage so uploads done after page open are included
     if (welcomeConfigCache) {
         const divisionId = welcomeConfigCache.activeDivisionId;
@@ -474,14 +490,14 @@ function showTournamentDetails() {
     const title = getTournamentTitle(state.tournament);
     const divisionName = state.divisionName || getActiveDivision(welcomeConfigCache || state.config || {})?.name;
     const deskTitle = divisionName ? `${title} — ${divisionName}` : title;
-    const logoSrc = getTournamentLogoSrc(state.tournament, "assets/tournament-logo.png");
+    const logoSrc = getTournamentLogoSrc(state.tournament, "assets/tournament-logo.svg");
 
     const logoEl = document.querySelector(".tournament-logo");
     const headline = document.querySelector(".headline");
     if (logoEl) {
         logoEl.src = logoSrc;
         logoEl.onerror = () => {
-            logoEl.src = "assets/tournament-logo.png";
+            logoEl.src = "assets/tournament-logo.svg";
         };
     }
     if (headline) {
@@ -491,7 +507,7 @@ function showTournamentDetails() {
     if (welcomeLogo) {
         welcomeLogo.src = logoSrc;
         welcomeLogo.onerror = () => {
-            welcomeLogo.src = "assets/tournament-logo.png";
+            welcomeLogo.src = "assets/tournament-logo.svg";
         };
     }
     if (welcomeTitle) {
@@ -499,7 +515,79 @@ function showTournamentDetails() {
     }
 }
 
+function isServerOnline() {
+    return document.body.dataset.serverOnline === "1";
+}
+
+function setOfflineOnlyMode(offline) {
+    const panel = document.getElementById("offline-only-panel");
+    const brand = document.querySelector(".welcome-brand");
+    const online = document.getElementById("welcome-online");
+    const banner = document.getElementById("server-status-banner");
+    document.body.classList.toggle("server-offline-only", offline);
+    document.documentElement.classList.toggle("boot-offline", offline);
+    document.documentElement.classList.toggle("boot-online", !offline);
+    if (panel) panel.hidden = !offline;
+    if (brand) brand.hidden = offline;
+    if (online) online.hidden = offline;
+    if (banner && offline) banner.hidden = true;
+    // Never enter the desk from an offline boot
+    if (offline && bigContainer) bigContainer.hidden = true;
+    if (offline && welcomeScreen) {
+        welcomeScreen.hidden = false;
+        document.body.classList.add("welcome-active");
+    }
+    if (!offline && brand) brand.hidden = false;
+    if (!offline && online) online.hidden = false;
+}
+
+async function updateServerStatusUI() {
+    const banner = document.getElementById("server-status-banner");
+    const chip = document.getElementById("desk-server-chip");
+    let online = false;
+    if (typeof checkProjectApiReady === "function") {
+        try {
+            online = await checkProjectApiReady({ force: true });
+        } catch (_) {
+            online = false;
+        }
+    }
+    document.body.dataset.serverOnline = online ? "1" : "0";
+    if (banner) {
+        banner.hidden = false;
+        banner.dataset.state = online ? "online" : "offline";
+        banner.textContent = online
+            ? "Local server online — using live data-project folder."
+            : "Offline — server is down. Start node server.js. Old browser cache will not be used.";
+    }
+    if (chip) {
+        chip.hidden = false;
+        chip.dataset.state = online ? "online" : "offline";
+        chip.textContent = online ? "LIVE DISK" : "OFFLINE";
+        chip.title = online
+            ? "Connected to data-project via server.js"
+            : "Server down — auction desk blocked until server is back";
+    }
+    // Only lock the welcome boot path; don't yank an already-live in-memory auction
+    if (document.body.classList.contains("welcome-active")) {
+        setOfflineOnlyMode(!online);
+    }
+    return online;
+}
+
 function refreshWelcomeDivisionActions() {
+    if (!isServerOnline()) {
+        setOfflineOnlyMode(true);
+        if (welcomeResumeBtn) welcomeResumeBtn.hidden = true;
+        if (welcomeStartNewBtn) welcomeStartNewBtn.hidden = true;
+        if (welcomeResetBtn) welcomeResetBtn.hidden = true;
+        if (welcomeDivisionNote) {
+            welcomeDivisionNote.textContent = "Offline — start node server.js to load live project data.";
+        }
+        return;
+    }
+
+    setOfflineOnlyMode(false);
     const config = welcomeConfigCache;
     if (!config) return;
     const active = getActiveDivision(config);
@@ -516,8 +604,8 @@ function refreshWelcomeDivisionActions() {
                 ? (loadStoredPlayers(active.id) || []).length
                 : 0;
         welcomeDivisionNote.textContent = hasSaved
-            ? `${active.name}: ${teamCount} teams, ${playerCount} players — saved auction found — resume, or Start New Auction to reload the latest Excel roster.`
-            : `${active.name}: ${teamCount} teams, ${playerCount} players — no saved auction — start fresh.`;
+            ? `Saved auction found for ${active.name}. Resume to continue, or Start New to reload the latest Excel roster.`
+            : `No saved auction for ${active.name}. Start New to begin with the current roster.`;
     }
 }
 
@@ -561,7 +649,6 @@ async function selectWelcomeDivision(divisionId) {
 async function loadAuctionStateForActiveDivision(auctionConfig) {
     const division = getActiveDivision(auctionConfig);
     migrateLegacyDivisionStorage?.(division.id);
-    let savedDataJSON = localStorage.getItem(getAuctionDataStorageKey(division.id));
 
     history = { undoStack: [], redoStack: [] };
     state = {
@@ -577,16 +664,26 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         divisionName: division.name
     };
 
-    let useSaved = Boolean(savedDataJSON);
+    // Prefer disk auction.json, then lean browser mirror
     let savedData = null;
-    if (useSaved) {
+    if (typeof loadDivisionAuctionFromProject === "function") {
         try {
-            savedData = JSON.parse(savedDataJSON);
+            savedData = await loadDivisionAuctionFromProject(division.id);
         } catch (_) {
-            useSaved = false;
             savedData = null;
         }
     }
+    if (!savedData || (typeof isMeaningfulAuctionSnapshot === "function" && !isMeaningfulAuctionSnapshot(savedData))) {
+        try {
+            const raw = localStorage.getItem(getAuctionDataStorageKey(division.id));
+            savedData = raw ? JSON.parse(raw) : null;
+        } catch (_) {
+            savedData = null;
+        }
+    }
+    let useSaved =
+        Boolean(savedData) &&
+        (typeof isMeaningfulAuctionSnapshot !== "function" || isMeaningfulAuctionSnapshot(savedData));
 
     // Stale/empty snapshot after Excel upload — prefer live roster over frozen empty state
     if (useSaved) {
@@ -646,6 +743,9 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         if (typeof reorderRemainingPlayersByCategory === "function") {
             reorderRemainingPlayersByCategory(state, auctionConfig);
         }
+
+        // Repair truncated queues (waiting players still in allPlayers but missing from players)
+        ensureAuctionQueueFromMaster();
     } else {
         state.players = await getPlayersData(division.id);
         state.allPlayers = state.players.slice();
@@ -741,6 +841,7 @@ function ensureAuctionCustomPlayerFieldNodes() {
             `;
             metaBar.appendChild(node);
         } else {
+            node.setAttribute("data-custom-field", "true");
             const labelEl = node.querySelector(".player-data-head span");
             if (labelEl) labelEl.textContent = def.label;
             const valueEl = node.querySelector(".player-data-info");
@@ -770,7 +871,11 @@ function showPlayerDetails(i) {
     applyAuctionPlayerFieldVisibility();
 
     const player = state.players[i];
+    syncPlayerPhotoFrameStatus(player);
+    updateSoldTeamBadge(player);
     playerName.innerText = player.name;
+    const photoName = document.getElementById("photo-player-name");
+    if (photoName) photoName.innerText = player.name || "—";
     if (playerRole) playerRole.innerText = player.role || "—";
     setPlayerPhotoElement(playerPhoto, player.photo);
     if (playerPhoto) playerPhoto.alt = player.name;
@@ -808,7 +913,32 @@ function showPlayerDetails(i) {
     const categoryName = normalizeCategoryName(state.players[i].category);
     const categoryMeta = getCategoryConfig(getActiveConfig(state), categoryName);
     playerCategory.innerText = categoryName;
-    playerCategory.title = `Max ${categoryMeta.maxPlayers} per team`;
+    const maxPerTeam = Number(categoryMeta.maxPlayers) || 0;
+    const poolCount = (state.allPlayers || state.players || []).filter(
+        (p) => normalizeCategoryName(p.category) === categoryName
+    ).length;
+    const remainingInPool = (state.players || []).filter(
+        (p) =>
+            normalizeCategoryName(p.category) === categoryName &&
+            p.status !== "sold" &&
+            p.status !== "unsold" &&
+            p.status !== "skipped"
+    ).length;
+    playerCategory.title = `Max ${maxPerTeam} per team · ${poolCount} players in this category`;
+    const quotaEl = document.getElementById("player-category-quota");
+    const poolEl = document.getElementById("player-category-pool");
+    if (quotaEl) {
+        quotaEl.textContent = maxPerTeam > 0 ? `${maxPerTeam} / team` : "";
+        quotaEl.hidden = maxPerTeam <= 0;
+    }
+    if (poolEl) {
+        poolEl.textContent =
+            poolCount > 0
+                ? `${remainingInPool}/${poolCount} left in pool`
+                : "";
+        poolEl.hidden = poolCount <= 0;
+    }
+    updateCategoryJumpControls();
     playerId.innerText = getPlayerDisplayCode(state.players[i]);
     playerBasePrice.innerText = showAmount(state.players[i].basePrice);
 
@@ -827,8 +957,8 @@ function showPlayerDetails(i) {
         soldButton.style.display = "none";
         unsoldButton.style.display = "none";
         nextButton.style.display = "block";
-        soldSeal.classList.add("show");     // Show SOLD
-        unsoldSeal.classList.remove("show"); // Hide UNSOLD
+        unsoldSeal.classList.remove("show");
+        playSoldSealAnimation();
         if (statusChip) {
             statusChip.dataset.status = "sold";
             statusChip.textContent = "SOLD";
@@ -839,8 +969,8 @@ function showPlayerDetails(i) {
         soldButton.style.display = "none";
         unsoldButton.style.display = "none";
         nextButton.style.display = "block";
-        soldSeal.classList.remove("show");  // Hide SOLD
-        unsoldSeal.classList.add("show"); // Show UNSOLD
+        soldSeal.classList.remove("show", "is-animating");
+        unsoldSeal.classList.add("show");
         if (statusChip) {
             statusChip.dataset.status = playerStatus;
             statusChip.textContent = playerStatus === "skipped" ? "SKIPPED" : "UNSOLD";
@@ -848,10 +978,10 @@ function showPlayerDetails(i) {
 
     } else { 
         // Player is "not-auctioned" (i.e., bidding is active)
-        soldSeal.classList.remove("show");  // Hide SOLD
-        unsoldSeal.classList.remove("show"); // Hide UNSOLD
+        soldSeal.classList.remove("show", "is-animating");
+        unsoldSeal.classList.remove("show");
         if (statusChip) {
-            statusChip.dataset.status = "live";
+            statusChip.dataset.status = hasBids ? "bidding" : "live";
             statusChip.textContent = hasBids ? "BIDDING" : "LIVE";
         }
 
@@ -877,21 +1007,53 @@ function getTeamSquadCapacity(auctionState = state) {
     );
 }
 
+function setCurrentBidTeamLogo(team) {
+    const logoEl = document.getElementById("current-bid-team-logo");
+    if (!logoEl) return;
+
+    const logoSrc =
+        team && typeof getTeamLogoSrc === "function"
+            ? String(getTeamLogoSrc(team) || "").trim()
+            : String(team?.logo || "").trim();
+
+    if (!team || !logoSrc) {
+        logoEl.hidden = true;
+        logoEl.removeAttribute("src");
+        logoEl.alt = "";
+        return;
+    }
+
+    logoEl.onerror = () => {
+        logoEl.hidden = true;
+    };
+    logoEl.onload = () => {
+        logoEl.hidden = false;
+    };
+    logoEl.alt = `${team.team_name || "Team"} logo`;
+    logoEl.hidden = false;
+    logoEl.src = logoSrc;
+}
+
 function updateCurrentBidPanel(player) {
     const bidSection = document.getElementById("current-bid-section");
     const teamPanel = document.getElementById("current-bid-team-panel");
     const teamStats = document.getElementById("current-bid-team-stats");
     const purseEl = document.getElementById("current-bid-team-purse");
+    const reservedEl = document.getElementById("current-bid-team-reserved");
+    const spendableEl = document.getElementById("current-bid-team-spendable");
     const pendingEl = document.getElementById("current-bid-team-pending");
     const slotsEl = document.getElementById("current-bid-team-slots");
 
     if (!player || !player.bids || player.bids.length === 0) {
         currentBidAmount.innerText = "00K";
         currentBidTeam.innerText = "NO BIDS";
+        setCurrentBidTeamLogo(null);
         if (teamPanel) teamPanel.style.backgroundColor = "#73849a";
         if (bidSection) bidSection.dataset.hasBidder = "false";
         if (teamStats) teamStats.hidden = true;
         if (purseEl) purseEl.textContent = "—";
+        if (reservedEl) reservedEl.textContent = "—";
+        if (spendableEl) spendableEl.textContent = "—";
         if (pendingEl) pendingEl.textContent = "—";
         if (slotsEl) slotsEl.textContent = "—";
         return;
@@ -902,6 +1064,12 @@ function updateCurrentBidPanel(player) {
     const quota = team
         ? getCategoryQuotaStatus(state, team.team_id, player.category)
         : null;
+    const budget =
+        team && typeof getTeamSpendableBudget === "function"
+            ? getTeamSpendableBudget(state, team.team_id, {
+                  fillingCategory: player.category
+              })
+            : null;
     const capacity = getTeamSquadCapacity(state);
     const bought = Number(team?.player_bought) || 0;
     const slotsLeft = Math.max(0, capacity - bought);
@@ -910,6 +1078,7 @@ function updateCurrentBidPanel(player) {
 
     currentBidAmount.innerText = showAmount(lastBid.amount);
     currentBidTeam.innerText = team ? team.team_name : "UNKNOWN";
+    setCurrentBidTeamLogo(team || null);
     if (teamPanel) teamPanel.style.backgroundColor = team ? team.color : "#12a39a";
     if (bidSection) bidSection.dataset.hasBidder = "true";
 
@@ -917,6 +1086,18 @@ function updateCurrentBidPanel(player) {
     if (purseEl) {
         purseEl.textContent = team ? showAmount(team.remaining_budget) : "—";
         purseEl.title = team ? `Remaining purse: ${formatMoney(team.remaining_budget)}` : "";
+    }
+    if (reservedEl) {
+        reservedEl.textContent = budget ? showAmount(budget.reserve) : "—";
+        reservedEl.title = budget
+            ? `Reserved for ${budget.remainingSlots} remaining category minimums: ${formatMoney(budget.reserve)}`
+            : "";
+    }
+    if (spendableEl) {
+        spendableEl.textContent = budget ? showAmount(budget.spendable) : "—";
+        spendableEl.title = budget
+            ? `Max bid now after reserves: ${formatMoney(budget.spendable)}`
+            : "";
     }
     if (pendingEl) {
         pendingEl.textContent = quota ? `${categoryPending}` : "—";
@@ -938,13 +1119,9 @@ function bidIncrement(currentBid) {
     return 200000; // +2 L
   } else if (currentBid >= 1000000) { // 10 L+
     return 100000; // +1 L
-  } else if (currentBid >= 500000) { // 5 L+
-    return 50000; // +50 K
-  } else if (currentBid >= 200000) { // 2 L+
-    return 25000; // +25 K
-  } else {
-    return 10000; // +10 K
   }
+  // Below 10 L: minimum step is 50 K (no 25 K / 10 K)
+  return 50000;
 }
 
 function isOverlayBlockingBids() {
@@ -985,10 +1162,6 @@ function bidPlayer(team_id) {
 
     if (player.bids.length === 0) {
         // First bid = base price
-        if (team.remaining_budget < basePrice) {
-            console.log(`${team.team_name} doesn't have enough purse for base price.`);
-            return;
-        }
         bidAmount = basePrice;
     } else {
         const lastBid = player.bids[player.bids.length - 1];
@@ -1000,14 +1173,37 @@ function bidPlayer(team_id) {
             console.log(`${team.team_name} already has the current bid.`);
             return;
         }
-        if (team.remaining_budget < nextAmount) {
-            console.log(`${team.team_name} doesn't have enough money to bid for this player.`);
-            return;
-        }
         bidAmount = nextAmount;
     }
 
     if (!Number.isFinite(bidAmount) || bidAmount <= 0) return;
+
+    const afford =
+        typeof canTeamAffordBid === "function"
+            ? canTeamAffordBid(state, team_id, bidAmount, { fillingCategory: player.category })
+            : {
+                  ok: team.remaining_budget >= bidAmount,
+                  purse: team.remaining_budget,
+                  reserve: 0,
+                  spendable: team.remaining_budget,
+                  remainingSlots: 0
+              };
+    if (!afford.ok) {
+        const reserveText =
+            typeof formatMoney === "function" ? formatMoney(afford.reserve) : String(afford.reserve);
+        const spendableText =
+            typeof formatMoney === "function"
+                ? formatMoney(afford.spendable)
+                : String(afford.spendable);
+        const bidText =
+            typeof formatMoney === "function" ? formatMoney(bidAmount) : String(bidAmount);
+        alert(
+            `${team.team_name} cannot bid ${bidText}.\n` +
+                `Must keep ${reserveText} reserved for ${afford.remainingSlots} remaining category minimums.\n` +
+                `Spendable now: ${spendableText}.`
+        );
+        return;
+    }
 
     //Save history
     saveHistory();
@@ -1032,60 +1228,206 @@ function bidPlayer(team_id) {
     triggerAnim(document.getElementById(`team-${team_id}`), "bid-flash");
     triggerAnim(document.getElementById(`team-rail-${team_id}`), "bid-flash");
 
-    //save current state to local storage
-    saveData();
+    // Disk-first mid-auction save (await so refresh is safe)
+    saveAuctionProgress({ awaitDisk: true, critical: true });
+}
+
+/** Drop in-memory data-URL media so saves fit browser/disk quotas. Logos reload from Config. */
+function leanAuctionState(source) {
+    let next;
+    try {
+        next = JSON.parse(JSON.stringify(source || {}));
+    } catch (_) {
+        next = { ...(source || {}) };
+    }
+    delete next.config;
+    (next.teams || []).forEach((team) => {
+        if (!team || typeof team !== "object") return;
+        const logo = String(team.logo || "");
+        if (!logo || logo.startsWith("data:")) delete team.logo;
+        const video = String(team.video || "");
+        if (!video || video.startsWith("data:")) delete team.video;
+    });
+    const slimPlayers = (list) => {
+        (list || []).forEach((player) => {
+            if (!player || typeof player !== "object") return;
+            const photo = String(player.photo || "");
+            if (photo.startsWith("data:")) player.photo = "assets/placeholder.png";
+        });
+    };
+    slimPlayers(next.players);
+    slimPlayers(next.allPlayers);
+    return next;
+}
+
+function leanHistoryData(source, maxSteps = 3) {
+    const undo = Array.isArray(source?.undoStack) ? source.undoStack.slice(-maxSteps) : [];
+    const redo = Array.isArray(source?.redoStack) ? source.redoStack.slice(-maxSteps) : [];
+    return {
+        undoStack: undo.map((snap) => leanAuctionState(snap)),
+        redoStack: redo.map((snap) => leanAuctionState(snap))
+    };
+}
+
+function buildAuctionSavePayload() {
+    return {
+        auctionState: leanAuctionState(state),
+        // Keep tiny undo on disk only; browser mirror skips history
+        historyData: leanHistoryData(history, 3),
+        savedAt: Date.now()
+    };
+}
+
+/** Remove oversized auction caches left by older builds (logos + undo copies). */
+function purgeBloatedAuctionBrowserCache() {
+    const keys = [];
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (key === "auctionData" || key.startsWith("auctionData:")) keys.push(key);
+        }
+    } catch (_) {
+        return;
+    }
+    keys.forEach((key) => {
+        try {
+            const raw = localStorage.getItem(key) || "";
+            // > ~750KB is too fat for a lean auction mirror
+            if (raw.length > 750000) {
+                localStorage.removeItem(key);
+                console.warn("Purged bloated browser auction cache:", key, raw.length);
+            }
+        } catch (_) {
+            try {
+                localStorage.removeItem(key);
+            } catch (__) {
+                // ignore
+            }
+        }
+    });
+}
+
+function writeLeanAuctionBrowserMirror(divisionId, data) {
+    const key = getAuctionDataStorageKey(divisionId);
+    // Browser gets state only — no undo history (that is what blew the 5MB quota)
+    const mirror = {
+        auctionState: data.auctionState,
+        historyData: { undoStack: [], redoStack: [] },
+        savedAt: data.savedAt || Date.now()
+    };
+    localStorage.setItem(key, JSON.stringify(mirror));
+}
+
+/**
+ * Expert mid-auction save:
+ * 1) Disk auction.json is source of truth
+ * 2) Browser cache is only a tiny lean mirror (optional)
+ * Never block the desk on browser quota when disk save works.
+ */
+async function saveAuctionProgress({ awaitDisk = false, critical = false } = {}) {
+    const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
+    const data = buildAuctionSavePayload();
+    let diskOk = false;
+    let localOk = false;
+
+    if (typeof persistAuctionToProjectFolder === "function") {
+        try {
+            const pending = persistAuctionToProjectFolder(divisionId, data);
+            if (awaitDisk) {
+                const result = await pending;
+                if (typeof flushProjectPersistQueue === "function") {
+                    await flushProjectPersistQueue();
+                }
+                diskOk = result !== false;
+            } else {
+                pending
+                    .then((result) => {
+                        if (result === false) {
+                            console.warn("auction.json sync skipped (API not ready).");
+                        }
+                    })
+                    .catch((error) => {
+                        console.warn("Could not write auction.json:", error?.message || error);
+                    });
+                diskOk = true; // queued; desk continues
+            }
+        } catch (error) {
+            console.warn("Could not write auction.json:", error?.message || error);
+            diskOk = false;
+        }
+    }
+
+    try {
+        writeLeanAuctionBrowserMirror(divisionId, data);
+        localOk = true;
+    } catch (error) {
+        console.warn("Browser auction mirror skipped (quota). Disk remains source of truth.", error);
+        try {
+            // Clear old fat cache once, then retry tiny mirror
+            purgeBloatedAuctionBrowserCache();
+            localStorage.removeItem(getAuctionDataStorageKey(divisionId));
+            writeLeanAuctionBrowserMirror(divisionId, data);
+            localOk = true;
+        } catch (_) {
+            localOk = false;
+        }
+    }
+
+    if (critical && !diskOk && !localOk) {
+        alert("Could not save auction progress. Keep node server.js running, then bid/sold again.");
+    }
+    console.log(
+        diskOk
+            ? localOk
+                ? "Auction saved to disk + browser mirror."
+                : "Auction saved to disk (browser mirror skipped)."
+            : localOk
+              ? "Auction saved to browser mirror only (disk unavailable)."
+              : "Auction save failed."
+    );
+    return { diskOk, localOk };
 }
 
 function saveData() {
-    let data = {
-        auctionState: state,
-        historyData: history
-    };
-    const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
-    localStorage.setItem(getAuctionDataStorageKey(divisionId), JSON.stringify(data));
-    if (typeof persistAuctionToProjectFolder === "function") {
-        persistAuctionToProjectFolder(divisionId, data);
-    }
-    console.log("All data saved...");
+    // Fire-and-forget for normal UI paths; disk-first under the hood
+    saveAuctionProgress({ awaitDisk: false, critical: false });
+}
+
+async function flushAuctionProgressToDisk() {
+    await saveAuctionProgress({ awaitDisk: true, critical: false });
 }
 
 function unsoldPlayer() {
     //Prevent player to unsold after a bid is placed
-    if(state.players[state.auctionCount].bids.length > 0){
+    if (state.players[state.auctionCount].bids.length > 0) {
         console.log("A player can't be unsold because atleast one bid is placed.");
         return;
     }
 
     const player = state.players[state.auctionCount];
 
-    //Save history
     saveHistory();
-
-    state.unsoldPlayers.push(player.id); // Use the new variable
-    player.status = "unsold";            // Use the new variable
-
-    const playerInMasterList = state.allPlayers.find(p => p.id === player.id);
-    if (playerInMasterList) {
-        playerInMasterList.status = "unsold";
-    }
-
-    state.unsoldCount++;             //Increamented the unsold count
-
-    console.log(`${state.players[state.auctionCount].name} remains unsold.`);
-
-    // unsoldSeal.style.display = "block"; //Show the unsold seal
-
-    //Update Screen
-    renderUI()
-
-    //save current state to local storage
-    saveData();
+    markPlayerUnsold(player, { reason: "unsold" });
+    renderUI();
+    saveAuctionProgress({ awaitDisk: true, critical: true });
 }
+
+let soldCelebrationTimer = null;
+let soldCelebrationVideoHandler = null;
 
 function hideTeamSoldVideo() {
     const overlay = document.getElementById("team-sold-video");
     const videoEl = document.getElementById("team-sold-video-el");
+    if (soldCelebrationTimer) {
+        clearTimeout(soldCelebrationTimer);
+        soldCelebrationTimer = null;
+    }
     if (videoEl) {
+        if (soldCelebrationVideoHandler) {
+            videoEl.removeEventListener("ended", soldCelebrationVideoHandler);
+            soldCelebrationVideoHandler = null;
+        }
         videoEl.pause();
         videoEl.removeAttribute("src");
         try {
@@ -1094,43 +1436,187 @@ function hideTeamSoldVideo() {
             // ignore
         }
     }
-    if (overlay) overlay.hidden = true;
+    if (overlay) {
+        overlay.classList.remove("is-active");
+        overlay.dataset.mode = "logo";
+        overlay.hidden = true;
+    }
 }
 
+function playSoldSealAnimation() {
+    if (!soldSeal) return;
+    const frame = document.getElementById("player-photo-frame") || document.querySelector(".squareBox");
+    soldSeal.classList.remove("show", "is-animating");
+    if (frame) frame.classList.remove("is-stamp-impact");
+    // Restart CSS animation when a player is sold again
+    void soldSeal.offsetWidth;
+    soldSeal.classList.add("show", "is-animating");
+    if (frame) {
+        void frame.offsetWidth;
+        frame.classList.add("is-stamp-impact");
+    }
+}
+
+function updateSoldTeamBadge(player) {
+    const badge = document.getElementById("sold-team-badge");
+    const logoEl = document.getElementById("sold-team-badge-logo");
+    const nameEl = document.getElementById("sold-team-badge-name");
+    const priceEl = document.getElementById("sold-seal-price");
+    const seal = document.getElementById("sold-seal");
+    if (!badge) return;
+
+    const team = player?.status === "sold" ? findTeam(player.team) : null;
+    if (!team) {
+        badge.hidden = true;
+        if (seal) seal.style.removeProperty("--sold-team-color");
+        if (logoEl) {
+            logoEl.hidden = true;
+            logoEl.removeAttribute("src");
+            logoEl.alt = "";
+        }
+        if (nameEl) nameEl.textContent = "";
+        if (priceEl) {
+            priceEl.hidden = true;
+            priceEl.textContent = "";
+        }
+        return;
+    }
+
+    const logoSrc =
+        typeof getTeamLogoSrc === "function" ? getTeamLogoSrc(team) : String(team.logo || "").trim();
+    const accent = String(team.color || "").trim() || "#149e63";
+    if (seal) seal.style.setProperty("--sold-team-color", accent);
+
+    badge.hidden = false;
+    if (nameEl) nameEl.textContent = team.team_name || "Team";
+    if (priceEl) {
+        const priceText =
+            player?.finalPrice != null && typeof showAmount === "function"
+                ? showAmount(player.finalPrice)
+                : "";
+        priceEl.textContent = priceText ? `For ${priceText}` : "";
+        priceEl.hidden = !priceText;
+    }
+    if (logoEl) {
+        logoEl.alt = `${team.team_name || "Team"} logo`;
+        if (logoSrc) {
+            logoEl.hidden = false;
+            logoEl.src = logoSrc;
+            logoEl.onerror = () => {
+                logoEl.hidden = true;
+            };
+        } else {
+            logoEl.hidden = true;
+            logoEl.removeAttribute("src");
+        }
+    }
+}
+
+function syncPlayerPhotoFrameStatus(player) {
+    const frame = document.getElementById("player-photo-frame") || document.querySelector(".squareBox");
+    if (!frame) return;
+    const status = player?.status || "live";
+    if (status === "sold") frame.dataset.status = "sold";
+    else if (status === "unsold" || status === "skipped") frame.dataset.status = status;
+    else frame.dataset.status = "live";
+}
+
+/** Always show sold celebration with team logo + name; play team video when available. */
 function maybeShowTeamSoldVideo(team, player) {
     const overlay = document.getElementById("team-sold-video");
     const videoEl = document.getElementById("team-sold-video-el");
+    const logoEl = document.getElementById("team-sold-logo");
     const nameEl = document.getElementById("team-sold-video-name");
     const metaEl = document.getElementById("team-sold-video-meta");
-    if (!overlay || !videoEl || !team) return;
+    const priceEl = document.getElementById("team-sold-price");
+    const barLineEl = document.getElementById("team-sold-bar-line");
+    if (!overlay || !team) return;
 
+    if (soldCelebrationTimer) {
+        clearTimeout(soldCelebrationTimer);
+        soldCelebrationTimer = null;
+    }
+
+    const teamName = team.team_name || "Team";
+    const logoSrc =
+        typeof getTeamLogoSrc === "function" ? getTeamLogoSrc(team) : String(team.logo || "").trim();
     const videoSrc =
         typeof getTeamVideoSrc === "function"
             ? getTeamVideoSrc(team)
             : String(team.video || "").trim();
-    if (!videoSrc) return;
+    const category = displayCategoryName(normalizeCategoryName(player?.category));
+    const priceText =
+        player?.finalPrice != null && typeof showAmount === "function"
+            ? showAmount(player.finalPrice)
+            : player?.finalPrice != null
+              ? String(player.finalPrice)
+              : "";
 
-    if (nameEl) nameEl.textContent = team.team_name || "Team";
+    if (nameEl) nameEl.textContent = teamName;
     if (metaEl) {
-        const category = displayCategoryName(normalizeCategoryName(player?.category));
         metaEl.textContent = player?.name
             ? `${player.name}${category ? ` · ${category}` : ""}`
             : "";
     }
+    if (priceEl) priceEl.textContent = priceText ? `Sold for ${priceText}` : "";
+    if (barLineEl) {
+        barLineEl.textContent = player?.name
+            ? `${player.name} → ${teamName}`
+            : `${teamName} wins the bid`;
+    }
+    if (logoEl) {
+        logoEl.alt = `${teamName} logo`;
+        if (logoSrc) {
+            logoEl.hidden = false;
+            logoEl.src = logoSrc;
+            logoEl.onerror = () => {
+                logoEl.hidden = true;
+            };
+        } else {
+            logoEl.hidden = true;
+            logoEl.removeAttribute("src");
+        }
+    }
+
+    const teamColor = String(team.color || "").trim();
+    if (teamColor) overlay.style.setProperty("--sold-team-color", teamColor);
+    else overlay.style.removeProperty("--sold-team-color");
 
     overlay.hidden = false;
-    videoEl.muted = true;
-    videoEl.playsInline = true;
-    videoEl.loop = false;
-    videoEl.src = videoSrc;
-    const onEnded = () => {
-        videoEl.removeEventListener("ended", onEnded);
-        hideTeamSoldVideo();
-    };
-    videoEl.addEventListener("ended", onEnded);
-    videoEl.play().catch(() => {
-        // If autoplay fails, keep overlay so user can Continue
-    });
+    overlay.dataset.mode = videoSrc ? "video" : "logo";
+    // Restart CSS entrance animations
+    overlay.classList.remove("is-active");
+    void overlay.offsetWidth;
+    overlay.classList.add("is-active");
+
+    if (videoEl) {
+        if (soldCelebrationVideoHandler) {
+            videoEl.removeEventListener("ended", soldCelebrationVideoHandler);
+            soldCelebrationVideoHandler = null;
+        }
+        if (videoSrc) {
+            videoEl.muted = true;
+            videoEl.playsInline = true;
+            videoEl.loop = false;
+            videoEl.src = videoSrc;
+            soldCelebrationVideoHandler = () => hideTeamSoldVideo();
+            videoEl.addEventListener("ended", soldCelebrationVideoHandler);
+            videoEl.play().catch(() => {
+                // Keep logo celebration if autoplay fails
+                soldCelebrationTimer = setTimeout(hideTeamSoldVideo, 4200);
+            });
+        } else {
+            videoEl.removeAttribute("src");
+            try {
+                videoEl.load();
+            } catch (_) {
+                // ignore
+            }
+            soldCelebrationTimer = setTimeout(hideTeamSoldVideo, 4200);
+        }
+    } else {
+        soldCelebrationTimer = setTimeout(hideTeamSoldVideo, 4200);
+    }
 }
 
 function soldPlayer() {
@@ -1184,18 +1670,11 @@ function soldPlayer() {
     //Update the UI with updated team data
     renderTeams();
 
-    //Show the SOLD seal
-    // soldSeal.style.display = "block";
-
-    //Update Screem
+    // Stay on the desk: sold stamp/logo animates on the player photo (no full-page interrupt)
+    if (typeof hideTeamSoldVideo === "function") hideTeamSoldVideo();
     renderUI();
 
-
-    //save current state to local storage
-    saveData();
-
-    // Optional team celebration video
-    maybeShowTeamSoldVideo(team, player);
+    saveAuctionProgress({ awaitDisk: true, critical: true });
 }
 
 const WHEEL_COLORS = [
@@ -1225,11 +1704,84 @@ function isPlayerWheelEnabled() {
     return getActiveConfig(state).playerWheelEnabled !== false;
 }
 
+function isAuctionSettledStatus(status) {
+    const value = String(status || "").toLowerCase();
+    return value === "sold" || value === "unsold" || value === "skipped";
+}
+
 function isWheelEligiblePlayer(player) {
     if (!player) return false;
-    const status = String(player.status || "").toLowerCase();
     // Sold / unsold / skipped never appear on the spinner
-    return status !== "sold" && status !== "unsold" && status !== "skipped";
+    return !isAuctionSettledStatus(player.status);
+}
+
+/** Master roster — never trust a truncated live queue alone. */
+function getMasterPlayers() {
+    if (Array.isArray(state.allPlayers) && state.allPlayers.length) {
+        return state.allPlayers;
+    }
+    return Array.isArray(state.players) ? state.players : [];
+}
+
+/**
+ * Rebuild live auction queue from allPlayers when waiting players were dropped
+ * (false "Round Complete / All sold" with not-auctioned left in master).
+ * Returns true when there is still someone to auction.
+ */
+function rebuildAuctionQueueFromMaster() {
+    const master = getMasterPlayers();
+    if (!master.length) return false;
+
+    const config = getActiveConfig(state);
+    const ordered =
+        typeof orderPlayersForAuction === "function"
+            ? orderPlayersForAuction(master, config)
+            : master.slice();
+
+    state.allPlayers = master;
+    state.players = ordered;
+
+    const nextIndex = ordered.findIndex((player) => !isAuctionSettledStatus(player.status));
+    if (nextIndex < 0) {
+        state.auctionCount = ordered.length;
+        return false;
+    }
+
+    state.auctionCount = nextIndex;
+    return true;
+}
+
+/** If the live queue is missing unsettled master players, repair it. */
+function ensureAuctionQueueFromMaster() {
+    const master = getMasterPlayers();
+    if (!master.length) return false;
+
+    const queue = Array.isArray(state.players) ? state.players : [];
+    const queueIds = new Set(queue.map((player) => player.id));
+    const missingUnsettled = master.some(
+        (player) => !isAuctionSettledStatus(player.status) && !queueIds.has(player.id)
+    );
+    const queueTooSmall = queue.length < master.length;
+
+    if (missingUnsettled || queueTooSmall) {
+        return rebuildAuctionQueueFromMaster();
+    }
+
+    const current = queue[state.auctionCount];
+    if (!current || isAuctionSettledStatus(current.status)) {
+        const nextIndex = queue.findIndex(
+            (player, index) =>
+                index >= Number(state.auctionCount || 0) && !isAuctionSettledStatus(player.status)
+        );
+        if (nextIndex >= 0) {
+            state.auctionCount = nextIndex;
+            return true;
+        }
+        // Past end of truncated queue — try master rebuild
+        return rebuildAuctionQueueFromMaster();
+    }
+
+    return true;
 }
 
 function getAuctionOrderMode() {
@@ -1504,7 +2056,8 @@ async function revealPlayerAtCount(index, { useWheel = true } = {}) {
 
 function getCategoryRoundStats(categoryName) {
     const name = normalizeCategoryName(categoryName);
-    const inCategory = (state.players || []).filter(
+    // Use master roster so a truncated live queue cannot fake "category complete"
+    const inCategory = getMasterPlayers().filter(
         (player) => normalizeCategoryName(player.category) === name
     );
     const sold = inCategory.filter((player) => player.status === "sold").length;
@@ -1528,15 +2081,16 @@ function findCategoryCompletion(fromIndex) {
     if (!current) return null;
 
     const fromCategory = normalizeCategoryName(current.category);
+    const stats = getCategoryRoundStats(fromCategory);
+    // Category is finished only when nobody in this category is still waiting
+    if ((stats.pending || 0) > 0) return null;
+
     const remaining = players.slice(fromIndex + 1);
     if (!remaining.length) return null;
 
-    const hasMoreInCategory = remaining.some(
-        (player) => normalizeCategoryName(player.category) === fromCategory
+    const nextPlayerInQueue = remaining.find(
+        (player) => normalizeCategoryName(player.category) !== fromCategory
     );
-    if (hasMoreInCategory) return null;
-
-    const nextPlayerInQueue = remaining[0];
     if (!nextPlayerInQueue) return null;
 
     const toCategory = normalizeCategoryName(nextPlayerInQueue.category);
@@ -1544,10 +2098,10 @@ function findCategoryCompletion(fromIndex) {
 
     return {
         fromIndex,
-        toIndex: fromIndex + 1,
+        toIndex: players.indexOf(nextPlayerInQueue),
         fromCategory,
         toCategory,
-        stats: getCategoryRoundStats(fromCategory)
+        stats
     };
 }
 
@@ -1599,7 +2153,14 @@ function continueToNextCategory() {
         closeCategoryCompleteModal();
         return;
     }
+    const toIndex = Number(pendingCategoryTransition.toIndex);
     closeCategoryCompleteModal();
+    if (Number.isFinite(toIndex) && toIndex >= 0) {
+        state.auctionCount = toIndex;
+        revealPlayerAtCount(state.auctionCount, { useWheel: true });
+        saveData();
+        return;
+    }
     advanceToNextPlayer({ useWheel: true });
 }
 
@@ -1608,8 +2169,413 @@ function stayOnCompletedCategory() {
     renderUI();
 }
 
+function getCurrentAuctionCategoryName() {
+    const player = state.players?.[state.auctionCount];
+    return normalizeCategoryName(player?.category);
+}
+
+/** Categories available to jump to, in sequence order. */
+function getCategoryJumpOptions() {
+    ensureAuctionQueueFromMaster();
+    const players = state.players || [];
+    const config = getActiveConfig(state);
+    const sequence =
+        typeof getCategorySequence === "function"
+            ? getCategorySequence(config).map((name) => normalizeCategoryName(name))
+            : [];
+    const current = getCurrentAuctionCategoryName();
+    const byCategory = new Map();
+
+    players.forEach((player, index) => {
+        const name = normalizeCategoryName(player.category) || "OTHER";
+        if (!byCategory.has(name)) {
+            byCategory.set(name, {
+                category: name,
+                label: displayCategoryName(name),
+                total: 0,
+                pending: 0,
+                sold: 0,
+                unsold: 0,
+                firstEligibleIndex: -1
+            });
+        }
+        const row = byCategory.get(name);
+        row.total += 1;
+        const status = String(player.status || "").toLowerCase();
+        if (status === "sold") row.sold += 1;
+        else if (status === "unsold" || status === "skipped") row.unsold += 1;
+        else {
+            row.pending += 1;
+            if (row.firstEligibleIndex < 0) row.firstEligibleIndex = index;
+        }
+    });
+
+    const orderedNames = [
+        ...sequence.filter((name) => byCategory.has(name)),
+        ...[...byCategory.keys()].filter((name) => !sequence.includes(name))
+    ];
+
+    const currentSeqIndex = sequence.indexOf(current);
+    let nextCategory = null;
+    for (let i = currentSeqIndex + 1; i < orderedNames.length; i++) {
+        const option = byCategory.get(orderedNames[i]);
+        if (option && option.pending > 0 && option.firstEligibleIndex >= 0) {
+            nextCategory = option.category;
+            break;
+        }
+    }
+    if (!nextCategory) {
+        for (const name of orderedNames) {
+            if (name === current) continue;
+            const option = byCategory.get(name);
+            if (option && option.pending > 0 && option.firstEligibleIndex >= 0) {
+                nextCategory = option.category;
+                break;
+            }
+        }
+    }
+
+    return orderedNames.map((name) => {
+        const option = byCategory.get(name);
+        return {
+            ...option,
+            isCurrent: name === current,
+            isNext: name === nextCategory,
+            canJump: option.pending > 0 && option.firstEligibleIndex >= 0 && name !== current
+        };
+    });
+}
+
+function findNextCategoryJump() {
+    return getCategoryJumpOptions().find((option) => option.isNext) || null;
+}
+
+function updateCategoryJumpControls() {
+    const options = getCategoryJumpOptions();
+    const canJump = options.some((option) => option.canJump);
+    const next = options.find((option) => option.isNext);
+    const footerBtn = document.getElementById("next-category-button");
+    const chipBtn = document.getElementById("category-jump-btn");
+    const label = next
+        ? `Next category · ${next.label}`
+        : "Change category";
+
+    [footerBtn, chipBtn].forEach((btn) => {
+        if (!btn) return;
+        btn.disabled = !canJump;
+        btn.title = canJump
+            ? (next ? `Jump to ${next.label} (or pick another)` : "Change category")
+            : "No other category with waiting players";
+        if (btn.id === "category-jump-btn") {
+            btn.textContent = next ? `Next: ${next.label}` : "Next category";
+        }
+    });
+
+    if (footerBtn) {
+        footerBtn.dataset.nextCategory = next?.category || "";
+    }
+}
+
+function closeCategorySwitchModal() {
+    const modal = document.getElementById("category-switch-modal");
+    if (modal) {
+        modal.style.display = "none";
+        modal.setAttribute("aria-hidden", "true");
+    }
+}
+
+function jumpToCategory(categoryName, { confirmIfPending = true } = {}) {
+    const target = normalizeCategoryName(categoryName);
+    if (!target) return false;
+
+    const options = getCategoryJumpOptions();
+    const option = options.find((row) => row.category === target);
+    if (!option || option.firstEligibleIndex < 0) {
+        alert(`No waiting players left in ${displayCategoryName(target)}.`);
+        return false;
+    }
+
+    const current = getCurrentAuctionCategoryName();
+    if (option.category === current) {
+        closeCategorySwitchModal();
+        return false;
+    }
+
+    const currentStats = getCategoryRoundStats(current);
+    if (confirmIfPending && (currentStats.pending || 0) > 0) {
+        const ok = confirm(
+            `${displayCategoryName(current)} still has ${currentStats.pending} player${currentStats.pending === 1 ? "" : "s"} waiting.\n\nJump to ${option.label} anyway?`
+        );
+        if (!ok) return false;
+    }
+
+    closeCategoryCompleteModal();
+    closeCategorySwitchModal();
+    state.auctionCount = option.firstEligibleIndex;
+    revealPlayerAtCount(state.auctionCount, { useWheel: true });
+    saveAuctionProgress({ awaitDisk: true, critical: true });
+    return true;
+}
+
+function jumpToNextCategory() {
+    const next = findNextCategoryJump();
+    if (!next) {
+        alert("No next category with waiting players.");
+        return;
+    }
+    jumpToCategory(next.category, { confirmIfPending: true });
+}
+
+function getSearchableAuctionPlayers({ includeUnsold = true, categoryName = "" } = {}) {
+    ensureAuctionQueueFromMaster();
+    const wanted = categoryName ? normalizeCategoryName(categoryName) : "";
+    return (state.players || [])
+        .map((player, index) => ({ player, index }))
+        .filter(({ player }) => {
+            if (!player) return false;
+            const status = String(player.status || "not-auctioned").toLowerCase();
+            const waiting = !isAuctionSettledStatus(status);
+            const unsoldLike = isUnsoldLikeStatus(status);
+            if (!waiting && !(includeUnsold && unsoldLike)) return false;
+            if (wanted && normalizeCategoryName(player.category) !== wanted) return false;
+            return true;
+        });
+}
+
+function closeFindPlayerModal() {
+    const modal = document.getElementById("find-player-modal");
+    if (modal) {
+        modal.style.display = "none";
+        modal.setAttribute("aria-hidden", "true");
+    }
+}
+
+function renderFindPlayerResults() {
+    const list = document.getElementById("find-player-results");
+    const input = document.getElementById("find-player-input");
+    const categorySelect = document.getElementById("find-player-category");
+    const includeUnsold = document.getElementById("find-player-include-unsold");
+    if (!list) return;
+
+    const query = String(input?.value || "").trim().toLowerCase();
+    const categoryName = String(categorySelect?.value || "");
+    const rows = getSearchableAuctionPlayers({
+        includeUnsold: includeUnsold ? includeUnsold.checked : true,
+        categoryName
+    }).filter(({ player }) => {
+        if (!query) return true;
+        const haystack = [
+            player.name,
+            player.code,
+            getPlayerDisplayCode?.(player),
+            player.currentClub,
+            player.role,
+            player.mobile,
+            player.category
+        ]
+            .map((value) => String(value || "").toLowerCase())
+            .join(" ");
+        return haystack.includes(query);
+    });
+
+    if (!rows.length) {
+        list.innerHTML = `<div class="find-player-empty">No matching waiting / unsold players.</div>`;
+        return;
+    }
+
+    list.innerHTML = rows
+        .slice(0, 80)
+        .map(({ player, index }) => {
+            const status = String(player.status || "not-auctioned").toLowerCase();
+            const action = isUnsoldLikeStatus(status) ? "Re-auction" : "Auction";
+            const meta = [
+                getPlayerDisplayCode?.(player) || player.code || player.id,
+                displayCategoryName(player.category),
+                player.role || "",
+                status === "not-auctioned" ? "waiting" : status
+            ]
+                .filter(Boolean)
+                .join(" · ");
+            return `
+                <button type="button" class="find-player-row" data-find-index="${index}">
+                    <img src="${player.photo || "assets/placeholder.png"}" alt="" onerror="this.src='assets/placeholder.png'">
+                    <span>
+                        <strong>${player.name || "Player"}</strong>
+                        <small>${meta}</small>
+                    </span>
+                    <span class="find-action">${action}</span>
+                </button>
+            `;
+        })
+        .join("");
+
+    list.querySelectorAll("[data-find-index]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            auctionSelectedPlayerAtIndex(Number(btn.dataset.findIndex));
+        });
+    });
+}
+
+function openFindPlayerModal() {
+    if (playerWheelBusy) return;
+
+    const modal = document.getElementById("find-player-modal");
+    const categorySelect = document.getElementById("find-player-category");
+    const input = document.getElementById("find-player-input");
+    if (!modal) return;
+
+    if (categorySelect) {
+        const current = getCurrentAuctionCategoryName();
+        const options = getCategoryJumpOptions();
+        categorySelect.innerHTML = `<option value="">All categories</option>${options
+            .map(
+                (row) =>
+                    `<option value="${row.category}" ${row.category === current ? "selected" : ""}>${row.label} (${row.pending} waiting)</option>`
+            )
+            .join("")}`;
+    }
+
+    if (input) input.value = "";
+    renderFindPlayerResults();
+    modal.style.display = "flex";
+    modal.setAttribute("aria-hidden", "false");
+    setTimeout(() => input?.focus(), 40);
+}
+
+function auctionSelectedPlayerAtIndex(index) {
+    ensureAuctionQueueFromMaster();
+    const player = state.players?.[index];
+    if (!player) {
+        alert("Player not found in the auction queue.");
+        return;
+    }
+
+    const current = state.players?.[state.auctionCount];
+    if (current && Array.isArray(current.bids) && current.bids.length > 0) {
+        const ok = confirm(
+            `${current.name} already has bids.\n\nSwitch to ${player.name} anyway? Current bids will stay on ${current.name}.`
+        );
+        if (!ok) return;
+    }
+
+    const status = String(player.status || "").toLowerCase();
+    if (status === "sold") {
+        alert(`${player.name} is already sold.`);
+        return;
+    }
+
+    if (isUnsoldLikeStatus(status)) {
+        const ok = confirm(`Re-auction ${player.name} from the unsold pool?`);
+        if (!ok) return;
+        saveHistory();
+        player.status = "not-auctioned";
+        player.bids = [];
+        player.finalPrice = null;
+        player.team = null;
+        const master = (state.allPlayers || []).find((entry) => entry.id === player.id);
+        if (master) {
+            master.status = "not-auctioned";
+            master.bids = [];
+            master.finalPrice = null;
+            master.team = null;
+        }
+        if (Array.isArray(state.unsoldPlayers)) {
+            state.unsoldPlayers = state.unsoldPlayers.filter((id) => id !== player.id);
+            state.unsoldCount = state.unsoldPlayers.length;
+        }
+    } else if (index === state.auctionCount && !isAuctionSettledStatus(status)) {
+        closeFindPlayerModal();
+        renderUI();
+        return;
+    } else {
+        saveHistory();
+    }
+
+    closeFindPlayerModal();
+    closeCategoryCompleteModal();
+    closeRoundEndModal();
+    state.auctionCount = index;
+    revealPlayerAtCount(state.auctionCount, { useWheel: false });
+    saveAuctionProgress({ awaitDisk: true, critical: true });
+}
+
+function openCategorySwitchModal() {
+    if (playerWheelBusy) return;
+
+    const modal = document.getElementById("category-switch-modal");
+    const list = document.getElementById("category-switch-list");
+    const text = document.getElementById("category-switch-text");
+    const nextBtn = document.getElementById("category-switch-next-btn");
+    if (!modal || !list) return;
+
+    const options = getCategoryJumpOptions();
+    const current = options.find((row) => row.isCurrent);
+    const next = options.find((row) => row.isNext);
+    const jumpable = options.filter((row) => row.canJump);
+
+    if (text) {
+        text.textContent = current
+            ? `Currently on ${current.label}. Pick another category anytime — even if this one is not finished.`
+            : "Pick a category to auction next.";
+    }
+
+    if (nextBtn) {
+        nextBtn.disabled = !next;
+        nextBtn.textContent = next ? `Go to ${next.label}` : "No next category";
+        nextBtn.onclick = () => jumpToNextCategory();
+    }
+
+    if (!jumpable.length) {
+        list.innerHTML = `<div class="unsold-pool-empty">No other category has waiting players right now.</div>`;
+    } else {
+        list.innerHTML = options.map((row) => {
+            const meta = `${row.pending} waiting · ${row.sold} sold · ${row.unsold} unsold`;
+            const badge = row.isCurrent ? "Current" : row.isNext ? "Next" : row.canJump ? "Jump" : "Done";
+            const disabled = row.isCurrent || !row.canJump ? "disabled" : "";
+            return `
+                <button type="button" class="category-switch-row${row.isCurrent ? " is-current" : ""}${row.isNext ? " is-next" : ""}" data-jump-category="${row.category}" ${disabled}>
+                    <span>
+                        <strong>${row.label}</strong>
+                        <small>${meta}</small>
+                    </span>
+                    <span class="switch-badge">${badge}</span>
+                </button>
+            `;
+        }).join("");
+
+        list.querySelectorAll("[data-jump-category]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                jumpToCategory(btn.dataset.jumpCategory, { confirmIfPending: true });
+            });
+        });
+    }
+
+    modal.style.display = "flex";
+    modal.setAttribute("aria-hidden", "false");
+}
+
+function findNextEligibleAuctionIndex(fromIndex = state.auctionCount) {
+    const players = state.players || [];
+    for (let i = Math.max(0, Number(fromIndex) + 1); i < players.length; i++) {
+        if (isWheelEligiblePlayer(players[i])) return i;
+    }
+    return -1;
+}
+
 function advanceToNextPlayer({ useWheel = true } = {}) {
-    state.auctionCount++;
+    let nextIndex = findNextEligibleAuctionIndex(state.auctionCount);
+    if (nextIndex < 0) {
+        // Live queue may have dropped waiting players — rebuild from master first
+        if (ensureAuctionQueueFromMaster()) {
+            nextIndex = findNextEligibleAuctionIndex(state.auctionCount - 1);
+        }
+    }
+    if (nextIndex < 0) {
+        openRoundEndModal();
+        saveData();
+        return;
+    }
+    state.auctionCount = nextIndex;
     revealPlayerAtCount(state.auctionCount, { useWheel });
     saveData();
 }
@@ -1626,33 +2592,42 @@ function nextPlayer() {
     advanceToNextPlayer({ useWheel: true });
 }
 
+function markPlayerUnsold(player, { reason = "unsold" } = {}) {
+    if (!player) return;
+    player.status = "unsold";
+    if (!Array.isArray(state.unsoldPlayers)) state.unsoldPlayers = [];
+    if (!state.unsoldPlayers.includes(player.id)) {
+        state.unsoldPlayers.push(player.id);
+    }
+    state.unsoldCount = state.unsoldPlayers.length;
+
+    const playerInMasterList = (state.allPlayers || []).find((p) => p.id === player.id);
+    if (playerInMasterList) {
+        playerInMasterList.status = "unsold";
+    }
+    console.log(
+        reason === "skip"
+            ? `${player.name} skipped → added to unsold pool`
+            : `${player.name} remains unsold.`
+    );
+}
+
 function skipPlayer() {
-    //Save history
     saveHistory();
 
     //Prevent skipping a player once Bidded
-    if(state.players[state.auctionCount].bids.length != 0) {
+    if (state.players[state.auctionCount].bids.length != 0) {
         console.log("Can't skip this player because bid is placed.");
         return;
     }
 
-    const player = state.players[state.auctionCount]; // Get player
-    // Treat skip as unsold so they stay in the unsold re-auction pool
-    player.status = "unsold";
-    state.unsoldPlayers.push(player.id);
-    state.unsoldCount++;
-    console.log(`${player.name} is skipped (counted as unsold)`);
+    const player = state.players[state.auctionCount];
+    // SKIP = move into unsold pool (same as UNSOLD), grouped by their category
+    markPlayerUnsold(player, { reason: "skip" });
 
-    const playerInMasterList = state.allPlayers.find(p => p.id === player.id);
-    if (playerInMasterList) {
-        playerInMasterList.status = "unsold";
-    }
-
-    //Load Next Player's Data
+    renderUI();
     nextPlayer();
-
-    //save current state to local storage
-    saveData();
+    saveAuctionProgress({ awaitDisk: true, critical: true });
 }
 
 const TEAMS_DRAWER_KEY = "teamsDrawerPrefs";
@@ -1723,6 +2698,45 @@ function toggleTeamsDrawer() {
     setTeamsDrawerOpen(!open);
 }
 
+function isDeskMenuOpen() {
+    const overlay = document.getElementById("desk-menu-overlay");
+    return Boolean(overlay && !overlay.hidden);
+}
+
+function setDeskMenuOpen(open) {
+    const trigger = document.getElementById("desk-menu-trigger");
+    const overlay = document.getElementById("desk-menu-overlay");
+    if (!trigger || !overlay) return;
+    overlay.hidden = !open;
+    overlay.setAttribute("aria-hidden", open ? "false" : "true");
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    document.body.classList.toggle("desk-menu-open", open);
+}
+
+function toggleDeskMenu() {
+    setDeskMenuOpen(!isDeskMenuOpen());
+}
+
+function initDeskMenu() {
+    const trigger = document.getElementById("desk-menu-trigger");
+    const overlay = document.getElementById("desk-menu-overlay");
+    if (!trigger || !overlay) return;
+
+    trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleDeskMenu();
+    });
+
+    document.getElementById("desk-menu-close")?.addEventListener("click", () => setDeskMenuOpen(false));
+    document.getElementById("desk-menu-backdrop")?.addEventListener("click", () => setDeskMenuOpen(false));
+
+    overlay.querySelectorAll(".desk-menu-item").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            if (!btn.disabled) setDeskMenuOpen(false);
+        });
+    });
+}
+
 function initTeamsDrawer() {
     const drawer = document.getElementById("teams-drawer");
     const prefs = getTeamsDrawerPrefs();
@@ -1746,16 +2760,28 @@ function initTeamsDrawer() {
     document.getElementById("teams-rail-open")?.addEventListener("click", () => {
         toggleTeamsDrawer();
     });
-    document.getElementById("teams-filter")?.addEventListener("input", (event) => {
-        const query = String(event.target.value || "").trim().toLowerCase();
-        document.querySelectorAll("#teams-data-section .team-container").forEach((card) => {
-            const name = card.dataset.teamName || "";
-            card.hidden = query ? !name.includes(query) : false;
-        });
-        document.querySelectorAll("#teams-rail .team-rail-btn").forEach((btn) => {
-            const name = btn.dataset.teamName || "";
-            btn.hidden = query ? !name.includes(query) : false;
-        });
+    document.getElementById("teams-filter")?.addEventListener("input", () => {
+        applyTeamsFilter();
+    });
+}
+
+function normalizeTeamsFilterQuery(value) {
+    return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "");
+}
+
+function applyTeamsFilter() {
+    const input = document.getElementById("teams-filter");
+    const query = normalizeTeamsFilterQuery(input?.value || "");
+    document.querySelectorAll("#teams-data-section .team-container").forEach((card) => {
+        const name = normalizeTeamsFilterQuery(card.dataset.teamName || "");
+        card.hidden = Boolean(query) && !name.includes(query);
+    });
+    document.querySelectorAll("#teams-rail .team-rail-btn").forEach((btn) => {
+        const name = normalizeTeamsFilterQuery(btn.dataset.teamName || "");
+        btn.hidden = Boolean(query) && !name.includes(query);
     });
 }
 
@@ -1814,6 +2840,20 @@ function renderTeams() {
         const categoryChip = quota
             ? `${quota.owned}/${quota.max} ${categoryLabel}`
             : "";
+        const budget =
+            typeof getTeamSpendableBudget === "function"
+                ? getTeamSpendableBudget(state, teamId, {
+                      fillingCategory: categoryName || undefined
+                  })
+                : {
+                      purse: Number(team.remaining_budget) || 0,
+                      reserve: 0,
+                      spendable: Number(team.remaining_budget) || 0,
+                      remainingSlots: 0
+                  };
+        const spendable = budget.spendable;
+        const reserved = budget.reserve;
+        const moneyTitle = `Spendable ${formatMoney(spendable)} · Purse ${formatMoney(budget.purse)} · Reserved ${formatMoney(reserved)} for ${budget.remainingSlots} category slots`;
 
         const teamElement = document.createElement("button");
         teamElement.type = "button";
@@ -1836,26 +2876,31 @@ function renderTeams() {
             <div class="logo-container">
                 <img src="${logoSrc}" class="logo-img" id="logo-${teamId}" onerror="this.style.visibility='hidden'" alt="">
             </div>
-            <div class="team-copy">
-                <div class="name-container" id="name-container-${teamId}">
-                    <span id="team-name-${teamId}">${team.team_name}</span>
-                </div>
-                <div class="team-data-container">
-                    <div class="taken-player" title="Players bought">
-                        <span id="taken-player-${teamId}">${team.player_bought}</span>
-                        <span class="stat-label">players</span>
+            <div class="team-main">
+                <div class="team-copy">
+                    <div class="name-container" id="name-container-${teamId}">
+                        <span id="team-name-${teamId}">${team.team_name}</span>
+                        ${hotkey ? `<span class="team-hotkey" title="Hotkey">${hotkey}</span>` : ""}
                     </div>
-                    ${
-                        categoryChip
-                            ? `<span class="team-category-chip ${isFull ? "is-full" : "is-open"}" title="Current category slots">${categoryChip}</span>`
-                            : ""
-                    }
-                    ${hotkey ? `<span class="team-hotkey" title="Hotkey">${hotkey}</span>` : ""}
+                    <div class="team-data-container">
+                        <div class="taken-player" title="Players bought">
+                            <span id="taken-player-${teamId}">${team.player_bought}</span>
+                            <span class="stat-label">players</span>
+                        </div>
+                        ${
+                            categoryChip
+                                ? `<span class="team-category-chip ${isFull ? "is-full" : "is-open"}" title="Current category slots">${categoryChip}</span>`
+                                : ""
+                        }
+                    </div>
                 </div>
-            </div>
-            <div class="money-remaining" title="Remaining budget">
-                <span class="stat-label">Purse</span>
-                <span id="money-remaining-${teamId}">${showAmount(team.remaining_budget)}</span>
+                <div class="money-remaining" title="${moneyTitle}">
+                    <div class="money-remaining-top">
+                        <span class="stat-label">Spendable</span>
+                        <span class="stat-amount" id="money-remaining-${teamId}">${showAmount(spendable)}</span>
+                    </div>
+                    <span class="stat-sub">Purse ${showAmount(team.remaining_budget)} · Res ${showAmount(reserved)}</span>
+                </div>
             </div>
         `;
         teamElement.addEventListener("click", makeBidHandler(teamId));
@@ -1887,6 +2932,8 @@ function renderTeams() {
             rail.appendChild(railBtn);
         }
     });
+
+    applyTeamsFilter();
 }
 
 
@@ -1928,11 +2975,19 @@ function renderUI() {
     }
 
     if (!state.players.length) {
+        if (ensureAuctionQueueFromMaster() && state.players.length) {
+            showPlayerDetails(state.auctionCount);
+            return;
+        }
         if (playerName) playerName.innerText = "No players loaded";
         return;
     }
 
     if (state.auctionCount >= state.players.length) {
+        if (ensureAuctionQueueFromMaster() && state.auctionCount < state.players.length) {
+            showPlayerDetails(state.auctionCount);
+            return;
+        }
         openRoundEndModal();
         return;
     }
@@ -1941,6 +2996,7 @@ function renderUI() {
 }
 
 async function resetAll() {
+    if (!requireServerOnline("reset division data")) return;
     const securityKey = prompt("Enter the security key to reset this division: (rezwan19)");
 
     if (securityKey !== "rezwan19") {
@@ -1976,6 +3032,7 @@ async function resetAll() {
 }
 
 async function resetEntireProjectFlow() {
+    if (!requireServerOnline("reset the project")) return;
     const confirmed = confirm(
         "Reset ENTIRE project?\n\nThis clears all divisions, teams, players, auction progress, and offline photos.\nYou will get a blank project (no teams, Main Auction only)."
     );
@@ -2017,11 +3074,10 @@ function saveHistory() {
     //Clear the redostack
     history.redoStack = [];
 
-    //Add a snapshot (deep copy) in the undoStack
-    history.undoStack.push(JSON.parse(JSON.stringify(state)));
+    // Lean snapshot — avoid cloning multi-MB team logo data-URLs into undo memory
+    history.undoStack.push(leanAuctionState(state));
 
-    //clear oldest history (Optional)
-    if(history.undoStack.length > 20) {
+    if (history.undoStack.length > 10) {
         history.undoStack.shift();
     }
 
@@ -2036,11 +3092,13 @@ function undoChange() {
     }
 
     //Save current state to redoStack
-    history.redoStack.push(JSON.parse(JSON.stringify(state)));
+    history.redoStack.push(leanAuctionState(state));
 
-    //delete last state from from the undoStack
     const lastState = history.undoStack.pop();
     state = lastState;
+    if (typeof reconcileAuctionTeamsFromConfig === "function") {
+        reconcileAuctionTeamsFromConfig(state, welcomeConfigCache || state.config);
+    }
 
     console.log("Undone changes.");
 
@@ -2052,13 +3110,13 @@ function undoChange() {
 
     const currentPlayer = state.players[state.auctionCount];
     if (currentPlayer.status === "sold") {
-        soldSeal.classList.add("show");
         unsoldSeal.classList.remove("show");
+        playSoldSealAnimation();
     } else if (currentPlayer.status === "unsold" || currentPlayer.status === "skipped") {
         unsoldSeal.classList.add("show");
-        soldSeal.classList.remove("show");
+        soldSeal.classList.remove("show", "is-animating");
     } else {
-        soldSeal.classList.remove("show");
+        soldSeal.classList.remove("show", "is-animating");
         unsoldSeal.classList.remove("show");
     }
 
@@ -2073,14 +3131,15 @@ function redoChange() {
         return;
     }
 
-    //Save current state to redoStack
-    history.undoStack.push(JSON.parse(JSON.stringify(state)));
+    history.undoStack.push(leanAuctionState(state));
 
     console.log("Redone changes.");
 
-    //delete last state from from the undoStack
     const nextState = history.redoStack.pop();
     state = nextState;
+    if (typeof reconcileAuctionTeamsFromConfig === "function") {
+        reconcileAuctionTeamsFromConfig(state, welcomeConfigCache || state.config);
+    }
 
     //update UI
     renderUI();
@@ -2090,13 +3149,13 @@ function redoChange() {
 
     const currentPlayer = state.players[state.auctionCount];
     if (currentPlayer.status === "sold") {
-        soldSeal.classList.add("show");
         unsoldSeal.classList.remove("show");
+        playSoldSealAnimation();
     } else if (currentPlayer.status === "unsold" || currentPlayer.status === "skipped") {
         unsoldSeal.classList.add("show");
-        soldSeal.classList.remove("show");
+        soldSeal.classList.remove("show", "is-animating");
     } else {
-        soldSeal.classList.remove("show");
+        soldSeal.classList.remove("show", "is-animating");
         unsoldSeal.classList.remove("show");
     }
 
@@ -2220,9 +3279,19 @@ function openDirectBidModal(teamId = null) {
     teamSelectDropdown.innerHTML = ''; // Clear old options
     state.teams.forEach(team => {
         const quota = getCategoryQuotaStatus(state, team.team_id, player.category);
+        const budget =
+            typeof getTeamSpendableBudget === "function"
+                ? getTeamSpendableBudget(state, team.team_id, {
+                      fillingCategory: player.category
+                  })
+                : {
+                      purse: Number(team.remaining_budget) || 0,
+                      spendable: Number(team.remaining_budget) || 0,
+                      reserve: 0
+                  };
         const option = document.createElement('option');
         option.value = team.team_id;
-        option.textContent = `${team.team_name} (${formatMoney(team.remaining_budget)}) · ${quota.owned}/${quota.max} ${quota.name}`;
+        option.textContent = `${team.team_name} (spendable ${formatMoney(budget.spendable)} / purse ${formatMoney(budget.purse)}) · ${quota.owned}/${quota.max} ${quota.name}`;
         if (quota.isFull) {
             option.disabled = true;
             option.textContent += " · FULL";
@@ -2284,10 +3353,6 @@ function handleDirectBidSubmit(event) {
         alert("Invalid input. Please check the team and amount.");
         return;
     }
-    if (team.remaining_budget < amount) {
-        alert(`${team.team_name} does not have enough budget for this bid!`);
-        return;
-    }
     const quota = getCategoryQuotaStatus(state, teamId, player.category);
     if (quota.isFull) {
         alert(`${team.team_name} already has ${quota.owned}/${quota.max} ${quota.name} players.`);
@@ -2295,6 +3360,24 @@ function handleDirectBidSubmit(event) {
     }
     if (player.bids.length === 0 && amount < player.basePrice) {
         alert(`The bid must be at least the base price of ${formatMoney(player.basePrice)}.`);
+        return;
+    }
+    const afford =
+        typeof canTeamAffordBid === "function"
+            ? canTeamAffordBid(state, teamId, amount, { fillingCategory: player.category })
+            : {
+                  ok: team.remaining_budget >= amount,
+                  purse: team.remaining_budget,
+                  reserve: 0,
+                  spendable: team.remaining_budget,
+                  remainingSlots: 0
+              };
+    if (!afford.ok) {
+        alert(
+            `${team.team_name} cannot bid ${formatMoney(amount)}.\n` +
+                `Must keep ${formatMoney(afford.reserve)} reserved for ${afford.remainingSlots} remaining category minimums.\n` +
+                `Spendable now: ${formatMoney(afford.spendable)}.`
+        );
         return;
     }
     if (player.bids.length > 0) {
@@ -2388,10 +3471,32 @@ function getUnsoldPlayersByCategory() {
  * Opens the new modal when a round ends.
  */
 function openRoundEndModal() {
+    // Last chance: don't claim "complete" while master still has waiting players
+    if (ensureAuctionQueueFromMaster() && state.auctionCount < (state.players || []).length) {
+        closeRoundEndModal();
+        showPlayerDetails(state.auctionCount);
+        saveData();
+        return;
+    }
+
     const groups = getUnsoldPlayersByCategory();
     const unsoldCount = groups.reduce((sum, group) => sum + group.players.length, 0);
+    const waitingCount = getMasterPlayers().filter(
+        (player) => !isAuctionSettledStatus(player.status)
+    ).length;
     const breakdown = document.getElementById("round-unsold-breakdown");
     const viewBtn = document.getElementById("round-view-unsold-btn");
+
+    if (waitingCount > 0) {
+        roundSummaryText.innerText = `${waitingCount} player${waitingCount === 1 ? "" : "s"} still waiting in the pool. Continuing…`;
+        restartUnsoldBtn.style.display = "none";
+        if (viewBtn) viewBtn.style.display = "none";
+        rebuildAuctionQueueFromMaster();
+        closeRoundEndModal();
+        showPlayerDetails(state.auctionCount);
+        saveData();
+        return;
+    }
 
     if (unsoldCount > 0) {
         roundSummaryText.innerText = `Round complete. ${unsoldCount} player${unsoldCount === 1 ? "" : "s"} still need a team.`;
@@ -2608,9 +3713,9 @@ function showFinishScreen() {
     // 2. --- Populate Modal Content ---
     
     // Header
-    document.getElementById('finish-tournament-logo').src = state.tournament
-        ? getTournamentLogoSrc(state.tournament, "assets/tournament-logo.png")
-        : "assets/tournament-logo.png";
+        document.getElementById('finish-tournament-logo').src = state.tournament
+        ? getTournamentLogoSrc(state.tournament, "assets/tournament-logo.svg")
+        : "assets/tournament-logo.svg";
     document.getElementById('finish-tournament-name').textContent = state.tournament
         ? getTournamentTitle(state.tournament)
         : "Auction Complete";
@@ -2663,8 +3768,21 @@ function showFinishScreen() {
     finishScreenModal.style.display = 'flex';
 }
 
+async function bootLiveProjectFromServer() {
+    welcomeConfigCache = await getAuctionConfig();
+    await loadAuctionStateForActiveDivision(welcomeConfigCache);
+    renderWelcomeDivisions();
+    showTournamentDetails();
+    refreshWelcomeDivisionActions();
+    renderUI();
+    updateUndoRedoButtons();
+}
+
 // Main App Logic
 const initApp = async () => {
+    // Clear fat auction caches from older builds so mid-auction never hits browser quota
+    purgeBloatedAuctionBrowserCache();
+
     const bootParams = new URLSearchParams(window.location.search);
     const forceBlankBoot = bootParams.get("blank") === "1";
     if (forceBlankBoot) {
@@ -2678,6 +3796,34 @@ const initApp = async () => {
         }
     }
 
+    // Stay on welcome until we know server status — never silently use stale cache
+    document.body.classList.add("welcome-active");
+    if (welcomeScreen) welcomeScreen.hidden = false;
+    if (bigContainer) bigContainer.hidden = true;
+
+    const online = await updateServerStatusUI();
+    if (!online) {
+        setOfflineOnlyMode(true);
+        if (welcomeTitle) welcomeTitle.innerText = "Cricket Auction";
+        // Wire retry early so user can recover without full reload of stale data
+        document.getElementById("offline-retry-btn")?.addEventListener("click", async () => {
+            const retryOnline = await updateServerStatusUI();
+            if (!retryOnline) {
+                alert("Still offline. Run node server.js, then retry.");
+                return;
+            }
+            window.location.reload();
+        });
+        // Keep polling; when server returns, reload for a clean live boot
+        setInterval(async () => {
+            const nowOnline = await updateServerStatusUI();
+            if (nowOnline && document.body.classList.contains("server-offline-only")) {
+                window.location.reload();
+            }
+        }, 5000);
+        return;
+    }
+
     // Fallback tournament file, then overlay configurable branding.
     try {
         state.tournament = await getTournamentData();
@@ -2686,10 +3832,7 @@ const initApp = async () => {
         state.tournament = buildTournamentState(DEFAULT_AUCTION_CONFIG);
     }
 
-    welcomeConfigCache = await getAuctionConfig();
-    await loadAuctionStateForActiveDivision(welcomeConfigCache);
-    renderWelcomeDivisions();
-    showTournamentDetails();
+    await bootLiveProjectFromServer();
 
     if (forceBlankBoot) {
         // Drop ?blank=1 from the URL after a successful blank boot
@@ -2701,11 +3844,7 @@ const initApp = async () => {
         } catch (_) {
             // ignore
         }
-    }
-
-    // This block runs for BOTH new and loaded states, ensuring UI is always in sync.
-    renderUI();
-    updateUndoRedoButtons(); 
+    } 
 
     // --- ADD LISTENERS FOR THE MODAL ---
     modalCloseBtn.addEventListener('click', closeBudgetModal);
@@ -2772,11 +3911,32 @@ const initApp = async () => {
     partnersIntroContinue?.addEventListener("click", hidePartnersIntro);
     document.getElementById("team-sold-video-continue")?.addEventListener("click", hideTeamSoldVideo);
 
+    // Keep mid-auction progress durable across refresh / tab hide
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState !== "hidden") return;
+        if (document.body.classList.contains("welcome-active")) return;
+        if (!state?.players?.length) return;
+        saveData();
+        flushAuctionProgressToDisk();
+    });
+    window.addEventListener("pagehide", () => {
+        if (document.body.classList.contains("welcome-active")) return;
+        if (!state?.players?.length) return;
+        saveData();
+    });
+
     // Stay on the full-page welcome until the user chooses an action
     document.body.classList.add("welcome-active");
     if (welcomeScreen) welcomeScreen.hidden = false;
     if (bigContainer) bigContainer.hidden = true;
     maybeShowPartnersIntro();
+    // Re-check after hydrate so Resume appears when local/disk auction exists
+    await updateServerStatusUI();
+    refreshWelcomeDivisionActions();
+    // Keep server status visible during long auction sessions
+    setInterval(() => {
+        updateServerStatusUI().then(() => refreshWelcomeDivisionActions());
+    }, 20000);
      
     //Click event for Buttons
     unsoldButton.addEventListener("click", () => unsoldPlayer());
@@ -2810,6 +3970,7 @@ const initApp = async () => {
         requestEndAuction({ force: true });
     });
 
+    initDeskMenu();
     initTeamsDrawer();
 
     teamsButton.addEventListener("click", (event) => {
@@ -2841,6 +4002,17 @@ const initApp = async () => {
 
     document.getElementById("category-continue-btn")?.addEventListener("click", continueToNextCategory);
     document.getElementById("category-stay-btn")?.addEventListener("click", stayOnCompletedCategory);
+    document.getElementById("next-category-button")?.addEventListener("click", () => openCategorySwitchModal());
+    document.getElementById("category-jump-btn")?.addEventListener("click", () => openCategorySwitchModal());
+    document.getElementById("category-switch-close-btn")?.addEventListener("click", closeCategorySwitchModal);
+    document.getElementById("category-switch-cancel-btn")?.addEventListener("click", closeCategorySwitchModal);
+    document.getElementById("find-player-button")?.addEventListener("click", () => openFindPlayerModal());
+    document.getElementById("find-player-chip-btn")?.addEventListener("click", () => openFindPlayerModal());
+    document.getElementById("find-player-close-btn")?.addEventListener("click", closeFindPlayerModal);
+    document.getElementById("find-player-cancel-btn")?.addEventListener("click", closeFindPlayerModal);
+    document.getElementById("find-player-input")?.addEventListener("input", renderFindPlayerResults);
+    document.getElementById("find-player-category")?.addEventListener("change", renderFindPlayerResults);
+    document.getElementById("find-player-include-unsold")?.addEventListener("change", renderFindPlayerResults);
 
     // --- LISTENERS FOR FINAL SUMMARY ---
     finishModalCloseBtn.addEventListener('click', closeFinishScreen);
@@ -2874,6 +4046,29 @@ const initApp = async () => {
             return;
         }
 
+        const categorySwitchOpen =
+            document.getElementById("category-switch-modal")?.style.display === "flex";
+        if (categorySwitchOpen) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                closeCategorySwitchModal();
+            } else if (event.key === "Enter") {
+                event.preventDefault();
+                jumpToNextCategory();
+            }
+            return;
+        }
+
+        const findPlayerOpen =
+            document.getElementById("find-player-modal")?.style.display === "flex";
+        if (findPlayerOpen) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                closeFindPlayerModal();
+            }
+            return;
+        }
+
         // Bid for the team mapped to this hotkey (list order)
         const biddingTeam = teamFromHotkey(event.key);
         if (biddingTeam) {
@@ -2884,6 +4079,10 @@ const initApp = async () => {
         // Handle other letter-based shortcuts
         switch(event.key.toLowerCase()){
             case "escape":
+                if (isDeskMenuOpen()) {
+                    setDeskMenuOpen(false);
+                    break;
+                }
                 setTeamsDrawerOpen(false);
                 break;
             case "t":

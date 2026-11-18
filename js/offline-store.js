@@ -1180,10 +1180,36 @@ function downloadJsonFile(filename, data) {
     setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-function registerAuctionServiceWorker() {
+/**
+ * Auction desk must not run from stale PWA/cache when server.js is down.
+ * Unregister any old service workers and wipe Cache Storage.
+ * Briefly registers the killer sw.js so older installs get replaced, then unregisters.
+ */
+async function registerAuctionServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
-    const swUrl = `${window.location.origin}/sw.js`;
-    navigator.serviceWorker.register(swUrl, { scope: "/" }).catch(() => {
+
+    try {
+        if (window.caches && typeof caches.keys === "function") {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((key) => caches.delete(key)));
+        }
+    } catch (_) {
+        // ignore
+    }
+
+    try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        // Install updated sw once so activate handler clears old shell caches
+        const swUrl = `${window.location.origin}/sw.js?v=disabled1`;
+        try {
+            await navigator.serviceWorker.register(swUrl, { scope: "/" });
+        } catch (_) {
+            // ignore
+        }
+        await Promise.all(regs.map((reg) => reg.unregister()));
+        const after = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(after.map((reg) => reg.unregister()));
+    } catch (_) {
         // ignore registration failures (file:// etc.)
-    });
+    }
 }

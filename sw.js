@@ -1,53 +1,22 @@
-const CACHE_NAME = "cricket-auction-shell-v8";
-const SHELL_URLS = [
-    "./",
-    "./index.html",
-    "./styles.css",
-    "./animations.css",
-    "./app.js",
-    "./manifest.webmanifest",
-    "./js/money.js",
-    "./js/config-store.js",
-    "./js/players-store.js",
-    "./js/offline-store.js",
-    "./assets/placeholder.png",
-    "./assets/tournament-logo.png",
-    "./config/",
-    "./config/index.html",
-    "./config/styles.css",
-    "./config/config.js",
-    "./config/players.html",
-    "./config/players.css",
-    "./config/players.js"
-];
+/* Intentionally non-offline: auction desk requires node server.js + data-project. */
+const CACHE_NAME = "cricket-auction-disabled-v1";
 
 self.addEventListener("install", (event) => {
-    event.waitUntil(
-        (async () => {
-            const cache = await caches.open(CACHE_NAME);
-            await Promise.all(
-                SHELL_URLS.map(async (url) => {
-                    try {
-                        const response = await fetch(url, { cache: "no-cache" });
-                        if (response && response.ok) {
-                            await cache.put(url, response);
-                        }
-                    } catch (_) {
-                        // skip missing/redirect-only assets during install
-                    }
-                })
-            );
-            await self.skipWaiting();
-        })()
-    );
+    event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
     event.waitUntil(
         (async () => {
             const keys = await caches.keys();
-            await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+            await Promise.all(keys.map((key) => caches.delete(key)));
             await self.clients.claim();
+            // Remove this service worker so the browser never serves a cached app shell
+            try {
+                await self.registration.unregister();
+            } catch (_) {
+                // ignore
+            }
         })()
     );
 });
@@ -57,70 +26,39 @@ self.addEventListener("fetch", (event) => {
     if (request.method !== "GET") return;
 
     const accept = request.headers.get("accept") || "";
-    const isNavigate =
-        request.mode === "navigate" ||
-        accept.includes("text/html");
+    const isNavigate = request.mode === "navigate" || accept.includes("text/html");
 
-    // HTML pages: always prefer network so serve redirects and fresh pages work
+    // Never fall back to a cached full app when the server is down
     if (isNavigate) {
         event.respondWith(
-            fetch(request)
-                .then((response) => response)
-                .catch(async () => {
-                    const cached =
-                        (await caches.match(request)) ||
-                        (await caches.match("./index.html")) ||
-                        (await caches.match("./config/players.html")) ||
-                        (await caches.match("./config/index.html"));
-                    if (cached) return cached;
-                    return new Response("Offline — open the app once while online.", {
-                        status: 503,
-                        headers: { "Content-Type": "text/plain" }
-                    });
-                })
+            fetch(request).catch(
+                () =>
+                    new Response(
+                        `<!doctype html><html><head><meta charset="utf-8"><title>Server offline</title>
+<style>body{font-family:system-ui,sans-serif;background:#152238;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0}
+main{max-width:28rem;padding:1.5rem;border:1px solid rgba(255,255,255,.2);border-radius:1rem;background:#1c2f4a}
+code{background:rgba(0,0,0,.35);padding:.15rem .4rem;border-radius:.35rem}</style></head>
+<body><main><h1>Offline</h1><p>The auction desk needs the local server.</p>
+<p>Run <code>node server.js</code> then open <code>http://localhost:3000</code>.</p>
+<p>Cached offline mode is disabled.</p></main></body></html>`,
+                        {
+                            status: 503,
+                            headers: { "Content-Type": "text/html; charset=utf-8" }
+                        }
+                    )
+            )
         );
         return;
     }
 
-    // JS/CSS: network-first so desk fixes apply immediately; fall back to cache offline
-    const isShellAsset = /\.(js|css)$/i.test(new URL(request.url).pathname);
-    if (isShellAsset) {
-        event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    if (
-                        response &&
-                        response.ok &&
-                        response.type === "basic" &&
-                        request.url.startsWith(self.location.origin)
-                    ) {
-                        const copy = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-                    }
-                    return response;
-                })
-                .catch(async () => (await caches.match(request)) || Response.error())
-        );
-        return;
-    }
-
+    // API and other assets: network only, no cache fallback
     event.respondWith(
-        caches.match(request).then((cached) => {
-            const network = fetch(request)
-                .then((response) => {
-                    if (
-                        response &&
-                        response.ok &&
-                        response.type === "basic" &&
-                        request.url.startsWith(self.location.origin)
-                    ) {
-                        const copy = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-                    }
-                    return response;
+        fetch(request).catch(
+            () =>
+                new Response("Offline — start node server.js", {
+                    status: 503,
+                    headers: { "Content-Type": "text/plain; charset=utf-8" }
                 })
-                .catch(() => cached);
-            return cached || network;
-        })
+        )
     );
 });
