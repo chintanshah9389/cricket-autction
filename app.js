@@ -633,11 +633,49 @@ function renderWelcomeDivisions() {
     refreshWelcomeDivisionActions();
 }
 
+let welcomeDivisionSwitchToken = 0;
+
 async function selectWelcomeDivision(divisionId) {
     if (!welcomeConfigCache || welcomeConfigCache.activeDivisionId === divisionId) return;
+
+    const token = ++welcomeDivisionSwitchToken;
     welcomeConfigCache = setActiveDivisionId(welcomeConfigCache, divisionId);
-    saveAuctionConfig(welcomeConfigCache);
-    await loadAuctionStateForActiveDivision(welcomeConfigCache);
+    // Update the active tab immediately — don't wait on a large auction.json fetch.
+    renderWelcomeDivisions();
+    const active = getActiveDivision(welcomeConfigCache);
+    if (welcomeDivisionNote) {
+        welcomeDivisionNote.textContent = `Switching to ${active.name}…`;
+    }
+    if (welcomeResumeBtn) welcomeResumeBtn.disabled = true;
+    if (welcomeStartNewBtn) welcomeStartNewBtn.disabled = true;
+    if (welcomeResetBtn) welcomeResetBtn.disabled = true;
+    welcomeDivisions?.querySelectorAll(".welcome-division-btn").forEach((btn) => {
+        btn.disabled = true;
+    });
+
+    try {
+        saveAuctionConfig(welcomeConfigCache);
+        await loadAuctionStateForActiveDivision(welcomeConfigCache);
+    } catch (error) {
+        if (token !== welcomeDivisionSwitchToken) return;
+        if (welcomeDivisionNote) {
+            welcomeDivisionNote.textContent =
+                error?.message || `Could not switch to ${active.name}. Try again.`;
+        }
+        welcomeDivisions?.querySelectorAll(".welcome-division-btn").forEach((btn) => {
+            btn.disabled = false;
+        });
+        if (welcomeResumeBtn) welcomeResumeBtn.disabled = false;
+        if (welcomeStartNewBtn) welcomeStartNewBtn.disabled = false;
+        if (welcomeResetBtn) welcomeResetBtn.disabled = false;
+        return;
+    }
+
+    if (token !== welcomeDivisionSwitchToken) return;
+
+    if (welcomeResumeBtn) welcomeResumeBtn.disabled = false;
+    if (welcomeStartNewBtn) welcomeStartNewBtn.disabled = false;
+    if (welcomeResetBtn) welcomeResetBtn.disabled = false;
     renderWelcomeDivisions();
     showTournamentDetails();
     if (typeof updateUndoRedoButtons === "function") updateUndoRedoButtons();

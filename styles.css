@@ -2584,6 +2584,11 @@ body.server-offline-only #big-container {
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
 }
 
+.welcome-division-btn:disabled {
+    opacity: 0.72;
+    cursor: wait;
+}
+
 .welcome-division-btn.is-active .welcome-division-meta {
     color: rgba(255, 255, 255, 0.95);
 }
