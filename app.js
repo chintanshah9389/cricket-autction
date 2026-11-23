@@ -1376,17 +1376,24 @@ function showPlayerDetails(i) {
     const categoryMeta = getCategoryConfig(getActiveConfig(state), categoryName);
     playerCategory.innerText = categoryName;
     const maxPerTeam = Number(categoryMeta.maxPlayers) || 0;
+    const iconsTaken = countCategoryIconCaptionAssigned(categoryName);
     const poolCount = (state.allPlayers || state.players || []).filter(
-        (p) => normalizeCategoryName(p.category) === categoryName
+        (p) =>
+            normalizeCategoryName(p.category) === categoryName &&
+            !isPreAssignedIconCaptionPlayer(p)
     ).length;
     const remainingInPool = (state.players || []).filter(
         (p) =>
             normalizeCategoryName(p.category) === categoryName &&
             p.status !== "sold" &&
             p.status !== "unsold" &&
-            p.status !== "skipped"
+            p.status !== "skipped" &&
+            !isPreAssignedIconCaptionPlayer(p)
     ).length;
-    playerCategory.title = `Max ${maxPerTeam} per team · ${poolCount} players in this category`;
+    playerCategory.title =
+        iconsTaken > 0
+            ? `Max ${maxPerTeam} per team · ${remainingInPool}/${poolCount} auctionable left · ${iconsTaken} Icon/Caption already assigned`
+            : `Max ${maxPerTeam} per team · ${poolCount} auctionable players in this category`;
     const quotaEl = document.getElementById("player-category-quota");
     const poolEl = document.getElementById("player-category-pool");
     if (quotaEl) {
@@ -1394,11 +1401,16 @@ function showPlayerDetails(i) {
         quotaEl.hidden = maxPerTeam <= 0;
     }
     if (poolEl) {
-        poolEl.textContent =
-            poolCount > 0
-                ? `${remainingInPool}/${poolCount} left in pool`
-                : "";
-        poolEl.hidden = poolCount <= 0;
+        if (poolCount > 0 || iconsTaken > 0) {
+            poolEl.textContent =
+                iconsTaken > 0
+                    ? `${remainingInPool}/${poolCount} left · ${iconsTaken} Icon`
+                    : `${remainingInPool}/${poolCount} left in pool`;
+            poolEl.hidden = false;
+        } else {
+            poolEl.textContent = "";
+            poolEl.hidden = true;
+        }
     }
     updateCategoryJumpControls();
     playerId.innerText = getPlayerDisplayCode(state.players[i]);
@@ -2175,10 +2187,58 @@ function isAuctionSettledStatus(status) {
     return value === "sold" || value === "unsold" || value === "skipped";
 }
 
+function isPreAssignedIconCaptionPlayer(player) {
+    if (typeof isIconCaptionPreAssignedPlayer === "function") {
+        return isIconCaptionPreAssignedPlayer(player);
+    }
+    const role = String(player?.preAssignRole || "").toLowerCase();
+    return role === "icon" || role === "caption";
+}
+
 function isWheelEligiblePlayer(player) {
     if (!player) return false;
-    // Sold / unsold / skipped never appear on the spinner
-    return !isAuctionSettledStatus(player.status);
+    // Sold / unsold / skipped / Icon-Caption pre-assigns never appear on the spinner
+    if (isAuctionSettledStatus(player.status)) return false;
+    if (isPreAssignedIconCaptionPlayer(player)) return false;
+    return true;
+}
+
+/** How many Icon/Caption players were already taken from this category. */
+function countCategoryIconCaptionAssigned(categoryName) {
+    const name = normalizeCategoryName(categoryName);
+    if (!name) return 0;
+    const master = getMasterPlayers();
+    const counted = new Set();
+    let total = 0;
+
+    const consider = (player) => {
+        if (!player) return;
+        if (normalizeCategoryName(player.category) !== name) return;
+        const key = String(player.id ?? player.code ?? "");
+        if (!key || counted.has(key)) return;
+        counted.add(key);
+        total += 1;
+    };
+
+    master.forEach((player) => {
+        if (isPreAssignedIconCaptionPlayer(player)) consider(player);
+    });
+
+    (state.teams || []).forEach((team) => {
+        const find =
+            typeof findPlayerByAssignableId === "function"
+                ? findPlayerByAssignableId
+                : (list, id) =>
+                      (list || []).find((entry) => String(entry?.id) === String(id)) || null;
+        if (team?.iconPlayerId != null && team.iconPlayerId !== "") {
+            consider(find(master, team.iconPlayerId));
+        }
+        if (team?.captionPlayerId != null && team.captionPlayerId !== "") {
+            consider(find(master, team.captionPlayerId));
+        }
+    });
+
+    return total;
 }
 
 /** Master roster — never trust a truncated live queue alone. */
@@ -2406,6 +2466,8 @@ function runPlayerWheel(winner) {
 
         const poolPlayers = getWheelPoolPlayers(winner);
         const remainingCount = poolPlayers.length;
+        const winnerCategory = normalizeCategoryName(winner.category);
+        const iconsTaken = countCategoryIconCaptionAssigned(winnerCategory);
         const candidates = buildWheelCandidates(winner);
         if (!candidates.length) {
             resolve();
@@ -2416,7 +2478,7 @@ function runPlayerWheel(winner) {
         playerWheelResolve = resolve;
 
         const orderMode = getAuctionOrderMode();
-        const categoryLabel = displayCategoryName(normalizeCategoryName(winner.category));
+        const categoryLabel = displayCategoryName(winnerCategory);
         const title = modal.querySelector(".wheel-title");
         const subtitle = modal.querySelector(".wheel-subtitle");
         const eyebrow = modal.querySelector(".wheel-eyebrow");
@@ -2431,12 +2493,16 @@ function runPlayerWheel(winner) {
         const breakdown = Object.entries(counts)
             .map(([name, count]) => `${name} ${count}`)
             .join(" · ");
+        const iconNote =
+            iconsTaken > 0
+                ? ` · ${iconsTaken} Icon/Caption already assigned`
+                : "";
 
         if (eyebrow) {
             eyebrow.textContent =
                 orderMode === "RANDOM"
                     ? `Player Wheel · Random · ${allEligible.length} left`
-                    : `Player Wheel · ${categoryLabel} only · ${breakdown || "—"}`;
+                    : `Player Wheel · ${categoryLabel} only · ${breakdown || "—"}${iconNote}`;
         }
         if (title) {
             title.textContent =
@@ -2445,10 +2511,13 @@ function runPlayerWheel(winner) {
                     : `Selecting ${categoryLabel}`;
         }
         if (subtitle) {
-            subtitle.textContent =
-                orderMode === "RANDOM"
-                    ? `Spinning ${remainingCount} remaining player${remainingCount === 1 ? "" : "s"}…`
-                    : `Spinning ${remainingCount} ${categoryLabel} player${remainingCount === 1 ? "" : "s"} left in this category…`;
+            if (orderMode === "RANDOM") {
+                subtitle.textContent = `Spinning ${remainingCount} remaining player${remainingCount === 1 ? "" : "s"}…`;
+            } else if (iconsTaken > 0) {
+                subtitle.textContent = `Spinning ${remainingCount} ${categoryLabel} left in this category (${iconsTaken} Icon/Caption already taken)…`;
+            } else {
+                subtitle.textContent = `Spinning ${remainingCount} ${categoryLabel} player${remainingCount === 1 ? "" : "s"} left in this category…`;
+            }
         }
 
         const sliceAngle = 360 / candidates.length;
