@@ -4,10 +4,11 @@
   "private": true,
   "description": "Cricket auction desk — local file mode + SaaS (Postgres + Cloudflare R2)",
   "scripts": {
-    "start": "node server.js",
+    "start": "node saas/server.js",
     "saas": "node saas/server.js",
     "saas:migrate": "node saas/db/migrate.js",
-    "saas:seed-superadmin": "node saas/db/seed-superadmin.js"
+    "saas:seed-superadmin": "node saas/db/seed-superadmin.js",
+    "legacy": "node server.js"
   },
   "engines": {
     "node": ">=18"

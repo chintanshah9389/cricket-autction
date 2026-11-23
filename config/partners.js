@@ -1,4 +1,4 @@
-const PARTNERS_API = "/api/partners";
+/* Partners persist via /api/v1/tournaments/:id/partners (SaaS). */
 const TIER_LABELS = {
     title: "Title Partner",
     presented: "Presented By",

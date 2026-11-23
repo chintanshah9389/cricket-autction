@@ -227,9 +227,21 @@ function startCycle() {
 }
 
 async function loadPartners() {
-    const response = await fetch("/api/partners", { cache: "no-store" });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not load partners.");
+    const tournamentId =
+        window.SaasAuth?.getActiveTournamentId?.() ||
+        (() => {
+            try {
+                return localStorage.getItem("ca_saas_tournament_id");
+            } catch (_) {
+                return null;
+            }
+        })();
+    if (!tournamentId || !window.SaasAuth?.api) {
+        throw new Error("Sign in and select a tournament to view partners.");
+    }
+    const payload = await window.SaasAuth.api(
+        `/api/v1/tournaments/${encodeURIComponent(tournamentId)}/partners`
+    );
     const all = Array.isArray(payload.partners) ? payload.partners : [];
     highlighted = sortHighlighted(all.filter((p) => p && p.highlight));
 

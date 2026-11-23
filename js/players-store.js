@@ -761,20 +761,41 @@ function importPlayerRows(rows, { mode = "replace", config = null, divisionId = 
         throw new Error("No valid players found in the file.");
     }
 
-    let next = incoming;
-    if (mode === "merge") {
-        const existing = loadStoredPlayers(divisionId) || [];
-        const byKey = new Map();
-        existing.forEach((player) => {
-            byKey.set(String(player.code || player.id), player);
-        });
-        incoming.forEach((player) => {
-            byKey.set(String(player.code || player.id), player);
-        });
-        next = [...byKey.values()];
-    }
+    const existing = loadStoredPlayers(divisionId) || [];
+    const next = mergeImportedPlayersWithExisting(incoming, existing, mode);
 
     return saveStoredPlayers(next, divisionId, { resetAuction: true });
+}
+
+/** Keep existing R2 photo keys when Excel rows omit photos. */
+function mergeImportedPlayersWithExisting(incoming, existing, mode = "replace") {
+    const byKey = new Map();
+    (existing || []).forEach((player) => {
+        byKey.set(String(player.code || player.id), player);
+    });
+
+    const preservePhoto = (player, prev) => {
+        if (!prev) return player;
+        if (player.photoKey || playerHasImportablePhoto(player)) return player;
+        const next = { ...player };
+        if (prev.photoKey) next.photoKey = prev.photoKey;
+        if (prev.photo && (!player.photo || /placeholder\.png/i.test(String(player.photo)))) {
+            next.photo = prev.photo;
+        }
+        return next;
+    };
+
+    if (mode === "merge") {
+        (incoming || []).forEach((player) => {
+            const key = String(player.code || player.id);
+            byKey.set(key, preservePhoto(player, byKey.get(key)));
+        });
+        return [...byKey.values()];
+    }
+
+    return (incoming || []).map((player) =>
+        preservePhoto(player, byKey.get(String(player.code || player.id)))
+    );
 }
 
 /** Import and wait until Postgres has the roster. */
@@ -788,18 +809,8 @@ async function importPlayerRowsToDb(rows, options = {}) {
     }
 
     const divisionId = options.divisionId || getActivePlayersDivisionId();
-    let next = incoming;
-    if (options.mode === "merge") {
-        const existing = loadStoredPlayers(divisionId) || [];
-        const byKey = new Map();
-        existing.forEach((player) => {
-            byKey.set(String(player.code || player.id), player);
-        });
-        incoming.forEach((player) => {
-            byKey.set(String(player.code || player.id), player);
-        });
-        next = [...byKey.values()];
-    }
+    const existing = loadStoredPlayers(divisionId) || [];
+    const next = mergeImportedPlayersWithExisting(incoming, existing, options.mode || "replace");
 
     return saveStoredPlayersToDisk(next, divisionId, { resetAuction: true });
 }

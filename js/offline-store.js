@@ -30,28 +30,26 @@ async function fetchDivisionPhotoIndex(divisionId) {
     try {
         const ready = await checkAssetsApiReady();
         if (!ready) return empty;
-        const response = await fetch(`/api/photos/${encodeURIComponent(id)}/status`, {
-            cache: "no-store"
-        });
-        if (!response.ok) return empty;
-        const payload = await response.json().catch(() => ({ files: [] }));
+        const players =
+            (typeof loadStoredPlayers === "function" && loadStoredPlayers(id)) || [];
         const codes = new Set();
         const paths = new Set();
-        for (const file of payload.files || []) {
-            const fileName = String(file.file || "").toLowerCase();
-            const code = fileName.replace(/\.[^.]+$/, "");
-            if (fileName) codes.add(fileName);
-            if (code) codes.add(code);
-            const rel = String(file.path || "")
+        for (const player of players) {
+            const code = String(player?.code || player?.id || "")
+                .trim()
+                .toLowerCase();
+            const photo = String(player?.photo || "")
+                .trim()
                 .replace(/\\/g, "/")
                 .replace(/^\//, "")
                 .toLowerCase();
-            if (rel) paths.add(rel);
+            if (code) codes.add(code);
+            if (photo && !/placeholder\.png/i.test(photo)) paths.add(photo);
         }
         return {
             codes,
             paths,
-            count: Number(payload.count) || (payload.files || []).length
+            count: paths.size || codes.size
         };
     } catch (_) {
         return empty;
@@ -150,8 +148,12 @@ async function checkAssetsApiReady({ force = false } = {}) {
         return assetsApiReadyCache;
     }
     try {
-        const response = await fetch("/api/photos/health", { cache: "no-store" });
-        assetsApiReadyCache = response.ok;
+        if (usesSaasMedia()) {
+            const health = await window.SaasAuth.api("/api/v1/health");
+            assetsApiReadyCache = Boolean(health?.ok && health?.r2 !== false);
+        } else {
+            assetsApiReadyCache = false;
+        }
     } catch (_) {
         assetsApiReadyCache = false;
     }
@@ -312,24 +314,13 @@ async function deleteDivisionOfflineMedia(divisionId) {
         // ignore legacy cleanup failures
     }
 
-    const ready = await checkAssetsApiReady();
-    if (!ready) return;
-
-    const response = await fetch(`/api/photos/${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || `Could not delete photos for ${id}.`);
-    }
+    // SaaS: player photo keys are purged when roster/reset clears them from Postgres + R2.
+    await checkAssetsApiReady();
 }
 
 async function deleteAllDivisionPhotoFolders() {
-    const ready = await checkAssetsApiReady({ force: true });
-    if (!ready) return;
-    const response = await fetch("/api/photos", { method: "DELETE" });
-    if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Could not wipe photo folders.");
-    }
+    // SaaS reset endpoint clears tournament media; no local photo folders.
+    await checkAssetsApiReady({ force: true });
 }
 
 async function deletePlayerPhotoFile(divisionId, code, photoRef = "", photoKey = "") {
@@ -353,45 +344,27 @@ async function deletePlayerPhotoFile(divisionId, code, photoRef = "", photoKey =
         playerCode = base.replace(/\.[^.]+$/, "").trim();
     }
     if (!id || !playerCode) return false;
-    const ready = await checkAssetsApiReady();
-    if (!ready) return false;
-    const response = await fetch(
-        `/api/photos/${encodeURIComponent(id)}/${encodeURIComponent(playerCode)}`,
-        { method: "DELETE" }
-    );
-    if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || `Could not delete photo for ${playerCode}.`);
-    }
-    return true;
+    // Legacy local photo API removed — SaaS deletes by photoKey above.
+    return false;
 }
 
 async function listDivisionOfflineMedia(divisionId) {
-    // Used by pack export: build media entries from disk paths on players, or API status + fetch
+    // Pack export: build media from player photo URLs already in local cache / DB snapshot.
     const ready = await checkAssetsApiReady();
     if (!ready) return [];
 
-    const response = await fetch(`/api/photos/${encodeURIComponent(divisionId)}/status`, {
-        cache: "no-store"
-    });
-    if (!response.ok) return [];
-    const payload = await response.json().catch(() => ({ files: [] }));
+    const players =
+        (typeof loadStoredPlayers === "function" && loadStoredPlayers(divisionId)) || [];
     const media = [];
-    for (const file of payload.files || []) {
-        try {
-            const blob = await fetchImageAsBlob(`/${file.path}`);
-            const dataUrl = await blobToDataUrl(blob);
-            const id = String(file.file || "").replace(/\.[^.]+$/, "");
-            media.push({
-                kind: "player",
-                id,
-                mimeType: blob.type || "image/jpeg",
-                dataUrl,
-                path: file.path
-            });
-        } catch (_) {
-            // skip unreadable files
-        }
+    for (const player of players) {
+        const photo = String(player?.photo || "").trim();
+        if (!photo || /placeholder\.png/i.test(photo)) continue;
+        if (!/^https?:\/\//i.test(photo) && !photo.startsWith("data:image/")) continue;
+        media.push({
+            playerCode: player.code || player.id,
+            path: photo,
+            photoKey: player.photoKey || null
+        });
     }
     return media;
 }
@@ -845,10 +818,14 @@ async function embedTournamentForPack(tournament) {
 
 async function exportPartnersForPack() {
     try {
-        const response = await fetch("/api/partners", { cache: "no-store" });
-        if (!response.ok) return [];
-        const payload = await response.json().catch(() => ({}));
-        const list = Array.isArray(payload.partners) ? payload.partners : Array.isArray(payload) ? payload : [];
+        const tournamentId =
+            (typeof getSaasTournamentId === "function" && getSaasTournamentId()) ||
+            window.SaasAuth?.getActiveTournamentId?.();
+        if (!tournamentId || !window.SaasAuth?.api) return [];
+        const payload = await window.SaasAuth.api(
+            `/api/v1/tournaments/${encodeURIComponent(tournamentId)}/partners`
+        );
+        const list = Array.isArray(payload.partners) ? payload.partners : [];
         const embedded = [];
         for (const partner of list) {
             const item = JSON.parse(JSON.stringify(partner || {}));
@@ -1092,8 +1069,10 @@ async function importDivisionPack(
         if (index >= 0) config.divisions[index] = division;
     }
 
-    if (typeof saveAuctionConfig === "function") {
-        config = saveAuctionConfig(config);
+    if (typeof saveAuctionConfigToDisk === "function") {
+        config = await saveAuctionConfigToDisk(config);
+    } else if (typeof saveAuctionConfig === "function") {
+        config = await Promise.resolve(saveAuctionConfig(config, { awaitDisk: true }));
     } else {
         try {
             const key = typeof AUCTION_CONFIG_KEY === "string" ? AUCTION_CONFIG_KEY : "auctionConfig";
@@ -1152,15 +1131,14 @@ async function importDivisionPack(
 async function importPartnersFromPack(partners) {
     if (!Array.isArray(partners) || !partners.length) return 0;
     try {
-        const response = await fetch("/api/partners", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ partners })
-        });
-        if (!response.ok) {
-            // Fallback: try POST each if bulk PUT unsupported
-            return 0;
-        }
+        const tournamentId =
+            (typeof getSaasTournamentId === "function" && getSaasTournamentId()) ||
+            window.SaasAuth?.getActiveTournamentId?.();
+        if (!tournamentId || !window.SaasAuth?.api) return 0;
+        await window.SaasAuth.api(
+            `/api/v1/tournaments/${encodeURIComponent(tournamentId)}/partners`,
+            { method: "PUT", body: { partners } }
+        );
         return partners.length;
     } catch (_) {
         return 0;

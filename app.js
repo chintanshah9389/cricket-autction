@@ -332,16 +332,20 @@ async function maybeShowPartnersIntro() {
     }
 
     try {
-        const response = await fetch("/api/partners", { cache: "no-store" });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
+        const tournamentId =
+            (typeof getSaasTournamentId === "function" && getSaasTournamentId()) ||
+            window.SaasAuth?.getActiveTournamentId?.();
+        if (!tournamentId || !window.SaasAuth?.api) {
             clearPartnersIntroQuery();
             return;
         }
+        const payload = await window.SaasAuth.api(
+            `/api/v1/tournaments/${encodeURIComponent(tournamentId)}/partners`
+        );
         const all = Array.isArray(payload.partners) ? payload.partners : [];
         partnersIntroList = all
             .filter((p) => p && p.highlight)
-            .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+            .sort((a, b) => Number(a.order || a.sortOrder || 0) - Number(b.order || b.sortOrder || 0));
         if (!partnersIntroList.length) {
             clearPartnersIntroQuery();
             return;

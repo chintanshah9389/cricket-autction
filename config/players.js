@@ -114,7 +114,11 @@ function renderPlayersDivisionTabs() {
             try {
                 const config = await getAuctionConfig();
                 const next = setActiveDivisionId(config, activeDivisionId);
-                saveAuctionConfig(next);
+                const saveFn =
+                    typeof saveAuctionConfigToDisk === "function"
+                        ? saveAuctionConfigToDisk
+                        : saveAuctionConfig;
+                await saveFn(next);
             } catch (_) {
                 // still switch local view
             }
@@ -635,7 +639,9 @@ async function syncConfigPlayerFieldsFromRoster() {
     const afterDiv = typeof getActiveDivision === "function" ? getActiveDivision(config) : null;
     const after = JSON.stringify(afterDiv?.playerFields || {});
     if (before !== after) {
-        saveAuctionConfig(config);
+        const saveFn =
+            typeof saveAuctionConfigToDisk === "function" ? saveAuctionConfigToDisk : saveAuctionConfig;
+        await saveFn(config);
         if (typeof flushProjectPersistQueue === "function") {
             await flushProjectPersistQueue();
         }
@@ -930,7 +936,11 @@ async function runImport(mode) {
             if (typeof setActiveDivisionId === "function") {
                 config = setActiveDivisionId(config, activeDivisionId);
             }
-            saveAuctionConfig(config);
+            const saveFn =
+                typeof saveAuctionConfigToDisk === "function"
+                    ? saveAuctionConfigToDisk
+                    : saveAuctionConfig;
+            await saveFn(config);
             if (typeof flushProjectPersistQueue === "function") {
                 await flushProjectPersistQueue();
             }

@@ -21,6 +21,24 @@ const { tryPrettyHtml } = require("../server");
 
 const PORT = Number(process.env.PORT) || 3000;
 
+async function runMigrationsQuiet() {
+  try {
+    const { spawnSync } = require("child_process");
+    const result = spawnSync(process.execPath, ["saas/db/migrate.js"], {
+      cwd: require("path").join(__dirname, ".."),
+      env: process.env,
+      encoding: "utf8"
+    });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.status !== 0) {
+      console.error("Migration warning: exit", result.status);
+    }
+  } catch (error) {
+    console.error("Migration warning:", error.message || error);
+  }
+}
+
 async function handleHealth(req, res) {
   const checks = { ok: true, db: false, r2: false, mode: "saas", desk: true };
   try {
@@ -70,9 +88,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`SaaS auction API: http://localhost:${PORT}`);
-  console.log(`Health: http://localhost:${PORT}/api/v1/health`);
-  console.log("Login: POST /api/v1/auth/login  { login, password }");
-  console.log("Stop with Ctrl+C");
+runMigrationsQuiet().finally(() => {
+  server.listen(PORT, () => {
+    console.log(`SaaS auction API: http://localhost:${PORT}`);
+    console.log(`Health: http://localhost:${PORT}/api/v1/health`);
+    console.log("Login: POST /api/v1/auth/login  { login, password }");
+    console.log("Stop with Ctrl+C");
+  });
 });

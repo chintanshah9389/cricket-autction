@@ -103,7 +103,14 @@ async function deleteDivisionAuction(divisionId) {
 }
 
 async function resetProjectFolderOnDisk() {
-    throw new Error("Reset tournament from Org dashboard / Tournaments. No local data-project folder.");
+    const payload = await projectApiFetch(`${tournamentApiBase()}/reset`, {
+        method: "POST",
+        body: {}
+    });
+    if (payload?.snapshot) {
+        applyProjectSnapshotToLocalStorage(payload.snapshot, { wipeMissingAuction: true });
+    }
+    return payload;
 }
 
 /** True when auction snapshot has a roster worth resuming. */

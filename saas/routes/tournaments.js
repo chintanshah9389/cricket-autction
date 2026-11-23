@@ -92,8 +92,8 @@ function mapPartnerRow(row) {
     name: row.name,
     tier: row.tier,
     tagline: row.tagline || "",
-    url: "",
-    highlight: false,
+    url: row.url || "",
+    highlight: row.highlight === true,
     order: row.sort_order,
     sortOrder: row.sort_order,
     logo: row.logo_key ? publicUrlForKey(row.logo_key) || "" : "",
@@ -442,6 +442,159 @@ async function handleTournamentRoutes(req, res, url) {
     return true;
   }
 
+  const resetMatch = url.pathname.match(/^\/api\/v1\/tournaments\/([^/]+)\/reset$/);
+  if (resetMatch && req.method === "POST") {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+    const tournamentId = resetMatch[1];
+    const ctx = await requireTournamentAccess(user, tournamentId, WRITE_ROLES);
+    if (!ctx) {
+      sendJson(res, 403, { error: "Forbidden" });
+      return true;
+    }
+
+    const mediaKeys = [];
+    const logoRow = await query(`SELECT logo_key FROM tournaments WHERE id = $1`, [tournamentId]);
+    if (logoRow.rows[0]?.logo_key) mediaKeys.push(logoRow.rows[0].logo_key);
+
+    const teamMedia = await query(
+      `SELECT t.logo_key, t.video_key
+       FROM teams t
+       JOIN divisions d ON d.id = t.division_id
+       WHERE d.tournament_id = $1`,
+      [tournamentId]
+    );
+    for (const row of teamMedia.rows) {
+      if (row.logo_key) mediaKeys.push(row.logo_key);
+      if (row.video_key) mediaKeys.push(row.video_key);
+    }
+
+    const playerMedia = await query(
+      `SELECT p.photo_key
+       FROM players p
+       JOIN divisions d ON d.id = p.division_id
+       WHERE d.tournament_id = $1`,
+      [tournamentId]
+    );
+    for (const row of playerMedia.rows) {
+      if (row.photo_key) mediaKeys.push(row.photo_key);
+    }
+
+    const partnerMedia = await query(
+      `SELECT logo_key, video_key FROM partners WHERE tournament_id = $1`,
+      [tournamentId]
+    );
+    for (const row of partnerMedia.rows) {
+      if (row.logo_key) mediaKeys.push(row.logo_key);
+      if (row.video_key) mediaKeys.push(row.video_key);
+    }
+
+    const objectMedia = await query(
+      `SELECT m.object_key
+       FROM media_objects m
+       JOIN tournaments t ON t.org_id = m.org_id
+       WHERE t.id = $1
+         AND m.object_key LIKE ('org/' || t.org_id::text || '/tournaments/' || t.id::text || '/%')`,
+      [tournamentId]
+    );
+    for (const row of objectMedia.rows) {
+      if (row.object_key) mediaKeys.push(row.object_key);
+    }
+
+    const client = await require("../db/pool").getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`DELETE FROM partners WHERE tournament_id = $1`, [tournamentId]);
+      await client.query(
+        `DELETE FROM auction_events
+         WHERE session_id IN (
+           SELECT s.id FROM auction_sessions s
+           JOIN divisions d ON d.id = s.division_id
+           WHERE d.tournament_id = $1
+         )`,
+        [tournamentId]
+      );
+      await client.query(
+        `DELETE FROM players
+         WHERE division_id IN (SELECT id FROM divisions WHERE tournament_id = $1)`,
+        [tournamentId]
+      );
+      await client.query(
+        `DELETE FROM teams
+         WHERE division_id IN (SELECT id FROM divisions WHERE tournament_id = $1)`,
+        [tournamentId]
+      );
+      await client.query(
+        `UPDATE auction_sessions s
+         SET status = 'idle', snapshot = '{}'::jsonb, revision = s.revision + 1, updated_at = NOW()
+         FROM divisions d
+         WHERE s.division_id = d.id AND d.tournament_id = $1`,
+        [tournamentId]
+      );
+      await client.query(`DELETE FROM divisions WHERE tournament_id = $1`, [tournamentId]);
+
+      const year = String(new Date().getFullYear());
+      await client.query(
+        `UPDATE tournaments
+         SET name = COALESCE(NULLIF(name, ''), 'New Auction'),
+             year = COALESCE(NULLIF(year, ''), $2),
+             logo_key = NULL,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [tournamentId, year]
+      );
+
+      const categories = {
+        "RISING STAR": { basePrice: 500000, maxPlayers: 3 },
+        "KEY PLAYERS": { basePrice: 1000000, maxPlayers: 4 },
+        EVERGREEN: { basePrice: 2000000, maxPlayers: 4 }
+      };
+      const div = await client.query(
+        `INSERT INTO divisions (
+           tournament_id, name, code, sort_order, team_kitty,
+           use_category_base_prices, auction_order, shuffle_within_category,
+           player_wheel_enabled, category_sequence, categories, icon_caption, player_fields
+         ) VALUES (
+           $1, 'Main Auction', 'div_1', 0, 10000000,
+           TRUE, 'SEQUENCE', TRUE,
+           TRUE, $2::jsonb, $3::jsonb, '{}'::jsonb, '{}'::jsonb
+         )
+         RETURNING id`,
+        [
+          tournamentId,
+          JSON.stringify(["RISING STAR", "KEY PLAYERS", "EVERGREEN"]),
+          JSON.stringify(categories)
+        ]
+      );
+      await client.query(
+        `INSERT INTO auction_sessions (division_id, status, snapshot)
+         VALUES ($1, 'idle', '{}'::jsonb)
+         ON CONFLICT (division_id) DO NOTHING`,
+        [div.rows[0].id]
+      );
+
+      const uniqueKeys = [...new Set(mediaKeys.filter(Boolean))];
+      for (const key of uniqueKeys) {
+        await deleteObjectQuiet(key);
+        await client.query(`DELETE FROM media_objects WHERE object_key = $1`, [key]);
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      reset: true,
+      snapshot: await buildSnapshot(tournamentId)
+    });
+    return true;
+  }
+
   const partnersMatch = url.pathname.match(/^\/api\/v1\/tournaments\/([^/]+)\/partners$/);
   if (partnersMatch && req.method === "GET") {
     const user = await requireUser(req, res);
@@ -488,8 +641,8 @@ async function handleTournamentRoutes(req, res, url) {
         if (videoKey) keepKeys.add(videoKey);
         await client.query(
           `INSERT INTO partners (
-             tournament_id, name, tier, tagline, sort_order, logo_key, video_key
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+             tournament_id, name, tier, tagline, sort_order, logo_key, video_key, url, highlight
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             tournamentId,
             String(p.name || `Partner ${i + 1}`),
@@ -499,7 +652,9 @@ async function handleTournamentRoutes(req, res, url) {
               ? Number(p.sortOrder ?? p.order)
               : i,
             logoKey,
-            videoKey
+            videoKey,
+            String(p.url || ""),
+            p.highlight === true
           ]
         );
       }

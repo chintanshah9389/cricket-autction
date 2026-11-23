@@ -674,36 +674,16 @@ async function handleSuperAdminRoutes(req, res, url) {
         return true;
       }
       const orgId = existing.rows[0].org_id;
-      const relatedUserIds = await memberUserIdsForOrg(orgId);
       const mediaKeys = await collectTournamentMediaKeys(tournamentId);
       const purgedMedia = await purgeMediaKeys(mediaKeys);
 
       // Cascade removes divisions, teams, players, partners, auction sessions/events.
+      // Do NOT delete org users here — that only happens on organization delete.
       const deleted = await query(
         `DELETE FROM tournaments WHERE id = $1
          RETURNING id, name, year, slug, org_id`,
         [tournamentId]
       );
-
-      // Also remove related org users who do not belong to any other org.
-      let deletedUsers = [];
-      if (relatedUserIds.length) {
-        const exclusive = await query(
-          `SELECT u.id
-           FROM users u
-           WHERE u.id = ANY($1::uuid[])
-             AND u.is_super_admin = FALSE
-             AND NOT EXISTS (
-               SELECT 1 FROM memberships m
-               WHERE m.user_id = u.id AND m.org_id <> $2
-             )`,
-          [relatedUserIds, orgId]
-        );
-        deletedUsers = await deleteRelatedUsers(
-          exclusive.rows.map((row) => row.id),
-          actor.id
-        );
-      }
 
       const remaining = await query(
         `SELECT COUNT(*)::int AS c FROM tournaments WHERE org_id = $1`,
@@ -715,8 +695,8 @@ async function handleSuperAdminRoutes(req, res, url) {
         tournament: deleted.rows[0],
         relatedDataRemoved: true,
         remainingTournamentsInOrg: Number(remaining.rows[0]?.c || 0),
-        deletedUsers,
-        deletedUserCount: deletedUsers.length,
+        deletedUsers: [],
+        deletedUserCount: 0,
         purgedMedia
       });
       return true;

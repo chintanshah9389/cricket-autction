@@ -1166,7 +1166,11 @@ async function loadForm() {
     if (synced) {
         // Keep Config toggles + disk aligned with Excel/roster columns
         try {
-            saveAuctionConfig({
+            const saveFn =
+                typeof saveAuctionConfigToDisk === "function"
+                    ? saveAuctionConfigToDisk
+                    : saveAuctionConfig;
+            await saveFn({
                 tournament: draftTournament,
                 divisions: draftDivisions,
                 activeDivisionId: draftActiveDivisionId
@@ -1213,7 +1217,7 @@ function addCategory() {
     renderAll();
 }
 
-function saveForm() {
+async function saveForm() {
     const draft = readFormConfig();
     if (!String(draft.tournament?.name || "").trim()) {
         saveStatus.textContent = "Enter a tournament name.";
@@ -1249,7 +1253,10 @@ function saveForm() {
     }
 
     try {
-        const saved = saveAuctionConfig(draft);
+        saveStatus.textContent = "Saving to database…";
+        const saveFn =
+            typeof saveAuctionConfigToDisk === "function" ? saveAuctionConfigToDisk : saveAuctionConfig;
+        const saved = await saveFn(draft);
         draftDivisions = JSON.parse(JSON.stringify(saved.divisions || []));
         draftActiveDivisionId = saved.activeDivisionId;
         applyDivisionFieldsToForm(getDraftActiveDivision());
@@ -1388,7 +1395,11 @@ async function handleExportProjectPack() {
         captureDivisionFieldsFromForm();
         // Persist current form before packaging so disk matches what you see
         try {
-            saveAuctionConfig(readFormConfig());
+            const saveFn =
+                typeof saveAuctionConfigToDisk === "function"
+                    ? saveAuctionConfigToDisk
+                    : saveAuctionConfig;
+            await saveFn(readFormConfig());
         } catch (_) {
             // still export whatever is on disk/config
         }
@@ -1515,7 +1526,21 @@ function initConfigAccordions() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     initConfigAccordions();
+    try {
+        if (window.SaasAuth?.requireAuth) {
+            const me = await window.SaasAuth.requireAuth();
+            if (!me) return;
+        }
+        if (typeof usesTournamentDb === "function" && !usesTournamentDb()) {
+            saveStatus.textContent = "Select a tournament first from the dashboard.";
+            window.location.href = "/app/tournaments.html";
+            return;
+        }
+    } catch (error) {
+        saveStatus.textContent = error.message || "Sign in required.";
+        return;
+    }
     loadForm();
 });

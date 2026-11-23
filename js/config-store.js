@@ -1182,7 +1182,7 @@ async function getAuctionConfig() {
     return config;
 }
 
-function saveAuctionConfig(config) {
+function saveAuctionConfig(config, options = {}) {
     let incoming = config || {};
 
     // If caller sends a flat form (no divisions), merge into existing active division
@@ -1236,9 +1236,16 @@ function saveAuctionConfig(config) {
     localStorage.setItem(AUCTION_CONFIG_KEY, JSON.stringify(normalized));
     syncIconCaptionIdsIntoLiveAuctions(normalized);
     if (typeof persistConfigToProjectFolder === "function") {
-        persistConfigToProjectFolder(normalized);
+        const persistPromise = persistConfigToProjectFolder(normalized);
+        if (options.awaitDisk === true) {
+            return Promise.resolve(persistPromise).then(() => normalized);
+        }
     }
     return normalized;
+}
+
+async function saveAuctionConfigToDisk(config) {
+    return saveAuctionConfig(config, { awaitDisk: true });
 }
 
 /**

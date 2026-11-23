@@ -75,14 +75,13 @@ function resolveMediaKey(entity, keyField, urlField) {
   if (!entity || typeof entity !== "object") return null;
   if (Object.prototype.hasOwnProperty.call(entity, keyField)) {
     const direct = entity[keyField];
-    if (direct == null || direct === "") return null;
-    return String(direct);
+    if (direct != null && direct !== "") return String(direct);
+    // Empty/null key: still try URL recovery so Excel merges don't orphan R2 photos.
   }
   const snake = keyField.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
   if (Object.prototype.hasOwnProperty.call(entity, snake)) {
     const direct = entity[snake];
-    if (direct == null || direct === "") return null;
-    return String(direct);
+    if (direct != null && direct !== "") return String(direct);
   }
   return keyFromPublicUrl(entity[urlField]);
 }
