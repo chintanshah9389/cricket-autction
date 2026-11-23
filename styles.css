@@ -1136,6 +1136,37 @@ body:not(.welcome-active) #welcome-menu-overlay {
     font-weight: 600;
 }
 
+.direct-bid-amount-row {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) 48px;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.direct-bid-amount-row input {
+    width: 100%;
+    min-width: 0;
+}
+
+.direct-bid-step-btn {
+    border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--pitch) 10%, #fff);
+    color: var(--ink);
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.direct-bid-step-btn:hover {
+    background: color-mix(in srgb, var(--pitch) 18%, #fff);
+}
+
+.direct-bid-step-btn:active {
+    transform: translateY(1px);
+}
+
 /* ======== TEAMS DRAWER ======== */
 .teams-backdrop {
     position: fixed;

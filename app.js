@@ -4009,12 +4009,22 @@ function openDirectBidModal(teamId = null) {
     }
     directBidAmountInput.value = suggestedAmount;
     updateDirectBidPreview();
+    updateDirectBidSubmitLabel();
 
     directBidModal.style.display = 'flex';
     setTimeout(() => {
         directBidAmountInput.focus();
         directBidAmountInput.select();
     }, 0);
+}
+
+/** Floor for custom bid: base price, or just above the previous competing bid. */
+function getDirectBidFloor(player) {
+    const basePrice = Number(player?.basePrice) || 0;
+    const bids = Array.isArray(player?.bids) ? player.bids : [];
+    if (bids.length <= 1) return basePrice;
+    const previous = bids[bids.length - 2];
+    return Math.max(basePrice, (Number(previous?.amount) || 0) + 1);
 }
 
 function updateDirectBidPreview() {
@@ -4026,7 +4036,55 @@ function updateDirectBidPreview() {
         preview.textContent = "Enter amount in full rupees";
         return;
     }
-    preview.textContent = `Will show as ${formatMoney(amount)}`;
+
+    const player = state.players?.[state.auctionCount];
+    const bids = Array.isArray(player?.bids) ? player.bids : [];
+    const lastBid = bids.length ? bids[bids.length - 1] : null;
+    const money = formatMoney(amount);
+
+    if (lastBid && amount < Number(lastBid.amount)) {
+        preview.textContent = `Will correct current bid down to ${money}`;
+        return;
+    }
+    if (lastBid && amount === Number(lastBid.amount)) {
+        preview.textContent = `Same as current bid (${money})`;
+        return;
+    }
+    preview.textContent = `Will show as ${money}`;
+}
+
+function stepDirectBidAmount(direction) {
+    if (!directBidAmountInput) return;
+    const player = state.players?.[state.auctionCount];
+    if (!player) return;
+
+    const bids = Array.isArray(player.bids) ? player.bids : [];
+    const lastAmount = bids.length ? Number(bids[bids.length - 1].amount) || 0 : 0;
+    const current = parseInt(directBidAmountInput.value, 10);
+    const base = Number.isFinite(current) && current > 0
+        ? current
+        : lastAmount || Number(player.basePrice) || 0;
+    const step = Math.max(1000, bidIncrement(Math.max(0, base - (direction < 0 ? 1 : 0))));
+    const floor = getDirectBidFloor(player);
+    const next = direction < 0 ? Math.max(floor, base - step) : base + step;
+    directBidAmountInput.value = String(next);
+    updateDirectBidPreview();
+    updateDirectBidSubmitLabel();
+}
+
+function updateDirectBidSubmitLabel() {
+    const btn = document.getElementById("submit-bid-btn");
+    if (!btn || !directBidAmountInput) return;
+    const player = state.players?.[state.auctionCount];
+    const amount = parseInt(directBidAmountInput.value, 10);
+    const lastBid = Array.isArray(player?.bids) && player.bids.length
+        ? player.bids[player.bids.length - 1]
+        : null;
+    if (lastBid && Number.isFinite(amount) && amount < Number(lastBid.amount)) {
+        btn.textContent = "Adjust Bid Down";
+    } else {
+        btn.textContent = "Place Bid";
+    }
 }
 
 function closeDirectBidModal() {
@@ -4035,6 +4093,8 @@ function closeDirectBidModal() {
 
 /**
  * Handles the logic for a custom "Direct Bid"
+ * — amount above current: place a new competing bid
+ * — amount below current: correct / go back the current high bid
  */
 function handleDirectBidSubmit(event) {
     event.preventDefault(); // Stop the form from reloading the page
@@ -4051,6 +4111,40 @@ function handleDirectBidSubmit(event) {
         alert("Invalid input. Please check the team and amount.");
         return;
     }
+    if (!Array.isArray(player.bids)) player.bids = [];
+
+    const lastBid = player.bids.length ? player.bids[player.bids.length - 1] : null;
+    const adjustingDown = Boolean(lastBid && amount < Number(lastBid.amount));
+
+    if (adjustingDown) {
+        const floor = getDirectBidFloor(player);
+        if (amount < floor) {
+            alert(
+                `Cannot go below ${formatMoney(floor)}` +
+                    (player.bids.length > 1
+                        ? " (must stay above the previous bid)."
+                        : ` (base price is ${formatMoney(player.basePrice)}).`)
+            );
+            return;
+        }
+
+        // Correct the current high bid amount (same leading team)
+        const leadingTeam = findTeam(lastBid.team) || team;
+        saveHistory();
+        lastBid.amount = amount;
+        console.log(
+            `DIRECT BID ADJUST: ${player.name} current bid set back to ${formatMoney(amount)} (${leadingTeam.team_name})`
+        );
+        renderUI();
+        triggerAnim(document.getElementById("current-bid"), "updated");
+        triggerAnim(document.getElementById("current-bid-section"), "live-bid");
+        triggerAnim(document.getElementById(`team-${lastBid.team}`), "bid-flash");
+        triggerAnim(document.getElementById(`team-rail-${lastBid.team}`), "bid-flash");
+        saveData();
+        closeDirectBidModal();
+        return;
+    }
+
     const quota = getCategoryQuotaStatus(state, teamId, player.category);
     if (quota.isFull) {
         alert(`${team.team_name} already has ${quota.owned}/${quota.max} ${quota.name} players.`);
@@ -4078,14 +4172,13 @@ function handleDirectBidSubmit(event) {
         );
         return;
     }
-    if (player.bids.length > 0) {
-        const lastBid = player.bids[player.bids.length - 1];
-        if (amount <= lastBid.amount) {
-            alert(`The bid must be higher than the current bid of ${formatMoney(lastBid.amount)}.`);
+    if (lastBid) {
+        if (amount === Number(lastBid.amount)) {
+            alert(`Amount is already the current bid of ${formatMoney(lastBid.amount)}.`);
             return;
         }
-        if (lastBid.team === teamId) {
-            alert(`${team.team_name} cannot bid twice in a row.`);
+        if (Number(lastBid.team) === Number(teamId)) {
+            alert(`${team.team_name} cannot bid twice in a row. Use a lower amount to adjust the current bid down.`);
             return;
         }
     }
@@ -4587,7 +4680,16 @@ const initApp = async () => {
     //--- DIRECT BIDDING -------
     directBidCloseBtn.addEventListener('click', closeDirectBidModal);
     directBidForm.addEventListener('submit', handleDirectBidSubmit);
-    directBidAmountInput.addEventListener('input', updateDirectBidPreview);
+    directBidAmountInput.addEventListener('input', () => {
+        updateDirectBidPreview();
+        updateDirectBidSubmitLabel();
+    });
+    document.getElementById("direct-bid-down-btn")?.addEventListener("click", () => {
+        stepDirectBidAmount(-1);
+    });
+    document.getElementById("direct-bid-up-btn")?.addEventListener("click", () => {
+        stepDirectBidAmount(1);
+    });
 
     const customBidButton = document.getElementById("custom-bid-button");
     const currentBidSection = document.getElementById("current-bid-section");

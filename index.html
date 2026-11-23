@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=44">
+    <link rel="stylesheet" href="styles.css?v=45">
     <link rel="stylesheet" href="animations.css?v=18">
     <script>
         // Block welcome chrome until we know the server is up.
@@ -375,7 +375,7 @@
         <div class="modal-content">
             <span class="modal-close" id="direct-bid-close-btn">&times;</span>
             <h2>Custom Bid</h2>
-            <p class="direct-bid-hint">Type any amount above the current bid in rupees. Example: 250000 = Rs 2.5 L, 10000000 = Rs 1 Cr.</p>
+            <p class="direct-bid-hint">Type any amount in rupees. Go higher to place a new bid, or go lower to correct the current bid back. Example: 250000 = Rs 2.5 L.</p>
             <form id="direct-bid-form" class="bid-form">
                 <div class="form-group">
                     <label for="team-select-dropdown">Select Team</label>
@@ -383,10 +383,14 @@
                 </div>
                 <div class="form-group">
                     <label for="direct-bid-amount">Bid Amount</label>
-                    <input type="number" id="direct-bid-amount" placeholder="e.g., 250000" step="1000" min="0">
+                    <div class="direct-bid-amount-row">
+                        <button type="button" class="direct-bid-step-btn" id="direct-bid-down-btn" title="Step amount down">−</button>
+                        <input type="number" id="direct-bid-amount" placeholder="e.g., 250000" step="1000" min="0">
+                        <button type="button" class="direct-bid-step-btn" id="direct-bid-up-btn" title="Step amount up">+</button>
+                    </div>
                     <small id="direct-bid-preview">Enter amount in full rupees</small>
                 </div>
-                <button type="submit" id="submit-bid-btn" class="modal-submit-btn">Place Bid</button>
+                <button type="submit" id="submit-bid-btn" class="modal-submit-btn">Place / Adjust Bid</button>
             </form>
         </div>
     </div>
@@ -572,7 +576,7 @@
     <script src="js/project-store.js?v=30"></script>
     <script src="js/players-store.js?v=34"></script>
     <script src="js/offline-store.js?v=27"></script>
-    <script src="app.js?v=64"></script>
+    <script src="app.js?v=65"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>
