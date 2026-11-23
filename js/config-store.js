@@ -1478,21 +1478,54 @@ function syncIconCaptionPlayerCopy(target, source) {
 
 function countTeamPlayersInCategory(state, teamId, categoryName) {
     const name = normalizeCategoryName(categoryName);
-    const team = state.teams.find((t) => t.team_id === teamId);
+    const team = (state.teams || []).find(
+        (entry) => Number(entry.team_id) === Number(teamId)
+    );
     if (!team) return 0;
 
     const config = getActiveConfig(state);
     const activeDivision = getActiveDivision(config);
     const iconCaption = resolveIconCaptionSettings(activeDivision);
+    // Default ON: Icon/Caption fill a category slot (Rising max 3 → 1 Rising Icon leaves 2)
     const countPreAssign = iconCaption.countTowardCategoryQuota !== false;
     const master = state.allPlayers || state.players || [];
+    const counted = new Set();
+    let count = 0;
 
-    return team.players.reduce((count, playerId) => {
-        const player = findPlayerByAssignableId(master, playerId);
-        if (!player) return count;
-        if (!countPreAssign && isIconCaptionPreAssignedPlayer(player)) return count;
-        return normalizeCategoryName(player.category) === name ? count + 1 : count;
-    }, 0);
+    const consider = (player) => {
+        if (!player) return;
+        const key = String(player.id ?? player.code ?? "");
+        if (!key || counted.has(key)) return;
+        if (!countPreAssign && isIconCaptionPreAssignedPlayer(player)) return;
+        if (normalizeCategoryName(player.category) !== name) return;
+        counted.add(key);
+        count += 1;
+    };
+
+    // 1) Everyone already on the team roster
+    (team.players || []).forEach((playerId) => {
+        consider(findPlayerByAssignableId(master, playerId));
+    });
+
+    // 2) Icon / Caption picks on the team object (covers id/code mismatch on roster)
+    if (countPreAssign) {
+        consider(findPlayerByAssignableId(master, team.iconPlayerId));
+        consider(findPlayerByAssignableId(master, team.captionPlayerId));
+
+        // 3) Any pre-assigned player sold to this team in this category
+        master.forEach((player) => {
+            if (!isIconCaptionPreAssignedPlayer(player)) return;
+            if (
+                Number(player.team) !== Number(teamId) &&
+                !sameAssignablePlayerId(player.team, teamId)
+            ) {
+                return;
+            }
+            consider(player);
+        });
+    }
+
+    return count;
 }
 
 /**
