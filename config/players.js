@@ -900,10 +900,20 @@ async function runImport(mode) {
         setStatus("Choose a CSV or Excel file first.", true);
         return;
     }
+    if (typeof usesTournamentDb === "function" && !usesTournamentDb()) {
+        setStatus("Select a tournament from the dashboard first, then import Excel.", true);
+        return;
+    }
 
-    try {
+    const importWork = async () => {
+        if (window.SaasAuth?.updateBusy) {
+            window.SaasAuth.updateBusy(`Reading ${file.name}…`);
+        }
         setStatus(`Reading ${file.name}...`);
         const rows = await parseSpreadsheetFile(file);
+        if (!rows.length) {
+            throw new Error("No rows found in the spreadsheet.");
+        }
         const detectedColumns =
             typeof getDetectedSpreadsheetColumns === "function"
                 ? getDetectedSpreadsheetColumns(rows)
@@ -929,7 +939,18 @@ async function runImport(mode) {
             applyPlayersFormFieldPolicy();
         }
 
-        let saved = importPlayerRows(rows, { mode, config, divisionId: activeDivisionId });
+        if (window.SaasAuth?.updateBusy) {
+            window.SaasAuth.updateBusy(`Saving ${rows.length} players to database…`);
+        }
+        let saved =
+            typeof importPlayerRowsToDb === "function"
+                ? await importPlayerRowsToDb(rows, {
+                      mode,
+                      config,
+                      divisionId: activeDivisionId
+                  })
+                : importPlayerRows(rows, { mode, config, divisionId: activeDivisionId });
+
         const catSummary = formatCategoryBreakdown(saved);
         const shownFields =
             typeof getExpectedSpreadsheetColumns === "function"
@@ -941,57 +962,81 @@ async function runImport(mode) {
             (player) => normalizeCategoryName(player.category) === "RISING STAR"
         ).length;
         const mostlyRising = saved.length > 0 && risingCount / saved.length >= 0.85;
-        if (!hasCategoryCol || mostlyRising) {
-            setStatus(
-                `Imported ${saved.length} (${mode}). ${catSummary}. ` +
-                    (!hasCategoryCol
-                        ? "No CATEGORY column detected — almost everyone may default to Rising Star. "
-                        : "Most players are Rising Star. ") +
-                    "Use “Fix categories from ID (CPL-R/K/E)” if IDs encode the pool, then Start New Auction.",
-                true
-            );
-        } else {
-            setStatus(`Imported ${saved.length} players (${mode}). ${catSummary}. Saving photos…`);
-        }
-        if (typeof cachePlayersPhotos === "function") {
-            try {
-                const result = await cachePlayersPhotos(saved, activeDivisionId, {
-                    assetPrefix: "../",
-                    onProgress: (done, total, cached) => {
-                        setOfflineStatus(`Saving photos ${done}/${total} (written ${cached})…`);
-                    }
-                });
-                saved = saveStoredPlayers(result.players, activeDivisionId);
-                const photoLabel = result.mode === "r2" ? "stored in cloud" : "saved";
-                setStatus(
-                    `Imported ${saved.length} players (${mode}). ${formatCategoryBreakdown(saved)}. ` +
-                        `Photos ${photoLabel}: ${result.cached}` +
-                        (result.failed ? `, ${result.failed} skipped` : "") +
-                        `. Config “Show on auction” synced${shownFields ? ` (${shownFields})` : ""}. Start New Auction to apply on the desk.`
-                );
-                refreshOfflinePhotoStatus();
-            } catch (photoError) {
-                setStatus(
-                    `Imported ${saved.length} players (${mode}). ${catSummary}. Photos not saved yet — ${
-                        photoError.message ||
-                        (isSaasPhotoMode()
-                            ? "click Save photos to upload into cloud storage."
-                            : "start node server.js and click Save photos to assets.")
-                    } Config fields synced; then Start New Auction.`,
-                    true
-                );
-            }
-        } else {
-            setStatus(
-                `Imported ${saved.length} players (${mode}). ${catSummary}. Config “Show on auction” synced${shownFields ? ` (${shownFields})` : ""}. Start New Auction to load on the desk.`
-            );
-        }
+        const photoCandidates = saved.filter(
+            (player) =>
+                typeof playerHasImportablePhoto === "function"
+                    ? playerHasImportablePhoto(player)
+                    : false
+        );
+
         playersCache = enrichPlayers(saved);
         updateFilterOptions();
         renderPlayersTable();
         applyPlayersFormFieldPolicy();
         renderPlayersDivisionTabs();
         resetForm();
+
+        if (!hasCategoryCol || mostlyRising) {
+            setStatus(
+                `Imported ${saved.length} to database (${mode}). ${catSummary}. ` +
+                    (!hasCategoryCol
+                        ? "No CATEGORY column detected — almost everyone may default to Rising Star. "
+                        : "Most players are Rising Star. ") +
+                    "Use “Fix categories from ID (CPL-R/K/E)” if IDs encode the pool.",
+                true
+            );
+        } else {
+            setStatus(
+                `Imported ${saved.length} players to database (${mode}). ${catSummary}.` +
+                    (shownFields ? ` Fields: ${shownFields}.` : "")
+            );
+        }
+
+        // Photos are optional and must not block Excel import.
+        if (photoCandidates.length && typeof cachePlayersPhotos === "function") {
+            setOfflineStatus(`Storing ${photoCandidates.length} photo URL(s) in cloud…`);
+            try {
+                if (window.SaasAuth?.updateBusy) {
+                    window.SaasAuth.updateBusy(
+                        `Storing photos 0/${photoCandidates.length}…`
+                    );
+                }
+                const result = await cachePlayersPhotos(saved, activeDivisionId, {
+                    assetPrefix: "../",
+                    onProgress: (done, total, cached) => {
+                        setOfflineStatus(`Saving photos ${done}/${total} (written ${cached})…`);
+                    }
+                });
+                saved = await saveStoredPlayersToDisk(result.players, activeDivisionId);
+                playersCache = enrichPlayers(saved);
+                renderPlayersTable();
+                setStatus(
+                    `Imported ${saved.length} players (${mode}). ${formatCategoryBreakdown(saved)}. ` +
+                        `Photos stored in cloud: ${result.cached}` +
+                        (result.failed ? `, ${result.failed} skipped` : "") +
+                        `.`
+                );
+                refreshOfflinePhotoStatus();
+            } catch (photoError) {
+                setOfflineStatus(
+                    photoError.message ||
+                        "Players saved. Photos not stored yet — click Save / store photos.",
+                    true
+                );
+            }
+        } else {
+            setOfflineStatus(
+                `Players saved in database: ${saved.length}. No photo URLs in Excel — upload photo files if needed.`
+            );
+        }
+    };
+
+    try {
+        if (window.SaasAuth?.withBusy) {
+            await window.SaasAuth.withBusy(`Importing ${file.name}…`, importWork);
+        } else {
+            await importWork();
+        }
     } catch (error) {
         console.error(error);
         setStatus(error.message || "Import failed.", true);
@@ -1433,11 +1478,28 @@ packFile?.addEventListener("change", async () => {
 
 (async function initPlayersPage() {
     try {
-        if (typeof hydrateLocalStorageFromProjectFolder === "function") {
-            await hydrateLocalStorageFromProjectFolder();
+        if (window.SaasAuth?.requireAuth) {
+            const me = await window.SaasAuth.requireAuth();
+            if (!me) return;
         }
-    } catch (_) {
-        // continue with whatever is in localStorage
+        if (typeof usesTournamentDb === "function" && !usesTournamentDb()) {
+            setStatus("Select a tournament first from the dashboard.", true);
+            window.location.href = "/app/tournaments.html";
+            return;
+        }
+        if (typeof hydrateLocalStorageFromProjectFolder === "function") {
+            const hydrated = await hydrateLocalStorageFromProjectFolder();
+            if (!hydrated?.ok) {
+                setStatus(
+                    hydrated?.reason === "saas-required"
+                        ? "Select a tournament first from the dashboard."
+                        : "Could not load tournament data from database.",
+                    true
+                );
+            }
+        }
+    } catch (error) {
+        setStatus(error.message || "Could not load tournament data.", true);
     }
     try {
         const config = await getAuctionConfig();

@@ -777,6 +777,39 @@ function importPlayerRows(rows, { mode = "replace", config = null, divisionId = 
     return saveStoredPlayers(next, divisionId, { resetAuction: true });
 }
 
+/** Import and wait until Postgres has the roster. */
+async function importPlayerRowsToDb(rows, options = {}) {
+    const incoming = (rows || [])
+        .map((row, index) => normalizePlayerRecord(row, index, options.config || null))
+        .filter((player) => player.name && player.name !== "—");
+
+    if (!incoming.length) {
+        throw new Error("No valid players found in the file.");
+    }
+
+    const divisionId = options.divisionId || getActivePlayersDivisionId();
+    let next = incoming;
+    if (options.mode === "merge") {
+        const existing = loadStoredPlayers(divisionId) || [];
+        const byKey = new Map();
+        existing.forEach((player) => {
+            byKey.set(String(player.code || player.id), player);
+        });
+        incoming.forEach((player) => {
+            byKey.set(String(player.code || player.id), player);
+        });
+        next = [...byKey.values()];
+    }
+
+    return saveStoredPlayersToDisk(next, divisionId, { resetAuction: true });
+}
+
+function playerHasImportablePhoto(player) {
+    const photo = String(player?.photo || "").trim();
+    if (!photo || /placeholder\.png/i.test(photo)) return false;
+    return photo.startsWith("data:image/") || /^https?:\/\//i.test(photo);
+}
+
 function upsertStoredPlayer(player, divisionId = getActivePlayersDivisionId()) {
     const list = loadStoredPlayers(divisionId) || [];
     const normalized = normalizePlayerRecord(player, list.length);
