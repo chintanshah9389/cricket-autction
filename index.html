@@ -76,7 +76,8 @@
                     <a class="desk-menu-item desk-menu-link" id="welcome-config-link" href="config/">Configuration</a>
                     <a class="desk-menu-item desk-menu-link" id="welcome-partners-link" href="config/partners.html">Event Partners</a>
                     <a class="desk-menu-item desk-menu-link" id="welcome-partners-showcase-link" href="partners/" target="_blank" rel="noopener">Partners Showcase</a>
-                    <button type="button" class="desk-menu-item desk-menu-danger" id="welcome-reset-btn" hidden>Reset Division Data</button>
+                    <button type="button" class="desk-menu-item" id="welcome-reset-auction-btn" title="Clear sold/unsold progress only. Config, teams, and players stay.">Reset Auction</button>
+                    <button type="button" class="desk-menu-item desk-menu-danger" id="welcome-reset-btn" hidden>Clear Auction File</button>
                     <button type="button" class="desk-menu-item desk-menu-danger" id="welcome-reset-project-btn">Reset Entire Project</button>
                 </nav>
             </div>
@@ -155,8 +156,9 @@
                     <p class="desk-menu-section">Auction</p>
                     <button type="button" class="desk-menu-item" id="skip-button">Skip</button>
                     <button type="button" class="desk-menu-item" id="next-category-button" title="Jump to another category anytime">Next Category</button>
+                    <button type="button" class="desk-menu-item" id="reset-auction-button" title="Clear sold/unsold progress only. Config, teams, and players stay.">Reset Auction</button>
                     <p class="desk-menu-section">Reset</p>
-                    <button type="button" class="desk-menu-item desk-menu-danger" id="reset-button">Reset Division Data</button>
+                    <button type="button" class="desk-menu-item desk-menu-danger" id="reset-button" title="Clears this division auction file (players/config stay)">Clear Auction File</button>
                     <button type="button" class="desk-menu-item desk-menu-danger" id="desk-reset-project-btn">Reset Entire Project</button>
                 </nav>
             </div>
@@ -552,7 +554,7 @@
     <script src="js/project-store.js?v=30"></script>
     <script src="js/players-store.js?v=34"></script>
     <script src="js/offline-store.js?v=27"></script>
-    <script src="app.js?v=60"></script>
+    <script src="app.js?v=61"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

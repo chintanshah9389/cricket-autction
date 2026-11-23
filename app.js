@@ -480,36 +480,53 @@ async function handleWelcomeResume() {
     startMainApplication();
 }
 
-async function handleWelcomeStartNew() {
-    if (!requireServerOnline("start a new auction")) return;
+/**
+ * Clear sold/unsold/bid progress for the active division only.
+ * Keeps Config, teams, players, Icon/Caption picks, and partners unchanged.
+ */
+async function resetAuctionProgressOnly({ enterDesk = true, confirmFirst = true } = {}) {
+    if (!requireServerOnline("reset the auction")) return false;
+    if (confirmFirst) {
+        const ok = confirm(
+            "Reset Auction?\n\nThis clears sold / unsold / bid progress for this division only.\nConfig, teams, players, and Icon/Caption picks stay unchanged."
+        );
+        if (!ok) return false;
+    }
+
     const divisionId =
+        state?.divisionId ||
         welcomeConfigCache?.activeDivisionId ||
         (typeof getActiveDivisionIdFromConfig === "function"
             ? getActiveDivisionIdFromConfig(welcomeConfigCache)
-            : "div_1");
+            : null) ||
+        "div_1";
+
     try {
-        // Config + players + Icon/Caption assignments come from DB only
+        setDeskMenuOpen?.(false);
+        setWelcomeMenuOpen?.(false);
+
         if (typeof getAuctionConfig === "function") {
             welcomeConfigCache = await getAuctionConfig();
             if (divisionId && typeof setActiveDivisionId === "function") {
                 welcomeConfigCache = setActiveDivisionId(welcomeConfigCache, divisionId);
             }
         }
+
         localStorage.removeItem(getAuctionDataStorageKey(divisionId));
         if (divisionId === "div_1") localStorage.removeItem("auctionData");
         if (typeof bumpProjectPersistGeneration === "function") {
             bumpProjectPersistGeneration();
         }
-        // Await DB clear so we never rebuild on top of a stale auction snapshot
         if (typeof persistAuctionToProjectFolder === "function") {
             await persistAuctionToProjectFolder(divisionId, null);
             if (typeof flushProjectPersistQueue === "function") {
                 await flushProjectPersistQueue();
             }
         }
+
         await loadAuctionStateForActiveDivision(welcomeConfigCache);
-        // Persist Icon/Caption pre-assigns immediately so Resume picks them up from DB
         await saveAuctionProgress({ awaitDisk: true, critical: true });
+
         const iconCount = (state.teams || []).reduce((sum, team) => {
             const hasIcon = team?.iconPlayerId != null && team.iconPlayerId !== "";
             const hasCaption = team?.captionPlayerId != null && team.captionPlayerId !== "";
@@ -522,18 +539,29 @@ async function handleWelcomeStartNew() {
         ).length;
         if (iconCount > 0 && preAssigned === 0) {
             alert(
-                "Icon/Caption players are set in Config but could not be matched to the roster. Re-save Config, then Start New again."
+                "Icon/Caption players are set in Config but could not be matched to the roster. Re-save Config, then Reset Auction again."
             );
-        } else if (preAssigned > 0) {
-            console.info(`Icon/Caption: ${preAssigned} player(s) pre-assigned and removed from the auction queue.`);
         }
+
+        history = { undoStack: [], redoStack: [] };
         showTournamentDetails();
         refreshWelcomeDivisionActions();
+        if (enterDesk) {
+            startMainApplication();
+        } else {
+            renderUI();
+            updateUndoRedoButtons();
+        }
+        return true;
     } catch (error) {
-        alert(error?.message || "Could not start a new auction from the database.");
-        return;
+        alert(error?.message || "Could not reset auction progress.");
+        return false;
     }
-    startMainApplication();
+}
+
+async function handleWelcomeStartNew() {
+    if (!requireServerOnline("start a new auction")) return;
+    await resetAuctionProgressOnly({ enterDesk: true, confirmFirst: false });
 }
 
 //This Function is used to show tounament details in the screen
@@ -3267,8 +3295,13 @@ function renderUI() {
 }
 
 async function resetAll() {
-    if (!requireServerOnline("reset division data")) return;
-    const securityKey = prompt("Enter the security key to reset this division: (rezwan19)");
+    if (!requireServerOnline("clear the auction file")) return;
+    const confirmed = confirm(
+        "Clear auction file for this division?\n\nPrefer Menu → Reset Auction for a normal restart.\nConfig and players are not deleted."
+    );
+    if (!confirmed) return;
+
+    const securityKey = prompt("Enter the security key to clear the auction file: (rezwan19)");
 
     if (securityKey !== "rezwan19") {
         alert("Wrong security key!");
@@ -4215,6 +4248,12 @@ const initApp = async () => {
     welcomeResetBtn?.addEventListener("click", resetAll);
     welcomeResetProjectBtn?.addEventListener("click", () => {
         resetEntireProjectFlow();
+    });
+    document.getElementById("welcome-reset-auction-btn")?.addEventListener("click", () => {
+        resetAuctionProgressOnly({ enterDesk: false, confirmFirst: true });
+    });
+    document.getElementById("reset-auction-button")?.addEventListener("click", () => {
+        resetAuctionProgressOnly({ enterDesk: true, confirmFirst: true });
     });
     document.getElementById("desk-reset-project-btn")?.addEventListener("click", () => {
         resetEntireProjectFlow();
