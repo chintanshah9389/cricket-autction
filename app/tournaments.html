@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tournaments — Cricket Auction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body class="app-body">
+  <div class="app-shell">
+    <header class="app-top">
+      <div class="app-brand">
+        <p class="app-brand-kicker">Organization</p>
+        <p class="app-brand-name">Tournaments</p>
+      </div>
+      <nav class="app-nav">
+        <a class="app-btn app-btn-ghost" href="/app/dashboard.html">Dashboard</a>
+        <a class="app-btn app-btn-secondary" href="/index.html">Open desk</a>
+        <button class="app-btn app-btn-ghost" type="button" id="logout-btn">Logout</button>
+      </nav>
+    </header>
+
+    <p id="page-status" class="app-status" hidden></p>
+
+    <section class="app-panel">
+      <h2 id="org-title">Tournaments</h2>
+      <p class="lede">Create a tournament for your organization. Open desk loads that tournament from the database.</p>
+      <div class="app-table-wrap">
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Year</th>
+              <th>Slug</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tournaments-body">
+            <tr><td colspan="4" class="app-empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="app-panel">
+      <h2>Create tournament</h2>
+      <form class="app-form" id="tournament-form">
+        <div class="app-field">
+          <label for="name">Name</label>
+          <input id="name" required>
+        </div>
+        <div class="app-field">
+          <label for="year">Year</label>
+          <input id="year" value="">
+        </div>
+        <button class="app-btn app-btn-primary" type="submit">Create</button>
+      </form>
+    </section>
+  </div>
+  <script src="/app/js/saas-auth.js"></script>
+  <script>
+    let orgId = null;
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderTournaments(list) {
+      const body = document.getElementById("tournaments-body");
+      if (!list.length) {
+        body.innerHTML = '<tr><td colspan="4" class="app-empty">No tournaments yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = list.map((t) => `
+        <tr>
+          <td>${escapeHtml(t.name)}</td>
+          <td>${escapeHtml(t.year || "")}</td>
+          <td>${escapeHtml(t.slug || "")}</td>
+          <td><button class="app-btn app-btn-secondary" type="button" data-open-desk="${escapeHtml(t.id)}">Open desk</button></td>
+        </tr>
+      `).join("");
+      body.querySelectorAll("[data-open-desk]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          SaasAuth.setActiveTournamentId(btn.getAttribute("data-open-desk"));
+          window.location.href = "/index.html";
+        });
+      });
+    }
+
+    async function loadTournaments() {
+      const payload = await SaasAuth.api(`/api/v1/orgs/${orgId}/tournaments`);
+      document.getElementById("org-title").textContent =
+        `Tournaments · ${payload.organization?.name || ""}`;
+      renderTournaments(payload.tournaments || []);
+    }
+
+    async function boot() {
+      const me = await SaasAuth.requireAuth();
+      if (!me) return;
+      orgId = SaasAuth.getActiveOrgId();
+      if (!orgId) {
+        SaasAuth.setStatus(document.getElementById("page-status"), "Select an organization on the dashboard first.", true);
+        return;
+      }
+      document.getElementById("year").value = String(new Date().getFullYear());
+      await loadTournaments();
+      document.getElementById("logout-btn").addEventListener("click", async () => {
+        await SaasAuth.logout();
+        window.location.href = "/app/login.html";
+      });
+      document.getElementById("tournament-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const status = document.getElementById("page-status");
+        try {
+          await SaasAuth.api(`/api/v1/orgs/${orgId}/tournaments`, {
+            method: "POST",
+            body: {
+              name: document.getElementById("name").value.trim(),
+              year: document.getElementById("year").value.trim()
+            }
+          });
+          SaasAuth.setStatus(status, "Tournament created", false);
+          event.target.reset();
+          document.getElementById("year").value = String(new Date().getFullYear());
+          await loadTournaments();
+        } catch (error) {
+          SaasAuth.setStatus(status, error.message || "Could not create tournament", true);
+        }
+      });
+    }
+
+    boot().catch((error) => {
+      SaasAuth.setStatus(document.getElementById("page-status"), error.message, true);
+    });
+  </script>
+</body>
+</html>

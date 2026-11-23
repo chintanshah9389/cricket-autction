@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Cricket Auction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body class="app-body">
+  <div class="app-shell">
+    <header class="app-top">
+      <div class="app-brand">
+        <p class="app-brand-kicker">Cricket Auction Cloud</p>
+        <p class="app-brand-name">Login</p>
+      </div>
+      <nav class="app-nav">
+        <a class="app-btn app-btn-ghost" href="/app/">Home</a>
+        <a class="app-btn app-btn-secondary" href="/app/register.html">Register</a>
+      </nav>
+    </header>
+
+    <div class="app-panel app-auth">
+      <h2>Sign in</h2>
+      <p class="lede">Use email or mobile with your password.</p>
+      <form class="app-form" id="login-form">
+        <div class="app-field">
+          <label for="login">Email or mobile</label>
+          <input id="login" name="login" autocomplete="username" required>
+        </div>
+        <div class="app-field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="app-btn app-btn-primary" type="submit">Login</button>
+        <p id="login-status" class="app-status" hidden></p>
+      </form>
+    </div>
+  </div>
+  <script src="/app/js/saas-auth.js"></script>
+  <script>
+    if (SaasAuth.isLoggedIn()) SaasAuth.redirectAfterLogin();
+
+    document.getElementById("login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = document.getElementById("login-status");
+      const login = document.getElementById("login").value.trim();
+      const password = document.getElementById("password").value;
+      SaasAuth.setStatus(status, "Signing in…", false);
+      try {
+        await SaasAuth.login(login, password);
+        SaasAuth.setStatus(status, "Signed in. Redirecting…", false);
+        SaasAuth.redirectAfterLogin();
+      } catch (error) {
+        SaasAuth.setStatus(status, error.message || "Login failed", true);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Owner Dashboard — Cricket Auction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app/styles.css">
+  <style>
+    .app-row-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      justify-content: flex-end;
+    }
+    .app-row-actions .app-btn {
+      padding: 0.35rem 0.65rem;
+      font-size: 0.85rem;
+    }
+    .app-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(12, 24, 41, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 40;
+    }
+    .app-modal-backdrop[hidden] {
+      display: none !important;
+    }
+    .app-modal {
+      width: min(520px, 100%);
+      max-height: 90vh;
+      overflow: auto;
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      padding: 1.25rem 1.35rem 1.4rem;
+      box-shadow: 0 18px 50px rgba(12, 24, 41, 0.25);
+    }
+    .app-modal h3 {
+      margin: 0 0 0.35rem;
+      font-family: Sora, sans-serif;
+    }
+    .app-modal .lede {
+      margin-bottom: 1rem;
+    }
+    .app-modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+    .app-check {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body class="app-body">
+  <div class="app-shell">
+    <header class="app-top">
+      <div class="app-brand">
+        <p class="app-brand-kicker">Product owner</p>
+        <p class="app-brand-name">Platform dashboard</p>
+      </div>
+      <nav class="app-nav">
+        <a class="app-btn app-btn-ghost" href="/app/dashboard.html">My org view</a>
+        <button class="app-btn app-btn-ghost" type="button" id="logout-btn">Logout</button>
+      </nav>
+    </header>
+
+    <p id="page-status" class="app-status" hidden></p>
+    <p class="app-note" id="generated-at">Loading product dashboard…</p>
+
+    <div class="app-stat-grid" id="stat-grid"></div>
+
+    <div class="app-tabs" role="tablist" aria-label="Product owner sections">
+      <button class="app-tab" type="button" role="tab" aria-selected="true" data-section="overview">Dashboard</button>
+      <button class="app-tab" type="button" role="tab" aria-selected="false" data-section="orgs">Organizations</button>
+      <button class="app-tab" type="button" role="tab" aria-selected="false" data-section="users">Users</button>
+      <button class="app-tab" type="button" role="tab" aria-selected="false" data-section="tournaments">Tournaments</button>
+      <button class="app-tab" type="button" role="tab" aria-selected="false" data-section="auctions">Auctions</button>
+      <button class="app-tab" type="button" role="tab" aria-selected="false" data-section="db">Database</button>
+      <button class="app-tab" type="button" role="tab" aria-selected="false" data-section="create-org">Create org</button>
+    </div>
+
+    <section class="app-panel app-section" id="section-overview">
+      <h2>Your product at a glance</h2>
+      <p class="lede">
+        Highest-level access: view, edit, and delete any organization, user, or tournament across the SaaS.
+      </p>
+      <div class="app-grid" style="margin-top: 1rem;">
+        <article class="app-card">
+          <h3>Organizations</h3>
+          <p>Open, edit, deactivate, or delete customer projects.</p>
+          <button class="app-btn app-btn-primary" type="button" data-jump="orgs">Manage organizations</button>
+        </article>
+        <article class="app-card">
+          <h3>Users</h3>
+          <p>Read every account. Edit identity, roles, password, or delete.</p>
+          <button class="app-btn app-btn-primary" type="button" data-jump="users">Manage users</button>
+        </article>
+        <article class="app-card">
+          <h3>Tournaments</h3>
+          <p>Open any desk, edit metadata, or delete the whole event.</p>
+          <button class="app-btn app-btn-primary" type="button" data-jump="tournaments">Manage tournaments</button>
+        </article>
+      </div>
+      <p id="overview-notes" class="app-meta" style="margin-top: 1rem;"></p>
+    </section>
+
+    <section class="app-panel app-section" id="section-orgs" hidden>
+      <h2>Organizations</h2>
+      <p class="lede">Full control over every customer project.</p>
+      <div class="app-table-wrap">
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Slug</th>
+              <th>Members</th>
+              <th>Tournaments</th>
+              <th>Active</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="orgs-body"><tr><td colspan="6" class="app-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="app-panel app-section" id="section-users" hidden>
+      <h2>Users</h2>
+      <p class="lede">All accounts on the product. You can edit or delete anyone except yourself.</p>
+      <div class="app-table-wrap">
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Login</th>
+              <th>Orgs</th>
+              <th>Flags</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-body"><tr><td colspan="6" class="app-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="app-panel app-section" id="section-tournaments" hidden>
+      <h2>Tournaments</h2>
+      <p class="lede">All tournaments across every organization.</p>
+      <div class="app-table-wrap">
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>Tournament</th>
+              <th>Year</th>
+              <th>Organization</th>
+              <th>Divisions</th>
+              <th>Players</th>
+              <th>Live</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tournaments-body"><tr><td colspan="7" class="app-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="app-panel app-section" id="section-auctions" hidden>
+      <h2>Auction sessions</h2>
+      <p class="lede">Postgres auction sessions (live / idle / finished).</p>
+      <div class="app-table-wrap">
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Org</th>
+              <th>Tournament</th>
+              <th>Division</th>
+              <th>Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="auctions-body"><tr><td colspan="6" class="app-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="app-panel app-section" id="section-db" hidden>
+      <h2>Database tables</h2>
+      <p class="lede" id="db-meta">Row counts in Postgres</p>
+      <div class="app-table-wrap">
+        <table class="app-table">
+          <thead>
+            <tr><th>Table</th><th>Rows</th></tr>
+          </thead>
+          <tbody id="db-body"><tr><td colspan="2" class="app-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="app-panel app-section" id="section-create-org" hidden>
+      <h2>Create organization</h2>
+      <p class="lede">Provision a new customer org.</p>
+      <form class="app-form" id="org-form">
+        <div class="app-field">
+          <label for="name">Name</label>
+          <input id="name" required>
+        </div>
+        <div class="app-field">
+          <label for="slug">Slug (optional)</label>
+          <input id="slug" placeholder="auto-from-name">
+        </div>
+        <button class="app-btn app-btn-primary" type="submit">Create org</button>
+      </form>
+    </section>
+  </div>
+
+  <div id="edit-modal" class="app-modal-backdrop" hidden>
+    <div class="app-modal" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <h3 id="edit-title">Edit</h3>
+      <p class="lede" id="edit-lede"></p>
+      <form class="app-form" id="edit-form"></form>
+      <div class="app-modal-actions">
+        <button class="app-btn app-btn-ghost" type="button" id="edit-cancel">Cancel</button>
+        <button class="app-btn app-btn-primary" type="submit" form="edit-form">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app/js/saas-auth.js"></script>
+  <script>
+    let meUser = null;
+    let orgCache = [];
+    let editState = null;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function fmtDate(value) {
+      if (!value) return "—";
+      try { return new Date(value).toLocaleString(); } catch (_) { return String(value); }
+    }
+
+    function statusEl() {
+      return document.getElementById("page-status");
+    }
+
+    function showSection(id) {
+      document.querySelectorAll(".app-section").forEach((el) => {
+        el.hidden = el.id !== `section-${id}`;
+      });
+      document.querySelectorAll(".app-tab").forEach((tab) => {
+        tab.setAttribute("aria-selected", tab.dataset.section === id ? "true" : "false");
+      });
+    }
+
+    function bindJumps(root = document) {
+      root.querySelectorAll("[data-jump]").forEach((el) => {
+        el.addEventListener("click", () => showSection(el.getAttribute("data-jump")));
+      });
+    }
+
+    function renderStats(counts) {
+      const items = [
+        ["orgs", "Organizations", counts.organizations],
+        ["users", "Users", counts.users],
+        ["tournaments", "Tournaments", counts.tournaments],
+        ["auctions", "Live auctions", counts.auctionLive],
+        ["auctions", "Idle auctions", counts.auctionIdle],
+        ["db", "Players in DB", counts.players],
+        ["db", "Media objects", counts.mediaObjects],
+        ["users", "Active logins", counts.activeRefreshSessions]
+      ];
+      const grid = document.getElementById("stat-grid");
+      grid.innerHTML = items.map(([section, label, value]) => `
+        <button type="button" class="app-stat" data-jump="${escapeHtml(section)}" style="cursor:pointer;text-align:left;width:100%;font:inherit;border:1px solid var(--line);">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(label)}</span>
+        </button>
+      `).join("");
+      bindJumps(grid);
+    }
+
+    async function refreshAll() {
+      await Promise.all([
+        loadOverview(),
+        loadDb(),
+        loadOrgs(),
+        loadUsers(),
+        loadTournaments(),
+        loadAuctions()
+      ]);
+    }
+
+    function closeEditModal() {
+      editState = null;
+      document.getElementById("edit-modal").hidden = true;
+      document.getElementById("edit-form").innerHTML = "";
+    }
+
+    function openEditModal({ title, lede, fieldsHtml, onSave }) {
+      editState = { onSave };
+      document.getElementById("edit-title").textContent = title;
+      document.getElementById("edit-lede").textContent = lede || "";
+      document.getElementById("edit-form").innerHTML = fieldsHtml;
+      document.getElementById("edit-modal").hidden = false;
+    }
+
+    async function loadOverview() {
+      const overview = await SaasAuth.api("/api/v1/super/overview");
+      renderStats(overview.counts || {});
+      document.getElementById("generated-at").textContent =
+        `Product owner dashboard · updated ${fmtDate(overview.generatedAt)}`;
+      document.getElementById("overview-notes").textContent =
+        overview.notes?.access ||
+        "Super Admin can view, edit, and delete every org, user, and tournament.";
+    }
+
+    async function loadDb() {
+      const payload = await SaasAuth.api("/api/v1/super/db");
+      document.getElementById("db-meta").textContent =
+        `Database ${payload.database?.name || "—"} · total rows ${payload.totalRows ?? 0}`;
+      const body = document.getElementById("db-body");
+      const tables = payload.tables || [];
+      body.innerHTML = tables.length
+        ? tables.map((row) => `<tr><td><code>${escapeHtml(row.table)}</code></td><td>${escapeHtml(row.rows)}</td></tr>`).join("")
+        : '<tr><td colspan="2" class="app-empty">No tables.</td></tr>';
+    }
+
+    async function loadOrgs() {
+      const payload = await SaasAuth.api("/api/v1/super/organizations");
+      orgCache = payload.organizations || [];
+      const body = document.getElementById("orgs-body");
+      if (!orgCache.length) {
+        body.innerHTML = '<tr><td colspan="6" class="app-empty">No organizations yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = orgCache.map((o) => `
+        <tr>
+          <td>${escapeHtml(o.name)}</td>
+          <td>${escapeHtml(o.slug)}</td>
+          <td>${escapeHtml(o.member_count)}</td>
+          <td>${escapeHtml(o.tournament_count)}</td>
+          <td>${o.is_active === false ? "no" : "yes"}</td>
+          <td>
+            <div class="app-row-actions">
+              <button class="app-btn app-btn-secondary" type="button" data-action="open-org" data-id="${escapeHtml(o.id)}">Open</button>
+              <button class="app-btn app-btn-secondary" type="button" data-action="view-org" data-id="${escapeHtml(o.id)}">View</button>
+              <button class="app-btn app-btn-secondary" type="button" data-action="edit-org" data-id="${escapeHtml(o.id)}">Edit</button>
+              <button class="app-btn app-btn-danger" type="button" data-action="delete-org" data-id="${escapeHtml(o.id)}" data-name="${escapeHtml(o.name)}">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadUsers() {
+      const payload = await SaasAuth.api("/api/v1/super/users");
+      const body = document.getElementById("users-body");
+      const list = payload.users || [];
+      body.innerHTML = list.length
+        ? list.map((u) => {
+            const isSelf = meUser && u.id === meUser.id;
+            return `
+          <tr>
+            <td>${escapeHtml(u.name)}${isSelf ? " (you)" : ""}</td>
+            <td>${escapeHtml(u.email || u.mobile || "—")}</td>
+            <td>${escapeHtml(u.membershipCount)}</td>
+            <td>${u.isSuperAdmin ? "product owner" : ""}${u.isActive === false ? " inactive" : ""}</td>
+            <td>${escapeHtml(fmtDate(u.createdAt))}</td>
+            <td>
+              <div class="app-row-actions">
+                <button class="app-btn app-btn-secondary" type="button" data-action="view-user" data-id="${escapeHtml(u.id)}">View</button>
+                <button class="app-btn app-btn-secondary" type="button" data-action="edit-user" data-id="${escapeHtml(u.id)}">Edit</button>
+                <button class="app-btn app-btn-danger" type="button" data-action="delete-user" data-id="${escapeHtml(u.id)}" data-name="${escapeHtml(u.name)}" ${isSelf ? "disabled" : ""}>Delete</button>
+              </div>
+            </td>
+          </tr>`;
+          }).join("")
+        : '<tr><td colspan="6" class="app-empty">No users.</td></tr>';
+    }
+
+    async function loadTournaments() {
+      const payload = await SaasAuth.api("/api/v1/super/tournaments");
+      const body = document.getElementById("tournaments-body");
+      const list = payload.tournaments || [];
+      if (!list.length) {
+        body.innerHTML = '<tr><td colspan="7" class="app-empty">No tournaments yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = list.map((t) => `
+        <tr>
+          <td>${escapeHtml(t.name)}</td>
+          <td>${escapeHtml(t.year || "")}</td>
+          <td>${escapeHtml(t.org_name)}</td>
+          <td>${escapeHtml(t.division_count)}</td>
+          <td>${escapeHtml(t.player_count)}</td>
+          <td>${escapeHtml(t.live_sessions)}</td>
+          <td>
+            <div class="app-row-actions">
+              <button class="app-btn app-btn-secondary" type="button"
+                data-action="open-tournament"
+                data-org-id="${escapeHtml(t.org_id)}"
+                data-id="${escapeHtml(t.id)}">Open desk</button>
+              <button class="app-btn app-btn-secondary" type="button" data-action="view-tournament" data-id="${escapeHtml(t.id)}">View</button>
+              <button class="app-btn app-btn-secondary" type="button" data-action="edit-tournament" data-id="${escapeHtml(t.id)}">Edit</button>
+              <button class="app-btn app-btn-danger" type="button" data-action="delete-tournament" data-id="${escapeHtml(t.id)}" data-name="${escapeHtml(t.name)}">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadAuctions() {
+      const payload = await SaasAuth.api("/api/v1/super/auctions");
+      const body = document.getElementById("auctions-body");
+      const list = payload.auctions || [];
+      body.innerHTML = list.length
+        ? list.map((a) => `
+          <tr>
+            <td>${escapeHtml(a.status)}</td>
+            <td>${escapeHtml(a.org_name)}</td>
+            <td>${escapeHtml(a.tournament_name)} ${escapeHtml(a.tournament_year || "")}</td>
+            <td>${escapeHtml(a.division_name)}</td>
+            <td>${escapeHtml(fmtDate(a.updated_at))}</td>
+            <td>
+              <button class="app-btn app-btn-secondary" type="button"
+                data-action="open-tournament"
+                data-org-id="${escapeHtml(a.org_id)}"
+                data-id="${escapeHtml(a.tournament_id)}">Open desk</button>
+            </td>
+          </tr>
+        `).join("")
+        : '<tr><td colspan="6" class="app-empty">No auction sessions yet.</td></tr>';
+    }
+
+    async function editOrg(id) {
+      const payload = await SaasAuth.api(`/api/v1/super/organizations/${id}`);
+      const o = payload.organization;
+      openEditModal({
+        title: "Edit organization",
+        lede: `ID ${o.id}`,
+        fieldsHtml: `
+          <div class="app-field"><label>Name</label><input name="name" value="${escapeHtml(o.name)}" required></div>
+          <div class="app-field"><label>Slug</label><input name="slug" value="${escapeHtml(o.slug)}" required></div>
+          <label class="app-check"><input type="checkbox" name="isActive" ${o.is_active === false ? "" : "checked"}> Active</label>
+        `,
+        onSave: async (form) => {
+          const data = new FormData(form);
+          await SaasAuth.api(`/api/v1/super/organizations/${id}`, {
+            method: "PATCH",
+            body: {
+              name: String(data.get("name") || "").trim(),
+              slug: String(data.get("slug") || "").trim(),
+              isActive: form.querySelector('[name="isActive"]').checked
+            }
+          });
+          SaasAuth.setStatus(statusEl(), "Organization updated", false);
+          closeEditModal();
+          await refreshAll();
+          showSection("orgs");
+        }
+      });
+    }
+
+    async function viewOrg(id) {
+      const payload = await SaasAuth.api(`/api/v1/super/organizations/${id}`);
+      const o = payload.organization;
+      const members = (payload.members || [])
+        .map((m) => `${m.name || m.email || m.mobile} (${m.role})`)
+        .join("\n") || "(none)";
+      const tournaments = (payload.tournaments || [])
+        .map((t) => `${t.name} ${t.year || ""}`)
+        .join("\n") || "(none)";
+      alert(
+        `Organization\n${o.name} (${o.slug})\nActive: ${o.is_active !== false}\n\nMembers:\n${members}\n\nTournaments:\n${tournaments}`
+      );
+    }
+
+    async function editUser(id) {
+      const payload = await SaasAuth.api(`/api/v1/super/users/${id}`);
+      const u = payload.user;
+      const isSelf = meUser && u.id === meUser.id;
+      openEditModal({
+        title: "Edit user",
+        lede: `Login ${u.email || u.mobile || u.id}`,
+        fieldsHtml: `
+          <div class="app-field"><label>Name</label><input name="name" value="${escapeHtml(u.name || "")}"></div>
+          <div class="app-field"><label>Email</label><input name="email" value="${escapeHtml(u.email || "")}"></div>
+          <div class="app-field"><label>Mobile</label><input name="mobile" value="${escapeHtml(u.mobile || "")}"></div>
+          <div class="app-field"><label>New password (optional)</label><input name="password" type="password" minlength="8" placeholder="leave blank to keep"></div>
+          <label class="app-check"><input type="checkbox" name="isActive" ${u.isActive === false ? "" : "checked"} ${isSelf ? "disabled" : ""}> Active</label>
+          <label class="app-check"><input type="checkbox" name="isSuperAdmin" ${u.isSuperAdmin ? "checked" : ""} ${isSelf ? "disabled" : ""}> Super Admin / product owner</label>
+          <label class="app-check"><input type="checkbox" name="revokeSessions"> Revoke all sessions after save</label>
+        `,
+        onSave: async (form) => {
+          const data = new FormData(form);
+          const body = {
+            name: String(data.get("name") || "").trim(),
+            email: String(data.get("email") || "").trim() || null,
+            mobile: String(data.get("mobile") || "").trim() || null,
+            revokeSessions: form.querySelector('[name="revokeSessions"]').checked
+          };
+          const password = String(data.get("password") || "");
+          if (password) body.password = password;
+          if (!isSelf) {
+            body.isActive = form.querySelector('[name="isActive"]').checked;
+            body.isSuperAdmin = form.querySelector('[name="isSuperAdmin"]').checked;
+          }
+          await SaasAuth.api(`/api/v1/super/users/${id}`, { method: "PATCH", body });
+          SaasAuth.setStatus(statusEl(), "User updated", false);
+          closeEditModal();
+          await refreshAll();
+          showSection("users");
+        }
+      });
+    }
+
+    async function viewUser(id) {
+      const payload = await SaasAuth.api(`/api/v1/super/users/${id}`);
+      const u = payload.user;
+      const memberships = (payload.memberships || [])
+        .map((m) => `${m.org_name} · ${m.role}`)
+        .join("\n") || "(no orgs)";
+      alert(
+        `User\n${u.name}\n${u.email || ""}\n${u.mobile || ""}\nSuper Admin: ${u.isSuperAdmin}\nActive: ${u.isActive}\n\nMemberships:\n${memberships}`
+      );
+    }
+
+    async function editTournament(id) {
+      const payload = await SaasAuth.api(`/api/v1/super/tournaments/${id}`);
+      const t = payload.tournament;
+      const orgOptions = orgCache.map((o) =>
+        `<option value="${escapeHtml(o.id)}" ${o.id === t.org_id ? "selected" : ""}>${escapeHtml(o.name)}</option>`
+      ).join("");
+      openEditModal({
+        title: "Edit tournament",
+        lede: `Currently in ${t.org_name}`,
+        fieldsHtml: `
+          <div class="app-field"><label>Name</label><input name="name" value="${escapeHtml(t.name)}" required></div>
+          <div class="app-field"><label>Year</label><input name="year" value="${escapeHtml(t.year || "")}"></div>
+          <div class="app-field"><label>Slug</label><input name="slug" value="${escapeHtml(t.slug)}" required></div>
+          <div class="app-field"><label>Organization</label><select name="orgId">${orgOptions}</select></div>
+          <label class="app-check"><input type="checkbox" name="isActive" ${t.is_active === false ? "" : "checked"}> Active</label>
+        `,
+        onSave: async (form) => {
+          const data = new FormData(form);
+          await SaasAuth.api(`/api/v1/super/tournaments/${id}`, {
+            method: "PATCH",
+            body: {
+              name: String(data.get("name") || "").trim(),
+              year: String(data.get("year") || "").trim(),
+              slug: String(data.get("slug") || "").trim(),
+              orgId: String(data.get("orgId") || ""),
+              isActive: form.querySelector('[name="isActive"]').checked
+            }
+          });
+          SaasAuth.setStatus(statusEl(), "Tournament updated", false);
+          closeEditModal();
+          await refreshAll();
+          showSection("tournaments");
+        }
+      });
+    }
+
+    async function viewTournament(id) {
+      const payload = await SaasAuth.api(`/api/v1/super/tournaments/${id}`);
+      const t = payload.tournament;
+      const divisions = (payload.divisions || [])
+        .map((d) => `${d.name} (${d.code || d.id})`)
+        .join("\n") || "(none)";
+      alert(
+        `Tournament\n${t.name} ${t.year || ""}\nOrg: ${t.org_name}\nSlug: ${t.slug}\nActive: ${t.is_active !== false}\n\nDivisions:\n${divisions}`
+      );
+    }
+
+    async function handleAction(event) {
+      const btn = event.target.closest("[data-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-action");
+      const id = btn.getAttribute("data-id");
+      const name = btn.getAttribute("data-name") || "this item";
+
+      try {
+        if (action === "open-org") {
+          SaasAuth.setActiveOrgId(id);
+          window.location.href = "/app/dashboard.html";
+          return;
+        }
+        if (action === "open-tournament") {
+          SaasAuth.setActiveOrgId(btn.getAttribute("data-org-id"));
+          SaasAuth.setActiveTournamentId(id);
+          window.location.href = "/index.html";
+          return;
+        }
+        if (action === "view-org") return viewOrg(id);
+        if (action === "edit-org") return editOrg(id);
+        if (action === "delete-org") {
+          if (!confirm(`Delete organization "${name}"?\n\nThis permanently deletes:\n• all tournaments, players, teams, auctions, media\n• related users who only belong to this org\n\nSuper Admin accounts are kept.`)) return;
+          const result = await SaasAuth.api(`/api/v1/super/organizations/${id}`, { method: "DELETE" });
+          SaasAuth.setStatus(
+            statusEl(),
+            `Organization deleted · ${result.deletedUserCount || 0} related user(s) removed`,
+            false
+          );
+          await refreshAll();
+          showSection("orgs");
+          return;
+        }
+        if (action === "view-user") return viewUser(id);
+        if (action === "edit-user") return editUser(id);
+        if (action === "delete-user") {
+          if (!confirm(`Delete user "${name}"?\nMemberships and sessions will be removed.`)) return;
+          await SaasAuth.api(`/api/v1/super/users/${id}`, { method: "DELETE" });
+          SaasAuth.setStatus(statusEl(), "User deleted", false);
+          await refreshAll();
+          showSection("users");
+          return;
+        }
+        if (action === "view-tournament") return viewTournament(id);
+        if (action === "edit-tournament") return editTournament(id);
+        if (action === "delete-tournament") {
+          if (!confirm(`Delete tournament "${name}"?\n\nThis permanently deletes:\n• divisions, players, teams, partners, auction sessions\n• related org users who only belong to this organization\n\nSuper Admin accounts are kept.`)) return;
+          const result = await SaasAuth.api(`/api/v1/super/tournaments/${id}`, { method: "DELETE" });
+          SaasAuth.setStatus(
+            statusEl(),
+            `Tournament deleted · related data cleared · ${result.deletedUserCount || 0} related user(s) removed`,
+            false
+          );
+          await refreshAll();
+          showSection("tournaments");
+        }
+      } catch (error) {
+        SaasAuth.setStatus(statusEl(), error.message || "Action failed", true);
+      }
+    }
+
+    async function boot() {
+      meUser = await SaasAuth.requireAuth({ superAdmin: true });
+      if (!meUser) return;
+
+      document.querySelectorAll(".app-tab").forEach((tab) => {
+        tab.addEventListener("click", () => showSection(tab.dataset.section));
+      });
+      bindJumps();
+
+      document.getElementById("logout-btn").addEventListener("click", async () => {
+        await SaasAuth.logout();
+        window.location.href = "/app/login.html";
+      });
+
+      document.getElementById("edit-cancel").addEventListener("click", closeEditModal);
+      document.getElementById("edit-modal").addEventListener("click", (event) => {
+        if (event.target.id === "edit-modal") closeEditModal();
+      });
+      document.getElementById("edit-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!editState?.onSave) return;
+        try {
+          await editState.onSave(event.target);
+        } catch (error) {
+          SaasAuth.setStatus(statusEl(), error.message || "Could not save", true);
+        }
+      });
+
+      document.getElementById("org-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          const body = { name: document.getElementById("name").value.trim() };
+          const slug = document.getElementById("slug").value.trim();
+          if (slug) body.slug = slug;
+          await SaasAuth.api("/api/v1/orgs", { method: "POST", body });
+          SaasAuth.setStatus(statusEl(), "Organization created", false);
+          event.target.reset();
+          await refreshAll();
+          showSection("orgs");
+        } catch (error) {
+          SaasAuth.setStatus(statusEl(), error.message || "Could not create organization", true);
+        }
+      });
+
+      document.querySelector(".app-shell").addEventListener("click", handleAction);
+
+      await refreshAll();
+      showSection("overview");
+    }
+
+    boot().catch((error) => {
+      SaasAuth.setStatus(document.getElementById("page-status"), error.message, true);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Cricket Auction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body class="app-body">
+  <div class="app-shell">
+    <header class="app-top">
+      <div class="app-brand">
+        <p class="app-brand-kicker">Org dashboard</p>
+        <p class="app-brand-name" id="dash-title">Dashboard</p>
+      </div>
+      <nav class="app-nav" id="dash-nav">
+        <a class="app-btn app-btn-secondary" href="/app/tournaments.html">Open tournaments / desk</a>
+        <button class="app-btn app-btn-ghost" type="button" id="logout-btn">Logout</button>
+      </nav>
+    </header>
+
+    <p id="dash-status" class="app-status" hidden></p>
+
+    <section class="app-grid" id="dash-cards">
+      <article class="app-card">
+        <h3>Organization</h3>
+        <p id="org-summary">Loading…</p>
+        <div class="app-inline">
+          <label class="app-meta" for="org-select">Active org</label>
+          <select id="org-select"></select>
+        </div>
+      </article>
+      <article class="app-card">
+        <h3>Members</h3>
+        <p>Invite auctioneers, admins, and viewers.</p>
+        <a class="app-btn app-btn-primary" href="/app/members.html">Manage members</a>
+      </article>
+      <article class="app-card">
+        <h3>Tournaments</h3>
+        <p>Create tournaments and open the live desk.</p>
+        <a class="app-btn app-btn-primary" href="/app/tournaments.html">Manage tournaments</a>
+      </article>
+    </section>
+  </div>
+  <script src="/app/js/saas-auth.js"></script>
+  <script>
+    async function boot() {
+      const me = await SaasAuth.requireAuth();
+      if (!me) return;
+      const user = me.user;
+      document.getElementById("dash-title").textContent = user.name || "Dashboard";
+
+      const nav = document.getElementById("dash-nav");
+      if (SaasAuth.isSuperAdmin()) {
+        const link = document.createElement("a");
+        link.className = "app-btn app-btn-secondary";
+        link.href = "/app/super.html";
+        link.textContent = "Super Admin";
+        nav.insertBefore(link, nav.firstChild);
+      }
+
+      const orgsPayload = await SaasAuth.api("/api/v1/orgs");
+      const orgs = orgsPayload.organizations || [];
+      const select = document.getElementById("org-select");
+      select.innerHTML = "";
+      if (!orgs.length) {
+        document.getElementById("org-summary").textContent =
+          SaasAuth.isSuperAdmin()
+            ? "No organizations yet. Create one in Super Admin."
+            : "You are not in an organization yet.";
+        select.hidden = true;
+      } else {
+        let active = SaasAuth.getActiveOrgId();
+        if (!active || !orgs.some((o) => o.id === active)) active = orgs[0].id;
+        SaasAuth.setActiveOrgId(active);
+        for (const org of orgs) {
+          const option = document.createElement("option");
+          option.value = org.id;
+          option.textContent = `${org.name}${org.role ? ` (${org.role})` : ""}`;
+          if (org.id === active) option.selected = true;
+          select.appendChild(option);
+        }
+        const current = orgs.find((o) => o.id === active);
+        document.getElementById("org-summary").textContent =
+          `${current.name} · ${current.slug}`;
+        select.addEventListener("change", () => {
+          SaasAuth.setActiveOrgId(select.value);
+          const next = orgs.find((o) => o.id === select.value);
+          document.getElementById("org-summary").textContent =
+            `${next.name} · ${next.slug}`;
+        });
+      }
+
+      document.getElementById("logout-btn").addEventListener("click", async () => {
+        await SaasAuth.logout();
+        window.location.href = "/app/login.html";
+      });
+    }
+
+    boot().catch((error) => {
+      SaasAuth.setStatus(document.getElementById("dash-status"), error.message, true);
+    });
+  </script>
+</body>
+</html>

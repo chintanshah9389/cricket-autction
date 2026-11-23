@@ -252,16 +252,35 @@ function resolvePhotoSrc(photo) {
     return value;
 }
 
+function isSaasPhotoMode() {
+    return Boolean(typeof usesTournamentDb === "function" && usesTournamentDb());
+}
+
 async function refreshOfflinePhotoStatus() {
     if (typeof countCachedPlayerPhotos !== "function") return;
     try {
-        const ready =
-            typeof checkAssetsApiReady === "function" ? await checkAssetsApiReady() : false;
+        const saas = isSaasPhotoMode();
+        const ready = saas
+            ? true
+            : typeof checkAssetsApiReady === "function"
+              ? await checkAssetsApiReady()
+              : false;
         const cached = await countCachedPlayerPhotos(playersCache, activeDivisionId);
-        const remoteLeft = playersCache.filter((player) =>
-            /^https?:\/\//i.test(String(player.photo || ""))
-        ).length;
+        const stored = playersCache.filter((player) => Boolean(player.photoKey)).length;
         const missing = Math.max(0, playersCache.length - cached);
+        if (saas) {
+            if (missing > 0) {
+                setOfflineStatus(
+                    `Photos in cloud: ${stored} stored / ${playersCache.length} players · ${missing} still need Save photos (copies into R2).`,
+                    true
+                );
+                return;
+            }
+            setOfflineStatus(
+                `Photos in cloud: ${stored} stored / ${playersCache.length} players · loaded from this tournament`
+            );
+            return;
+        }
         if (!ready) {
             setOfflineStatus(
                 `Photos on disk: ${cached} / ${playersCache.length} · start with node server.js to save into assets/`,
@@ -276,13 +295,14 @@ async function refreshOfflinePhotoStatus() {
             );
             return;
         }
-        setOfflineStatus(
-            `Photos on disk: ${cached} / ${playersCache.length}` +
-                (remoteLeft ? ` · ${remoteLeft} still remote` : "") +
-                " · server ready"
-        );
+        setOfflineStatus(`Photos on disk: ${cached} / ${playersCache.length} · server ready`);
     } catch (_) {
-        setOfflineStatus("Photo store unavailable. Start with: node server.js", true);
+        setOfflineStatus(
+            isSaasPhotoMode()
+                ? "Photo cloud store unavailable."
+                : "Photo store unavailable. Start with: node server.js",
+            true
+        );
     }
 }
 
@@ -942,15 +962,22 @@ async function runImport(mode) {
                     }
                 });
                 saved = saveStoredPlayers(result.players, activeDivisionId);
+                const photoLabel = result.mode === "r2" ? "stored in cloud" : "saved";
                 setStatus(
                     `Imported ${saved.length} players (${mode}). ${formatCategoryBreakdown(saved)}. ` +
-                        `Photos: ${result.cached}` +
+                        `Photos ${photoLabel}: ${result.cached}` +
                         (result.failed ? `, ${result.failed} skipped` : "") +
                         `. Config “Show on auction” synced${shownFields ? ` (${shownFields})` : ""}. Start New Auction to apply on the desk.`
                 );
+                refreshOfflinePhotoStatus();
             } catch (photoError) {
                 setStatus(
-                    `Imported ${saved.length} players (${mode}). ${catSummary}. Photos not saved yet — ${photoError.message || "start node server.js and click Save photos to assets."} Config fields synced; then Start New Auction.`,
+                    `Imported ${saved.length} players (${mode}). ${catSummary}. Photos not saved yet — ${
+                        photoError.message ||
+                        (isSaasPhotoMode()
+                            ? "click Save photos to upload into cloud storage."
+                            : "start node server.js and click Save photos to assets.")
+                    } Config fields synced; then Start New Auction.`,
                     true
                 );
             }
@@ -1058,7 +1085,7 @@ async function deletePlayerByKey(key) {
     const code = victim ? String(victim.code || victim.id || key) : String(key);
     try {
         if (typeof deletePlayerPhotoFile === "function") {
-            await deletePlayerPhotoFile(activeDivisionId, code, victim?.photo).catch(() => {});
+            await deletePlayerPhotoFile(activeDivisionId, code, victim?.photo, victim?.photoKey).catch(() => {});
         }
         const next = playersCache.filter(
             (player) => String(player.code) !== String(key) && String(player.id) !== String(key)
@@ -1098,7 +1125,7 @@ async function deleteSelectedPlayers() {
             for (const player of victims) {
                 const code = String(player.code || player.id || "");
                 if (!code) continue;
-                await deletePlayerPhotoFile(activeDivisionId, code, player.photo).catch(() => {});
+                await deletePlayerPhotoFile(activeDivisionId, code, player.photo, player.photoKey).catch(() => {});
             }
         }
 
@@ -1322,22 +1349,31 @@ cachePhotosBtn?.addEventListener("click", async () => {
         return;
     }
     try {
-        setOfflineStatus("Saving photos to assets…");
+        const saas = isSaasPhotoMode();
+        setOfflineStatus(saas ? "Uploading photos to cloud storage…" : "Saving photos to assets…");
         const result = await cachePlayersPhotos(playersCache, activeDivisionId, {
             assetPrefix: "../",
             onProgress: (done, total, cached) => {
-                setOfflineStatus(`Saving photos ${done}/${total} (written ${cached})…`);
+                setOfflineStatus(
+                    `${saas ? "Uploading" : "Saving"} photos ${done}/${total} (stored ${cached})…`
+                );
             }
         });
         persistAndRefresh(
             result.players,
-            `Saved to assets: ${result.cached} new, ${result.failed} skipped.`
+            saas
+                ? `Stored in cloud: ${result.cached} photos, ${result.failed} skipped.`
+                : `Saved to assets: ${result.cached} new, ${result.failed} skipped.`
         );
-        setOfflineStatus(
-            `Photos on disk: ${result.cached} updated / ${result.total} players · server ready`
-        );
+        await refreshOfflinePhotoStatus();
     } catch (error) {
-        setOfflineStatus(error.message || "Could not save photos to assets.", true);
+        setOfflineStatus(
+            error.message ||
+                (isSaasPhotoMode()
+                    ? "Could not upload photos to cloud storage."
+                    : "Could not save photos to assets."),
+            true
+        );
     }
 });
 

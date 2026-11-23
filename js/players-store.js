@@ -330,11 +330,13 @@ function normalizePlayerRecord(raw, index = 0, config = null) {
 
     const customFields = extractCustomFields(source);
 
+    const photoKey = String(source.photoKey || source.photo_key || "").trim() || null;
     return {
         id: numericId,
         code: code || numericIdToDisplayCode(numericId) || String(numericId),
         name,
         photo: photoRaw || "assets/placeholder.png",
+        ...(photoKey ? { photoKey } : {}),
         role,
         battingStyle: String(
             pickRowValue(source, PLAYER_FIELD_ALIASES.battingStyle) || source.battingStyle || "N/A"

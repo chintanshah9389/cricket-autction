@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Members — Cricket Auction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body class="app-body">
+  <div class="app-shell">
+    <header class="app-top">
+      <div class="app-brand">
+        <p class="app-brand-kicker">Organization</p>
+        <p class="app-brand-name">Members</p>
+      </div>
+      <nav class="app-nav">
+        <a class="app-btn app-btn-ghost" href="/app/dashboard.html">Dashboard</a>
+        <a class="app-btn app-btn-secondary" href="/app/tournaments.html">Tournaments</a>
+        <button class="app-btn app-btn-ghost" type="button" id="logout-btn">Logout</button>
+      </nav>
+    </header>
+
+    <p id="page-status" class="app-status" hidden></p>
+
+    <section class="app-panel">
+      <h2 id="org-title">Members</h2>
+      <p class="lede">Invite people with email or mobile. Roles: owner, admin, auctioneer, viewer.</p>
+      <div class="app-table-wrap">
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Login</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody id="members-body">
+            <tr><td colspan="3" class="app-empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="app-panel">
+      <h2>Add member</h2>
+      <form class="app-form" id="member-form">
+        <div class="app-field">
+          <label for="name">Name</label>
+          <input id="name" required>
+        </div>
+        <div class="app-field">
+          <label for="email">Email</label>
+          <input id="email" type="email">
+        </div>
+        <div class="app-field">
+          <label for="mobile">Mobile</label>
+          <input id="mobile">
+        </div>
+        <div class="app-field">
+          <label for="password">Temp password (min 8)</label>
+          <input id="password" type="password" minlength="8" required>
+        </div>
+        <div class="app-field">
+          <label for="role">Role</label>
+          <select id="role">
+            <option value="auctioneer">auctioneer</option>
+            <option value="admin">admin</option>
+            <option value="viewer">viewer</option>
+            <option value="owner">owner</option>
+          </select>
+        </div>
+        <button class="app-btn app-btn-primary" type="submit">Add member</button>
+      </form>
+    </section>
+  </div>
+  <script src="/app/js/saas-auth.js"></script>
+  <script>
+    let orgId = null;
+
+    function renderMembers(members) {
+      const body = document.getElementById("members-body");
+      if (!members.length) {
+        body.innerHTML = '<tr><td colspan="3" class="app-empty">No members yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = members.map((m) => `
+        <tr>
+          <td>${escapeHtml(m.name || "—")}</td>
+          <td>${escapeHtml(m.email || m.mobile || "—")}</td>
+          <td>${escapeHtml(m.role || "—")}</td>
+        </tr>
+      `).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    async function loadMembers() {
+      const payload = await SaasAuth.api(`/api/v1/orgs/${orgId}/members`);
+      document.getElementById("org-title").textContent =
+        `Members · ${payload.organization?.name || ""}`;
+      renderMembers(payload.members || []);
+    }
+
+    async function boot() {
+      const me = await SaasAuth.requireAuth();
+      if (!me) return;
+      orgId = SaasAuth.getActiveOrgId();
+      if (!orgId) {
+        SaasAuth.setStatus(document.getElementById("page-status"), "Select an organization on the dashboard first.", true);
+        return;
+      }
+      await loadMembers();
+      document.getElementById("logout-btn").addEventListener("click", async () => {
+        await SaasAuth.logout();
+        window.location.href = "/app/login.html";
+      });
+      document.getElementById("member-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const status = document.getElementById("page-status");
+        const email = document.getElementById("email").value.trim();
+        const mobile = document.getElementById("mobile").value.trim();
+        if (!email && !mobile) {
+          SaasAuth.setStatus(status, "Email or mobile required", true);
+          return;
+        }
+        try {
+          await SaasAuth.api(`/api/v1/orgs/${orgId}/members`, {
+            method: "POST",
+            body: {
+              name: document.getElementById("name").value.trim(),
+              email: email || undefined,
+              mobile: mobile || undefined,
+              password: document.getElementById("password").value,
+              role: document.getElementById("role").value
+            }
+          });
+          SaasAuth.setStatus(status, "Member added", false);
+          event.target.reset();
+          await loadMembers();
+        } catch (error) {
+          SaasAuth.setStatus(status, error.message || "Could not add member", true);
+        }
+      });
+    }
+
+    boot().catch((error) => {
+      SaasAuth.setStatus(document.getElementById("page-status"), error.message, true);
+    });
+  </script>
+</body>
+</html>

@@ -12,11 +12,19 @@
     <link rel="stylesheet" href="styles.css?v=44">
     <link rel="stylesheet" href="animations.css?v=18">
     <script>
-        // Block welcome chrome until we know the local server is up.
-        // If offline, only the "Server is offline" panel is allowed.
+        // Block welcome chrome until we know the server is up.
+        // SaaS desk requires login + selected tournament.
         (function () {
             document.documentElement.classList.add("boot-pending");
-            fetch("/api/project/health", { cache: "no-store" })
+            var tournamentId = null;
+            try { tournamentId = localStorage.getItem("ca_saas_tournament_id"); } catch (e) {}
+            var token = null;
+            try { token = localStorage.getItem("ca_saas_access"); } catch (e) {}
+            if (!token || !tournamentId) {
+                window.location.replace(token ? "/app/tournaments.html" : "/app/login.html");
+                return;
+            }
+            fetch("/api/v1/health", { cache: "no-store" })
                 .then(function (res) {
                     if (!res.ok) throw new Error("offline");
                     document.documentElement.classList.add("boot-online");
@@ -90,9 +98,9 @@
             <div id="offline-only-panel" class="offline-only-panel" hidden>
                 <strong>Server is offline</strong>
                 <p>The auction desk will not open from browser cache.</p>
-                <p class="offline-only-cmd">Run this in the project folder:</p>
-                <p><code>node server.js</code></p>
-                <p>Then open <code>http://localhost:3000</code></p>
+                <p class="offline-only-cmd">Refresh the page, or if you are running locally:</p>
+                <p><code>npm run saas</code> (or <code>node server.js</code>)</p>
+                <p>Then open this site again and retry.</p>
                 <button type="button" id="offline-retry-btn" class="welcome-btn welcome-btn-primary">Retry</button>
             </div>
 
@@ -540,7 +548,8 @@
 
     <script src="js/money.js?v=17"></script>
     <script src="js/config-store.js?v=27"></script>
-    <script src="js/project-store.js?v=23"></script>
+    <script src="/app/js/saas-auth.js"></script>
+    <script src="js/project-store.js?v=24"></script>
     <script src="js/players-store.js?v=28"></script>
     <script src="js/offline-store.js?v=21"></script>
     <script src="app.js?v=54"></script>

@@ -980,52 +980,70 @@ async function tryPrettyHtml(req, res, urlPath) {
     }
 }
 
-const server = http.createServer(async (req, res) => {
-    try {
-        const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-
-        if (url.pathname === "/api/project" || url.pathname.startsWith("/api/project/")) {
-            await handleProjectApi(req, res, url);
-            return;
-        }
-
-        if (url.pathname === "/api/photos" || url.pathname.startsWith("/api/photos/")) {
-            await handlePhotoApi(req, res, url);
-            return;
-        }
-
-        if (url.pathname === "/api/partners" || url.pathname.startsWith("/api/partners/")) {
-            await handlePartnersApi(req, res, url);
-            return;
-        }
-
-        if (url.pathname === "/api/teams" || url.pathname.startsWith("/api/teams/")) {
-            await handleTeamsApi(req, res, url);
-            return;
-        }
-
-        if (await tryPrettyHtml(req, res, url.pathname)) return;
-        await serveStatic(req, res, url.pathname);
-    } catch (error) {
-        console.error(error);
-        if (!res.headersSent) {
-            sendJson(res, 500, { error: error.message || "Server error" });
-        }
+/**
+ * Handle legacy desk file APIs (data-project). Returns true if the request was handled.
+ * Used by both local `node server.js` and the SaaS server so the auction UI can boot online.
+ */
+async function handleLegacyDeskApi(req, res, url) {
+    if (url.pathname === "/api/project" || url.pathname.startsWith("/api/project/")) {
+        await handleProjectApi(req, res, url);
+        return true;
     }
-});
+    if (url.pathname === "/api/photos" || url.pathname.startsWith("/api/photos/")) {
+        await handlePhotoApi(req, res, url);
+        return true;
+    }
+    if (url.pathname === "/api/partners" || url.pathname.startsWith("/api/partners/")) {
+        await handlePartnersApi(req, res, url);
+        return true;
+    }
+    if (url.pathname === "/api/teams" || url.pathname.startsWith("/api/teams/")) {
+        await handleTeamsApi(req, res, url);
+        return true;
+    }
+    return false;
+}
 
-ensureBlankProject()
-    .then(() => migrateLegacyPhotosIntoProject())
-    .then(() => {
-        server.listen(PORT, () => {
-            console.log(`Cricket Auction desk: http://localhost:${PORT}`);
-            console.log(`Project folder: data-project/`);
-            console.log(`Photos: data-project/divisions/<divisionId>/photos/`);
-            console.log(`Partners: data-project/partners.json + logos/ + videos/`);
-            console.log("Stop with Ctrl+C");
-        });
-    })
-    .catch((error) => {
-        console.error("Failed to start server:", error);
-        process.exit(1);
+async function prepareProjectFolder() {
+    await ensureBlankProject();
+    await migrateLegacyPhotosIntoProject();
+}
+
+module.exports = {
+    handleLegacyDeskApi,
+    prepareProjectFolder,
+    tryPrettyHtml,
+    serveStatic
+};
+
+if (require.main === module) {
+    const server = http.createServer(async (req, res) => {
+        try {
+            const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+
+            if (await handleLegacyDeskApi(req, res, url)) return;
+            if (await tryPrettyHtml(req, res, url.pathname)) return;
+            await serveStatic(req, res, url.pathname);
+        } catch (error) {
+            console.error(error);
+            if (!res.headersSent) {
+                sendJson(res, 500, { error: error.message || "Server error" });
+            }
+        }
     });
+
+    prepareProjectFolder()
+        .then(() => {
+            server.listen(PORT, () => {
+                console.log(`Cricket Auction desk: http://localhost:${PORT}`);
+                console.log(`Project folder: data-project/`);
+                console.log(`Photos: data-project/divisions/<divisionId>/photos/`);
+                console.log(`Partners: data-project/partners.json + logos/ + videos/`);
+                console.log("Stop with Ctrl+C");
+            });
+        })
+        .catch((error) => {
+            console.error("Failed to start server:", error);
+            process.exit(1);
+        });
+}

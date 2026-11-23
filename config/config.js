@@ -532,7 +532,18 @@ function renderTeamCards() {
             if (!file || !draftTeams[index]) return;
             try {
                 syncDraftFromTeamCards();
-                draftTeams[index].logo = await readImageFileAsDataUrl(file);
+                if (typeof usesTournamentDb === "function" && usesTournamentDb() && window.SaasAuth?.uploadMedia) {
+                    saveStatus.textContent = `Uploading logo for ${draftTeams[index].team_name}…`;
+                    if (draftTeams[index].logoKey) {
+                        await window.SaasAuth.deleteMedia(draftTeams[index].logoKey).catch(() => {});
+                    }
+                    const uploaded = await window.SaasAuth.uploadMedia(file, "team-logo");
+                    draftTeams[index].logoKey = uploaded.objectKey;
+                    draftTeams[index].logo = uploaded.publicUrl || "";
+                } else {
+                    draftTeams[index].logo = await readImageFileAsDataUrl(file);
+                    delete draftTeams[index].logoKey;
+                }
                 saveStatus.textContent = `Logo updated for ${draftTeams[index].team_name}. Click Save to keep this change.`;
                 renderTeamCards();
             } catch (error) {
@@ -542,11 +553,15 @@ function renderTeamCards() {
     });
 
     teamList.querySelectorAll("[data-clear-logo]").forEach((button) => {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", async () => {
             const index = parseInt(button.dataset.clearLogo, 10);
             if (!draftTeams[index]) return;
             syncDraftFromTeamCards();
+            if (draftTeams[index].logoKey && window.SaasAuth?.deleteMedia) {
+                await window.SaasAuth.deleteMedia(draftTeams[index].logoKey).catch(() => {});
+            }
             delete draftTeams[index].logo;
+            delete draftTeams[index].logoKey;
             saveStatus.textContent = `Cleared logo for ${draftTeams[index].team_name}. Click Save to keep this change.`;
             renderTeamCards();
         });
@@ -573,23 +588,33 @@ function renderTeamCards() {
             try {
                 syncDraftFromTeamCards();
                 saveStatus.textContent = `Uploading video for ${draftTeams[index].team_name}…`;
-                const teamId = draftTeams[index].team_id;
-                const divisionId = draftActiveDivisionId || "div_1";
-                const response = await fetch(
-                    `/api/teams/video?id=${encodeURIComponent(teamId)}&division=${encodeURIComponent(divisionId)}`,
-                    {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": file.type || "video/mp4",
-                            "X-Team-Id": String(teamId),
-                            "X-Division-Id": String(divisionId)
-                        },
-                        body: file
+                if (typeof usesTournamentDb === "function" && usesTournamentDb() && window.SaasAuth?.uploadMedia) {
+                    if (draftTeams[index].videoKey) {
+                        await window.SaasAuth.deleteMedia(draftTeams[index].videoKey).catch(() => {});
                     }
-                );
-                const payload = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(payload.error || "Could not upload team video.");
-                draftTeams[index].video = payload.path;
+                    const uploaded = await window.SaasAuth.uploadMedia(file, "team-video");
+                    draftTeams[index].videoKey = uploaded.objectKey;
+                    draftTeams[index].video = uploaded.publicUrl || "";
+                } else {
+                    const teamId = draftTeams[index].team_id;
+                    const divisionId = draftActiveDivisionId || "div_1";
+                    const response = await fetch(
+                        `/api/teams/video?id=${encodeURIComponent(teamId)}&division=${encodeURIComponent(divisionId)}`,
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": file.type || "video/mp4",
+                                "X-Team-Id": String(teamId),
+                                "X-Division-Id": String(divisionId)
+                            },
+                            body: file
+                        }
+                    );
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(payload.error || "Could not upload team video.");
+                    draftTeams[index].video = payload.path;
+                    delete draftTeams[index].videoKey;
+                }
                 saveStatus.textContent = `Video updated for ${draftTeams[index].team_name}. Click Save to keep this change.`;
                 renderTeamCards();
             } catch (error) {
@@ -603,13 +628,20 @@ function renderTeamCards() {
             const index = parseInt(button.dataset.clearVideo, 10);
             if (!draftTeams[index]) return;
             syncDraftFromTeamCards();
-            const teamId = draftTeams[index].team_id;
-            const divisionId = draftActiveDivisionId || "div_1";
-            await fetch(
-                `/api/teams/video/${encodeURIComponent(teamId)}?division=${encodeURIComponent(divisionId)}`,
-                { method: "DELETE" }
-            ).catch(() => {});
+            if (typeof usesTournamentDb === "function" && usesTournamentDb() && window.SaasAuth?.deleteMedia) {
+                if (draftTeams[index].videoKey) {
+                    await window.SaasAuth.deleteMedia(draftTeams[index].videoKey).catch(() => {});
+                }
+            } else {
+                const teamId = draftTeams[index].team_id;
+                const divisionId = draftActiveDivisionId || "div_1";
+                await fetch(
+                    `/api/teams/video/${encodeURIComponent(teamId)}?division=${encodeURIComponent(divisionId)}`,
+                    { method: "DELETE" }
+                ).catch(() => {});
+            }
             delete draftTeams[index].video;
+            delete draftTeams[index].videoKey;
             saveStatus.textContent = `Cleared video for ${draftTeams[index].team_name}. Click Save to keep this change.`;
             renderTeamCards();
         });
@@ -1283,15 +1315,30 @@ tournamentLogoFile.addEventListener("change", async () => {
     tournamentLogoFile.value = "";
     if (!file) return;
     try {
-        draftTournament.logo = await readImageFileAsDataUrl(file, 512);
+        if (typeof usesTournamentDb === "function" && usesTournamentDb() && window.SaasAuth?.uploadMedia) {
+            saveStatus.textContent = "Uploading project logo…";
+            if (draftTournament.logoKey) {
+                await window.SaasAuth.deleteMedia(draftTournament.logoKey).catch(() => {});
+            }
+            const uploaded = await window.SaasAuth.uploadMedia(file, "tournament-logo");
+            draftTournament.logoKey = uploaded.objectKey;
+            draftTournament.logo = uploaded.publicUrl || "";
+        } else {
+            draftTournament.logo = await readImageFileAsDataUrl(file, 512);
+            delete draftTournament.logoKey;
+        }
         saveStatus.textContent = "Project logo updated. Click Save to keep this change.";
         refreshTournamentPreview();
     } catch (error) {
         saveStatus.textContent = error.message || "Could not upload logo.";
     }
 });
-tournamentLogoClearBtn.addEventListener("click", () => {
+tournamentLogoClearBtn.addEventListener("click", async () => {
+    if (draftTournament.logoKey && window.SaasAuth?.deleteMedia) {
+        await window.SaasAuth.deleteMedia(draftTournament.logoKey).catch(() => {});
+    }
     delete draftTournament.logo;
+    delete draftTournament.logoKey;
     saveStatus.textContent = "Cleared project logo. Click Save to keep this change.";
     refreshTournamentPreview();
 });

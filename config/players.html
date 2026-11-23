@@ -90,13 +90,16 @@
                         <p class="panel-kicker">Media</p>
                         <h2>Photos &amp; Pack</h2>
                     </div>
-                    <p class="help">Photos live under <code>data-project/</code>. Export a pack to copy a division to another PC.</p>
+                    <p class="help" id="photos-help">
+                        In SaaS mode photos are <strong>stored in cloud (R2)</strong> for this tournament.
+                        Local mode still uses <code>data-project/</code>.
+                    </p>
                 </div>
                 <div class="tool-strip compact">
                     <div class="tool-group">
                         <h3 class="tool-label">Photos</h3>
                         <div class="upload-actions">
-                            <button type="button" id="cache-photos-btn" class="secondary-btn">Save photos to assets</button>
+                            <button type="button" id="cache-photos-btn" class="secondary-btn">Save / store photos</button>
                             <button type="button" id="upload-photos-btn" class="secondary-btn">Upload photo files</button>
                             <input id="photos-files" type="file" accept="image/*" multiple hidden>
                             <button type="button" id="fix-categories-from-id-btn" class="ghost-btn">Fix categories from ID</button>
@@ -259,11 +262,12 @@
 
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script src="../js/money.js?v=17"></script>
-    <script src="../js/config-store.js?v=24"></script>
-    <script src="../js/project-store.js?v=23"></script>
+    <script src="../js/config-store.js?v=28"></script>
+    <script src="/app/js/saas-auth.js?v=2"></script>
+    <script src="../js/project-store.js?v=25"></script>
     <script src="../js/players-store.js?v=28"></script>
-    <script src="../js/offline-store.js?v=21"></script>
-    <script src="players.js?v=28"></script>
+    <script src="../js/offline-store.js?v=23"></script>
+    <script src="players.js?v=30"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

@@ -407,14 +407,20 @@ function normalizeTeamLogo(rawLogo) {
     const logo = String(rawLogo || "").trim();
     if (!logo) return "";
     if (logo.startsWith("data:image/")) return logo;
+    if (/^https?:\/\//i.test(logo)) return logo;
+    if (logo.startsWith("/") || logo.startsWith("assets/") || logo.startsWith("data-project/")) {
+        return logo;
+    }
     return "";
 }
 
 function normalizeTeamVideo(rawVideo) {
     const video = String(rawVideo || "").trim();
     if (!video) return "";
+    if (/^https?:\/\//i.test(video)) return video;
     if (video.startsWith("data-project/teams/videos/")) return video;
     if (video.startsWith("/data-project/teams/videos/")) return video.slice(1);
+    if (video.startsWith("blob:")) return video;
     return "";
 }
 
@@ -451,10 +457,12 @@ function normalizeTournament(raw) {
     const year =
         String(raw?.year ?? DEFAULT_TOURNAMENT.year).trim() || DEFAULT_TOURNAMENT.year;
     const logo = normalizeTeamLogo(raw?.logo);
+    const logoKey = String(raw?.logoKey || raw?.logo_key || "").trim() || null;
     return {
         name,
         year,
-        ...(logo ? { logo } : {})
+        ...(logo ? { logo } : {}),
+        ...(logoKey ? { logoKey } : {})
     };
 }
 
@@ -485,18 +493,20 @@ function normalizeTeams(rawTeams) {
     const usedIds = new Set();
     return rawTeams
         .map((team, index) => {
-            let teamId = Number(team?.team_id);
+            let teamId = Number(team?.team_id ?? team?.id);
             if (!Number.isFinite(teamId) || teamId <= 0 || usedIds.has(teamId)) {
                 teamId = index + 1;
                 while (usedIds.has(teamId)) teamId += 1;
             }
             usedIds.add(teamId);
-            const teamName = String(team?.team_name || `Team ${index + 1}`).trim();
+            const teamName = String(team?.team_name || team?.teamName || `Team ${index + 1}`).trim();
             const color =
                 String(team?.color || "").trim() ||
                 DEFAULT_TEAM_COLORS[index % DEFAULT_TEAM_COLORS.length];
             const logo = normalizeTeamLogo(team?.logo);
             const video = normalizeTeamVideo(team?.video);
+            const logoKey = String(team?.logoKey || team?.logo_key || "").trim() || null;
+            const videoKey = String(team?.videoKey || team?.video_key || "").trim() || null;
             const iconPlayerId = normalizeAssignablePlayerId(team?.iconPlayerId);
             const captionPlayerId = normalizeAssignablePlayerId(team?.captionPlayerId);
             return {
@@ -505,6 +515,8 @@ function normalizeTeams(rawTeams) {
                 color,
                 ...(logo ? { logo } : {}),
                 ...(video ? { video } : {}),
+                ...(logoKey ? { logoKey } : {}),
+                ...(videoKey ? { videoKey } : {}),
                 ...(iconPlayerId != null ? { iconPlayerId } : {}),
                 ...(captionPlayerId != null ? { captionPlayerId } : {})
             };

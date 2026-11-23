@@ -5,3 +5,11 @@ squads/styles_2.css
 styles_initial.css
 # Snyk Security Extension - AI Rules (auto-generated)
 .github\instructions\snyk_rules.instructions.md
+
+# SaaS / local secrets
+.env
+.env.local
+node_modules/
+npm-debug.log*
+.DS_Store
+roundtrip-project-pack.json

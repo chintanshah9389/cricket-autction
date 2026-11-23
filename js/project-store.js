@@ -1,7 +1,6 @@
 /**
- * Disk project folder sync (WhatsApp-style local data).
- * Source of truth: data-project/ via server.js APIs.
- * localStorage is a fast cache that is hydrated on boot.
+ * Project sync — SaaS tournament DB (preferred) or legacy data-project/ APIs.
+ * localStorage is a fast cache hydrated on boot from the server source of truth.
  */
 
 const PROJECT_API_BASE = "/api/project";
@@ -9,14 +8,60 @@ const PROJECT_API_BASE = "/api/project";
 let projectApiReadyCache = null;
 let projectApiReadyAt = 0;
 
+function getSaasTournamentId() {
+    try {
+        if (window.SaasAuth?.getActiveTournamentId) {
+            return window.SaasAuth.getActiveTournamentId();
+        }
+    } catch (_) {
+        // ignore
+    }
+    try {
+        return localStorage.getItem("ca_saas_tournament_id");
+    } catch (_) {
+        return null;
+    }
+}
+
+function usesTournamentDb() {
+    return Boolean(getSaasTournamentId() && window.SaasAuth?.api);
+}
+
+function tournamentApiBase() {
+    const id = encodeURIComponent(getSaasTournamentId());
+    return `/api/v1/tournaments/${id}`;
+}
+
+async function projectApiFetch(path, { method = "GET", body } = {}) {
+    if (usesTournamentDb()) {
+        return window.SaasAuth.api(path, { method, body });
+    }
+    const response = await fetch(path, {
+        method,
+        headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        cache: "no-store"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload.error || `Request failed (${response.status})`);
+    }
+    return payload;
+}
+
 async function checkProjectApiReady({ force = false } = {}) {
     const now = Date.now();
     if (!force && projectApiReadyCache !== null && now - projectApiReadyAt < 15000) {
         return projectApiReadyCache;
     }
     try {
-        const response = await fetch(`${PROJECT_API_BASE}/health`, { cache: "no-store" });
-        projectApiReadyCache = response.ok;
+        if (usesTournamentDb()) {
+            const health = await window.SaasAuth.api("/api/v1/health");
+            projectApiReadyCache = Boolean(health?.ok);
+        } else {
+            const response = await fetch(`${PROJECT_API_BASE}/health`, { cache: "no-store" });
+            projectApiReadyCache = response.ok;
+        }
     } catch (_) {
         projectApiReadyCache = false;
     }
@@ -25,70 +70,83 @@ async function checkProjectApiReady({ force = false } = {}) {
 }
 
 async function fetchProjectSnapshot() {
-    const response = await fetch(PROJECT_API_BASE, { cache: "no-store" });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not load project folder.");
-    return payload;
+    if (usesTournamentDb()) {
+        return projectApiFetch(`${tournamentApiBase()}/snapshot`);
+    }
+    return projectApiFetch(PROJECT_API_BASE);
 }
 
 async function putProjectConfig(config) {
-    const response = await fetch(`${PROJECT_API_BASE}/config`, {
+    if (usesTournamentDb()) {
+        const payload = await projectApiFetch(`${tournamentApiBase()}/config`, {
+            method: "PUT",
+            body: { config }
+        });
+        return payload.config;
+    }
+    const payload = await projectApiFetch(`${PROJECT_API_BASE}/config`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config })
+        body: { config }
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not save project.json.");
     return payload.config;
 }
 
 async function putDivisionPlayers(divisionId, players) {
     const id = encodeURIComponent(divisionId || "div_1");
-    const response = await fetch(`${PROJECT_API_BASE}/divisions/${id}/players`, {
+    if (usesTournamentDb()) {
+        const payload = await projectApiFetch(
+            `${tournamentApiBase()}/divisions/${id}/players`,
+            { method: "PUT", body: { players: players || [] } }
+        );
+        return payload.players;
+    }
+    const payload = await projectApiFetch(`${PROJECT_API_BASE}/divisions/${id}/players`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ players: players || [] })
+        body: { players: players || [] }
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not save players.json.");
     return payload.players;
 }
 
 async function putDivisionAuction(divisionId, auction) {
     const id = encodeURIComponent(divisionId || "div_1");
-    const response = await fetch(`${PROJECT_API_BASE}/divisions/${id}/auction`, {
+    if (usesTournamentDb()) {
+        const payload = await projectApiFetch(
+            `${tournamentApiBase()}/divisions/${id}/auction`,
+            { method: "PUT", body: { auction: auction || null, status: "live" } }
+        );
+        return payload.auction;
+    }
+    const payload = await projectApiFetch(`${PROJECT_API_BASE}/divisions/${id}/auction`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auction: auction || null })
+        body: { auction: auction || null }
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not save auction.json.");
     return payload.auction;
 }
 
 async function deleteDivisionAuction(divisionId) {
     const id = encodeURIComponent(divisionId || "div_1");
-    const response = await fetch(`${PROJECT_API_BASE}/divisions/${id}/auction`, {
+    if (usesTournamentDb()) {
+        await projectApiFetch(`${tournamentApiBase()}/divisions/${id}/auction`, {
+            method: "DELETE"
+        });
+        return;
+    }
+    await projectApiFetch(`${PROJECT_API_BASE}/divisions/${id}/auction`, {
         method: "DELETE"
     });
-    if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Could not clear auction.json.");
-    }
 }
 
 async function resetProjectFolderOnDisk() {
-    // Invalidate queued PUTs, wait for them to no-op, then wipe on the same serial queue
+    if (usesTournamentDb()) {
+        throw new Error("Reset tournament from Org dashboard / Tournaments (DB mode).");
+    }
     const generation = bumpProjectPersistGeneration();
     await flushProjectPersistQueue();
     return enqueueProjectPersist(async () => {
         if (generation !== projectPersistGeneration) {
             throw new Error("Reset superseded by a newer project write.");
         }
-        const response = await fetch(PROJECT_API_BASE, { method: "DELETE" });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || "Could not reset project folder.");
-        return payload;
+        return projectApiFetch(PROJECT_API_BASE, { method: "DELETE" });
     });
 }
 

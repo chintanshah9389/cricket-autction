@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register — Cricket Auction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body class="app-body">
+  <div class="app-shell">
+    <header class="app-top">
+      <div class="app-brand">
+        <p class="app-brand-kicker">Cricket Auction Cloud</p>
+        <p class="app-brand-name">Register</p>
+      </div>
+      <nav class="app-nav">
+        <a class="app-btn app-btn-ghost" href="/app/">Home</a>
+        <a class="app-btn app-btn-secondary" href="/app/login.html">Login</a>
+      </nav>
+    </header>
+
+    <div class="app-panel app-auth">
+      <h2>Create your organization</h2>
+      <p class="lede">Self-serve signup for league owners. You become the org owner.</p>
+      <form class="app-form" id="register-form">
+        <div class="app-field">
+          <label for="name">Your name</label>
+          <input id="name" name="name" required>
+        </div>
+        <div class="app-field">
+          <label for="orgName">Organization / league name</label>
+          <input id="orgName" name="orgName" required>
+        </div>
+        <div class="app-field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email">
+        </div>
+        <div class="app-field">
+          <label for="mobile">Mobile (optional if email set)</label>
+          <input id="mobile" name="mobile" autocomplete="tel">
+        </div>
+        <div class="app-field">
+          <label for="password">Password (min 8)</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+        </div>
+        <button class="app-btn app-btn-primary" type="submit">Create account</button>
+        <p id="register-status" class="app-status" hidden></p>
+      </form>
+    </div>
+  </div>
+  <script src="/app/js/saas-auth.js"></script>
+  <script>
+    if (SaasAuth.isLoggedIn()) SaasAuth.redirectAfterLogin();
+
+    document.getElementById("register-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = document.getElementById("register-status");
+      const email = document.getElementById("email").value.trim();
+      const mobile = document.getElementById("mobile").value.trim();
+      if (!email && !mobile) {
+        SaasAuth.setStatus(status, "Email or mobile is required", true);
+        return;
+      }
+      SaasAuth.setStatus(status, "Creating organization…", false);
+      try {
+        await SaasAuth.registerOwner({
+          name: document.getElementById("name").value.trim(),
+          orgName: document.getElementById("orgName").value.trim(),
+          email: email || undefined,
+          mobile: mobile || undefined,
+          password: document.getElementById("password").value
+        });
+        SaasAuth.setStatus(status, "Account created. Opening dashboard…", false);
+        window.location.href = "/app/dashboard.html";
+      } catch (error) {
+        SaasAuth.setStatus(status, error.message || "Registration failed", true);
+      }
+    });
+  </script>
+</body>
+</html>

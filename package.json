@@ -1,0 +1,24 @@
+{
+  "name": "cricket-auction",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Cricket auction desk — local file mode + SaaS (Postgres + Cloudflare R2)",
+  "scripts": {
+    "start": "node server.js",
+    "saas": "node saas/server.js",
+    "saas:migrate": "node saas/db/migrate.js",
+    "saas:seed-superadmin": "node saas/db/seed-superadmin.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.758.0",
+    "@aws-sdk/s3-request-presigner": "^3.758.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.3",
+    "uuid": "^11.1.0"
+  }
+}

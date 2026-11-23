@@ -31,8 +31,10 @@ const countEl = document.getElementById("partner-count");
 let partners = [];
 let draftLogoDataUrl = "";
 let draftLogoPath = "";
+let draftLogoKey = "";
 let draftVideoFile = null;
 let draftVideoPath = "";
+let draftVideoKey = "";
 let draftVideoObjectUrl = "";
 
 function setStatus(message, isError = false) {
@@ -125,8 +127,10 @@ function resetForm() {
     highlightInput.checked = true;
     draftLogoDataUrl = "";
     draftLogoPath = "";
+    draftLogoKey = "";
     draftVideoFile = null;
     draftVideoPath = "";
+    draftVideoKey = "";
     clearDraftVideoObjectUrl();
     updateLogoPreview("");
     updateVideoPreview("");
@@ -140,12 +144,14 @@ function fillForm(partner) {
     tierInput.value = partner.tier || "partner";
     urlInput.value = partner.url || "";
     taglineInput.value = partner.tagline || "";
-    orderInput.value = String(partner.order || 1);
+    orderInput.value = String(partner.order || partner.sortOrder || 1);
     highlightInput.checked = Boolean(partner.highlight);
     draftLogoDataUrl = "";
     draftLogoPath = partner.logo || "";
+    draftLogoKey = partner.logoKey || "";
     draftVideoFile = null;
     draftVideoPath = partner.video || "";
+    draftVideoKey = partner.videoKey || "";
     clearDraftVideoObjectUrl();
     updateLogoPreview(draftLogoPath);
     updateVideoPreview(draftVideoPath, draftVideoPath ? "Saved video" : "");
@@ -154,7 +160,26 @@ function fillForm(partner) {
     nameInput.focus();
 }
 
+function usesSaasPartners() {
+    return Boolean(
+        typeof usesTournamentDb === "function" &&
+            usesTournamentDb() &&
+            window.SaasAuth?.api &&
+            window.SaasAuth?.getActiveTournamentId?.()
+    );
+}
+
+function partnersApiBase() {
+    const id = encodeURIComponent(window.SaasAuth.getActiveTournamentId());
+    return `/api/v1/tournaments/${id}/partners`;
+}
+
 async function fetchPartners() {
+    if (usesSaasPartners()) {
+        const payload = await window.SaasAuth.api(partnersApiBase());
+        partners = sortPartners(payload.partners || []);
+        return;
+    }
     const response = await fetch(PARTNERS_API, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Could not load partners.");
@@ -162,6 +187,14 @@ async function fetchPartners() {
 }
 
 async function savePartnersList(nextList) {
+    if (usesSaasPartners()) {
+        const payload = await window.SaasAuth.api(partnersApiBase(), {
+            method: "PUT",
+            body: { partners: nextList }
+        });
+        partners = sortPartners(payload.partners || nextList);
+        return;
+    }
     const response = await fetch(PARTNERS_API, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -173,6 +206,14 @@ async function savePartnersList(nextList) {
 }
 
 async function uploadLogo(partnerId, dataUrl) {
+    if (usesSaasPartners() && window.SaasAuth?.uploadMedia) {
+        const blob = await (await fetch(dataUrl)).blob();
+        const file = new File([blob], `${partnerId || "partner"}-logo.jpg`, {
+            type: blob.type || "image/jpeg"
+        });
+        const uploaded = await window.SaasAuth.uploadMedia(file, "partner-logo");
+        return { path: uploaded.publicUrl || "", key: uploaded.objectKey };
+    }
     const mimeMatch = String(dataUrl || "").match(/^data:([^;]+);base64,/);
     const mimeType = mimeMatch?.[1] || "image/jpeg";
     const response = await fetch(`${PARTNERS_API}/logo`, {
@@ -186,16 +227,24 @@ async function uploadLogo(partnerId, dataUrl) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Could not upload logo.");
-    return payload.path;
+    return { path: payload.path, key: null };
 }
 
-async function deleteLogo(partnerId) {
+async function deleteLogo(partnerId, logoKey = "") {
+    if (usesSaasPartners() && logoKey && window.SaasAuth?.deleteMedia) {
+        await window.SaasAuth.deleteMedia(logoKey).catch(() => {});
+        return;
+    }
     await fetch(`${PARTNERS_API}/logo/${encodeURIComponent(partnerId)}`, {
         method: "DELETE"
     }).catch(() => {});
 }
 
 async function uploadVideo(partnerId, file) {
+    if (usesSaasPartners() && window.SaasAuth?.uploadMedia) {
+        const uploaded = await window.SaasAuth.uploadMedia(file, "partner-video");
+        return { path: uploaded.publicUrl || "", key: uploaded.objectKey };
+    }
     const response = await fetch(`${PARTNERS_API}/video?id=${encodeURIComponent(partnerId)}`, {
         method: "POST",
         headers: {
@@ -206,10 +255,14 @@ async function uploadVideo(partnerId, file) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Could not upload video.");
-    return payload.path;
+    return { path: payload.path, key: null };
 }
 
-async function deleteVideo(partnerId) {
+async function deleteVideo(partnerId, videoKey = "") {
+    if (usesSaasPartners() && videoKey && window.SaasAuth?.deleteMedia) {
+        await window.SaasAuth.deleteMedia(videoKey).catch(() => {});
+        return;
+    }
     await fetch(`${PARTNERS_API}/video/${encodeURIComponent(partnerId)}`, {
         method: "DELETE"
     }).catch(() => {});
@@ -294,8 +347,8 @@ function renderList() {
             if (!partner) return;
             if (!confirm(`Delete partner "${partner.name}"?`)) return;
             try {
-                await deleteLogo(id);
-                await deleteVideo(id);
+                await deleteLogo(id, partner.logoKey || "");
+                await deleteVideo(id, partner.videoKey || "");
                 await savePartnersList(partners.filter((p) => p.id !== id));
                 if (editIdInput.value === id) resetForm();
                 renderList();
@@ -318,16 +371,24 @@ form.addEventListener("submit", async (event) => {
     const editingId = editIdInput.value.trim();
     const id = editingId || createPartnerId();
     let logoPath = draftLogoPath;
+    let logoKey = draftLogoKey;
     let videoPath = draftVideoPath;
+    let videoKey = draftVideoKey;
 
     try {
         setStatus("Saving…");
         if (draftLogoDataUrl) {
-            logoPath = await uploadLogo(id, draftLogoDataUrl);
+            if (logoKey) await deleteLogo(id, logoKey);
+            const uploaded = await uploadLogo(id, draftLogoDataUrl);
+            logoPath = uploaded.path || "";
+            logoKey = uploaded.key || "";
         }
         if (draftVideoFile) {
             setStatus("Uploading video…");
-            videoPath = await uploadVideo(id, draftVideoFile);
+            if (videoKey) await deleteVideo(id, videoKey);
+            const uploaded = await uploadVideo(id, draftVideoFile);
+            videoPath = uploaded.path || "";
+            videoKey = uploaded.key || "";
         }
 
         const record = {
@@ -337,9 +398,12 @@ form.addEventListener("submit", async (event) => {
             url: urlInput.value.trim(),
             tagline: taglineInput.value.trim(),
             logo: logoPath || "",
+            logoKey: logoKey || null,
             video: videoPath || "",
+            videoKey: videoKey || null,
             highlight: Boolean(highlightInput.checked),
-            order: Number(orderInput.value) || nextOrder()
+            order: Number(orderInput.value) || nextOrder(),
+            sortOrder: Number(orderInput.value) || nextOrder()
         };
 
         const without = partners.filter((p) => p.id !== id);
@@ -375,12 +439,17 @@ logoFileInput.addEventListener("change", async () => {
 
 logoClearBtn.addEventListener("click", async () => {
     const id = editIdInput.value.trim();
+    const existing = partners.find((p) => p.id === id);
     draftLogoDataUrl = "";
     draftLogoPath = "";
+    const keyToDelete = draftLogoKey || existing?.logoKey || "";
+    draftLogoKey = "";
     updateLogoPreview("");
     if (id) {
-        await deleteLogo(id);
-        const next = partners.map((p) => (p.id === id ? { ...p, logo: "" } : p));
+        await deleteLogo(id, keyToDelete);
+        const next = partners.map((p) =>
+            p.id === id ? { ...p, logo: "", logoKey: null } : p
+        );
         try {
             await savePartnersList(next);
             renderList();
@@ -413,13 +482,18 @@ videoFileInput.addEventListener("change", () => {
 
 videoClearBtn.addEventListener("click", async () => {
     const id = editIdInput.value.trim();
+    const existing = partners.find((p) => p.id === id);
     draftVideoFile = null;
     draftVideoPath = "";
+    const keyToDelete = draftVideoKey || existing?.videoKey || "";
+    draftVideoKey = "";
     clearDraftVideoObjectUrl();
     updateVideoPreview("");
     if (id) {
-        await deleteVideo(id);
-        const next = partners.map((p) => (p.id === id ? { ...p, video: "" } : p));
+        await deleteVideo(id, keyToDelete);
+        const next = partners.map((p) =>
+            p.id === id ? { ...p, video: "", videoKey: null } : p
+        );
         try {
             await savePartnersList(next);
             renderList();
@@ -434,10 +508,20 @@ videoClearBtn.addEventListener("click", async () => {
 
 async function boot() {
     try {
+        if (window.SaasAuth?.requireAuth) {
+            const me = await window.SaasAuth.requireAuth();
+            if (!me) return;
+        }
         await fetchPartners();
         resetForm();
         renderList();
-        setStatus(partners.length ? "Partners loaded from data-project." : "Ready to add partners.");
+        setStatus(
+            partners.length
+                ? usesSaasPartners()
+                    ? "Partners loaded for this tournament."
+                    : "Partners loaded from data-project."
+                : "Ready to add partners."
+        );
     } catch (error) {
         resetForm();
         renderList();

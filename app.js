@@ -557,15 +557,15 @@ async function updateServerStatusUI() {
         banner.hidden = false;
         banner.dataset.state = online ? "online" : "offline";
         banner.textContent = online
-            ? "Local server online — using live data-project folder."
-            : "Offline — server is down. Start node server.js. Old browser cache will not be used.";
+            ? "Server online — using live project data."
+            : "Offline — server is down. Refresh or restart the auction server. Old browser cache will not be used.";
     }
     if (chip) {
         chip.hidden = false;
         chip.dataset.state = online ? "online" : "offline";
-        chip.textContent = online ? "LIVE DISK" : "OFFLINE";
+        chip.textContent = online ? "LIVE" : "OFFLINE";
         chip.title = online
-            ? "Connected to data-project via server.js"
+            ? "Connected to live project data"
             : "Server down — auction desk blocked until server is back";
     }
     // Only lock the welcome boot path; don't yank an already-live in-memory auction
@@ -582,7 +582,7 @@ function refreshWelcomeDivisionActions() {
         if (welcomeStartNewBtn) welcomeStartNewBtn.hidden = true;
         if (welcomeResetBtn) welcomeResetBtn.hidden = true;
         if (welcomeDivisionNote) {
-            welcomeDivisionNote.textContent = "Offline — start node server.js to load live project data.";
+            welcomeDivisionNote.textContent = "Offline — wait for the server, then retry to load live project data.";
         }
         return;
     }
@@ -3888,7 +3888,7 @@ const initApp = async () => {
         document.getElementById("offline-retry-btn")?.addEventListener("click", async () => {
             const retryOnline = await updateServerStatusUI();
             if (!retryOnline) {
-                alert("Still offline. Run node server.js, then retry.");
+                alert("Still offline. Refresh the page, or restart the auction server, then retry.");
                 return;
             }
             window.location.reload();

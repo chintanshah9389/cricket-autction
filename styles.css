@@ -3433,8 +3433,8 @@ body.server-offline-only #big-container {
 
     .brand-bar,
     .player-hero {
-        display: flex;
-        flex-direction: column;
+    display: flex;
+    flex-direction: column;
     }
 
     .player-stage {
@@ -3509,7 +3509,7 @@ body.server-offline-only #big-container {
         width: 100%;
         min-height: 48px;
         writing-mode: horizontal-tb;
-        transform: none;
+    transform: none;
     }
 }
 
