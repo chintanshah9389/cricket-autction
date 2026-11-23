@@ -241,7 +241,22 @@ const RESERVED_PLAYER_KEYS = new Set([
     "team",
     "teamname",
     "soldfor",
-    "customfields"
+    "customfields",
+    // Internal DB / media keys must never become Player field toggles
+    "dbid",
+    "photokey",
+    "photokey",
+    "teamid",
+    "logokey",
+    "videokey",
+    "externalid",
+    "external_id",
+    "photo_key",
+    "logo_key",
+    "video_key",
+    "sortorder",
+    "auctionstatus",
+    "auctionrevision"
 ]);
 
 function toCustomFieldKey(header) {
@@ -251,12 +266,39 @@ function toCustomFieldKey(header) {
     return `x_${base || "field"}`;
 }
 
+function isInternalPlayerFieldKey(key) {
+    const compact = compactHeaderKey(String(key || "").replace(/^x_/i, ""));
+    if (!compact) return true;
+    if (RESERVED_PLAYER_KEYS.has(compact)) return true;
+    if (
+        [
+            "dbid",
+            "photokey",
+            "teamid",
+            "logokey",
+            "videokey",
+            "externalid",
+            "mutationid",
+            "revision"
+        ].includes(compact)
+    ) {
+        return true;
+    }
+    // Category typo headers are aliases, not custom fields
+    if (compact === "catagory" || compact === "category") return true;
+    return false;
+}
+
 function isKnownSpreadsheetHeader(header) {
     const normalized = normalizeHeaderKey(header);
     if (!normalized) return true;
-    if (RESERVED_PLAYER_KEYS.has(normalized.replace(/\s+/g, ""))) return true;
+    const compact = compactHeaderKey(header);
+    if (RESERVED_PLAYER_KEYS.has(compact) || isInternalPlayerFieldKey(header)) return true;
     return Object.values(PLAYER_FIELD_ALIASES).some((aliases) =>
-        aliases.some((alias) => normalizeHeaderKey(alias) === normalized)
+        aliases.some((alias) => {
+            const aliasNorm = normalizeHeaderKey(alias);
+            return aliasNorm === normalized || compactHeaderKey(alias) === compact;
+        })
     );
 }
 
@@ -265,16 +307,18 @@ function extractCustomFields(source = {}) {
     const existing =
         source.customFields && typeof source.customFields === "object" ? source.customFields : {};
     Object.keys(existing).forEach((key) => {
+        if (isInternalPlayerFieldKey(key) || isKnownSpreadsheetHeader(key)) return;
         const value = existing[key];
         if (value == null || String(value).trim() === "") return;
         custom[key] = String(value).trim();
     });
     Object.keys(source).forEach((header) => {
         if (header === "customFields") return;
-        if (isKnownSpreadsheetHeader(header)) return;
+        if (isInternalPlayerFieldKey(header) || isKnownSpreadsheetHeader(header)) return;
         const value = source[header];
         if (value == null || String(value).trim() === "") return;
         const key = String(header).startsWith("x_") ? header : toCustomFieldKey(header);
+        if (isInternalPlayerFieldKey(key)) return;
         custom[key] = String(value).trim();
     });
     return custom;
@@ -490,9 +534,11 @@ function applyPlayerFieldsFromSpreadsheet(config, divisionId, presence) {
         };
     });
 
-    // Extra Excel columns → custom config fields
+    // Extra Excel columns → custom config fields (never internal DB keys)
     Object.keys(presence).forEach((key) => {
-        if (!String(key).startsWith("x_")) return;
+        if (String(key).startsWith("__label:")) return;
+        if (!String(key).startsWith("x_") && !fields[key]?.custom) return;
+        if (typeof isInternalPlayerFieldKey === "function" && isInternalPlayerFieldKey(key)) return;
         const inSheet = presence[key] === true;
         const label = presence[`__label:${key}`] || fields[key]?.label || humanizePlayerFieldKey?.(key) || key;
         fields[key] = {
@@ -506,6 +552,10 @@ function applyPlayerFieldsFromSpreadsheet(config, divisionId, presence) {
     // Turn off previously known custom fields missing from this sheet
     Object.keys(fields).forEach((key) => {
         if (!String(key).startsWith("x_") && !fields[key]?.custom) return;
+        if (typeof isInternalPlayerFieldKey === "function" && isInternalPlayerFieldKey(key)) {
+            delete fields[key];
+            return;
+        }
         if (presence[key] === true) return;
         fields[key] = {
             ...fields[key],

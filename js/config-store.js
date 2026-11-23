@@ -58,17 +58,28 @@ function normalizePlayerFields(raw) {
     const fields = {};
     PLAYER_FIELD_DEFS.forEach((def) => {
         const entry = source[def.key];
-        const visible = entry?.visible != null ? entry.visible !== false : defaults[def.key].visible;
+        // Honor explicit false from DB; only fall back to defaults when missing.
+        const visible =
+            entry && Object.prototype.hasOwnProperty.call(entry, "visible")
+                ? entry.visible !== false
+                : defaults[def.key].visible;
         let required = entry?.required === true;
         if (!visible) required = false;
         fields[def.key] = { visible, required };
     });
-    // Preserve Excel-driven custom fields (Gender, Seat, …)
+    // Preserve Excel-driven custom fields (Gender, Seat, …) — never internal keys.
     Object.keys(source).forEach((key) => {
         if (fields[key]) return;
+        if (typeof isInternalPlayerFieldKey === "function" && isInternalPlayerFieldKey(key)) return;
         const entry = source[key];
         if (!entry || typeof entry !== "object") return;
         if (!(entry.custom === true || String(key).startsWith("x_"))) return;
+        // Drop leftover typo category custom fields
+        const compact =
+            typeof compactHeaderKey === "function"
+                ? compactHeaderKey(String(key).replace(/^x_/i, ""))
+                : String(key).toLowerCase().replace(/\s+/g, "");
+        if (compact === "catagory" || compact === "category" || compact === "cata gory") return;
         const visible = entry.visible !== false;
         fields[key] = {
             visible,

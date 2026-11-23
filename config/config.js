@@ -183,7 +183,7 @@ function refreshDivisionScopedLabels() {
         playerFieldsHeading.textContent = `Player fields — ${name}`;
     }
     if (playerFieldsHelp) {
-        playerFieldsHelp.innerHTML = `For <strong>${name}</strong> only: choose what shows on the auction desk and what is required when adding/editing players. Name, ID, and Category stay on. Uploading Excel on the Players page turns <em>Show on auction</em> on for columns in the sheet and off for the rest — then Start New Auction to apply on the desk.`;
+        playerFieldsHelp.innerHTML = `For <strong>${name}</strong> only: check what shows on the auction desk and what is required when adding/editing players. Name, ID, and Category stay on. Your checkboxes are saved to the database when you click Save — they load again on the next visit. Excel import can suggest fields once; after that Config Save is the source of truth.`;
     }
 }
 
@@ -217,12 +217,12 @@ async function switchDraftDivision(divisionId) {
     if (divisionId === draftActiveDivisionId) return;
     captureDivisionFieldsFromForm();
     draftActiveDivisionId = divisionId;
-    await syncDraftPlayerFieldsFromRoster(divisionId);
+    // Keep this division's saved Player field toggles from DB — do not re-derive from roster.
     applyDivisionFieldsToForm(getDraftActiveDivision());
     renderAll();
     const active = getDraftActiveDivision();
     if (saveStatus && active) {
-        saveStatus.textContent = `Switched to ${active.name}: ${getDivisionTeamCount(active)} teams, kitty ${formatDivisionKitty(getDivisionKitty(active))}. Player fields follow this division’s Excel/roster. Edit then Save.`;
+        saveStatus.textContent = `Switched to ${active.name}: ${getDivisionTeamCount(active)} teams, kitty ${formatDivisionKitty(getDivisionKitty(active))}. Player field checkboxes are loaded from the database for this division. Edit then Save.`;
     }
 }
 
@@ -1170,30 +1170,17 @@ async function loadForm() {
     draftTournament = JSON.parse(JSON.stringify(config.tournament || DEFAULT_TOURNAMENT));
     draftDivisions = JSON.parse(JSON.stringify(config.divisions || []));
     draftActiveDivisionId = config.activeDivisionId || draftDivisions[0]?.id || "div_1";
-    const synced = await syncDraftPlayerFieldsFromRoster(draftActiveDivisionId);
-    if (synced) {
-        // Keep Config toggles + DB aligned with Excel/roster columns
-        try {
-            const saveFn =
-                typeof saveAuctionConfigToDisk === "function"
-                    ? saveAuctionConfigToDisk
-                    : saveAuctionConfig;
-            await saveFn({
-                tournament: draftTournament,
-                divisions: draftDivisions,
-                activeDivisionId: draftActiveDivisionId
-            });
-        } catch (_) {
-            // still show synced toggles in the form
-        }
-    }
+    // Player field Show/Required checkboxes come from DB only.
+    // Do NOT re-sync from roster here — that was wiping saved toggles on every refresh.
     tournamentNameInput.value = draftTournament.name || "";
     tournamentYearInput.value = draftTournament.year || "";
     applyDivisionFieldsToForm(getDraftActiveDivision());
     renderAll();
     if (saveStatus && !String(saveStatus.textContent || "").includes("Could not load")) {
         const teamCount = (getDraftActiveDivision()?.teams || []).length;
-        saveStatus.textContent = `Loaded from database: ${getTournamentTitle(draftTournament)} · ${draftDivisions.length} division(s) · ${teamCount} teams in active division.`;
+        const activeFields = getDraftActiveDivision()?.playerFields || {};
+        const visibleCount = Object.values(activeFields).filter((f) => f && f.visible !== false).length;
+        saveStatus.textContent = `Loaded from database: ${getTournamentTitle(draftTournament)} · ${draftDivisions.length} division(s) · ${teamCount} teams · ${visibleCount} player field(s) shown on auction.`;
     }
 }
 

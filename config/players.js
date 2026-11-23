@@ -919,9 +919,8 @@ async function refreshPlayers({ preferFile = false } = {}) {
         // Always use this division's own list (including empty). Never borrow Main's file pool.
         const stored = loadStoredPlayers(activeDivisionId);
         playersCache = enrichPlayers(Array.isArray(stored) ? stored : []);
-        if (playersCache.length) {
-            await syncConfigPlayerFieldsFromRoster();
-        }
+        // Do not rewrite Config player-field toggles from roster on every refresh.
+        // Excel import is the only path that auto-updates Show-on-auction fields.
         updateFilterOptions();
         renderPlayersTable();
         applyPlayersFormFieldPolicy();
