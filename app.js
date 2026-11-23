@@ -510,6 +510,23 @@ async function handleWelcomeStartNew() {
         await loadAuctionStateForActiveDivision(welcomeConfigCache);
         // Persist Icon/Caption pre-assigns immediately so Resume picks them up from DB
         await saveAuctionProgress({ awaitDisk: true, critical: true });
+        const iconCount = (state.teams || []).reduce((sum, team) => {
+            const hasIcon = team?.iconPlayerId != null && team.iconPlayerId !== "";
+            const hasCaption = team?.captionPlayerId != null && team.captionPlayerId !== "";
+            return sum + (hasIcon ? 1 : 0) + (hasCaption ? 1 : 0);
+        }, 0);
+        const preAssigned = (state.allPlayers || []).filter(
+            (player) =>
+                String(player?.preAssignRole || "").toLowerCase() === "icon" ||
+                String(player?.preAssignRole || "").toLowerCase() === "caption"
+        ).length;
+        if (iconCount > 0 && preAssigned === 0) {
+            alert(
+                "Icon/Caption players are set in Config but could not be matched to the roster. Re-save Config, then Start New again."
+            );
+        } else if (preAssigned > 0) {
+            console.info(`Icon/Caption: ${preAssigned} player(s) pre-assigned and removed from the auction queue.`);
+        }
         showTournamentDetails();
         refreshWelcomeDivisionActions();
     } catch (error) {
@@ -814,6 +831,7 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         // Re-bind Icon/Caption from Config so category quota setting still applies after DB resume
         let iconEnsured = false;
         if (typeof ensureIconCaptionAssignments === "function") {
+            const queueBefore = (state.players || []).length;
             const beforeBought = (state.teams || []).reduce(
                 (sum, team) => sum + (Number(team.player_bought) || 0),
                 0
@@ -823,7 +841,8 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
                 (sum, team) => sum + (Number(team.player_bought) || 0),
                 0
             );
-            iconEnsured = afterBought !== beforeBought;
+            iconEnsured =
+                afterBought !== beforeBought || (state.players || []).length !== queueBefore;
         }
 
         if (state.auctionCount < (state.players || []).length) {
@@ -856,6 +875,10 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         // Teams come only from this division's config — never a shared teams.json
         if (!state.teams?.length && typeof buildFreshTeamsFromConfig === "function") {
             state.teams = buildFreshTeamsFromConfig(auctionConfig);
+        }
+        // Second pass: catch id/code mismatches that the first apply missed
+        if (typeof ensureIconCaptionAssignments === "function") {
+            ensureIconCaptionAssignments(state, auctionConfig);
         }
     }
 }

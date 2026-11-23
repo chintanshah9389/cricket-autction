@@ -81,9 +81,21 @@ function mapTeamRow(row) {
 
 function mapPlayerRow(row) {
   const fields = row.fields && typeof row.fields === "object" ? row.fields : {};
+  // Prefer stable external/numeric id so Icon picks (numeric) match auction roster
+  const fieldsId =
+    fields.id != null && String(fields.id).trim() !== ""
+      ? String(fields.id).trim()
+      : fields.externalId != null && String(fields.externalId).trim() !== ""
+        ? String(fields.externalId).trim()
+        : null;
+  const externalId =
+    row.external_id != null && String(row.external_id).trim() !== ""
+      ? String(row.external_id).trim()
+      : fieldsId;
   return {
     ...fields,
-    id: row.external_id || row.code || row.id,
+    id: externalId || row.code || row.id,
+    code: row.code || fields.code || externalId || "",
     dbId: row.id,
     name: row.name,
     category: row.category || fields.category || "",

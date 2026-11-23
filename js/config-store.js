@@ -1419,6 +1419,12 @@ function findPlayerByAssignableId(list, playerId) {
     if (playerId == null || playerId === "") return null;
     const needle = String(playerId).trim();
     if (!needle) return null;
+    const needleNum = Number(needle);
+    const needleIsNumeric = Number.isFinite(needleNum) && /^\d+$/.test(needle);
+    const codeToId =
+        typeof codeToNumericId === "function" && !needleIsNumeric
+            ? codeToNumericId(needle)
+            : null;
     return (
         (list || []).find((player) => {
             if (!player) return false;
@@ -1426,6 +1432,12 @@ function findPlayerByAssignableId(list, playerId) {
             if (sameAssignablePlayerId(player.code, playerId)) return true;
             const code = String(player.code || "").trim();
             if (code && code.toLowerCase() === needle.toLowerCase()) return true;
+            // Icon pick 2009 ↔ roster code CPL-K-9 (and the reverse)
+            if (typeof codeToNumericId === "function" && code) {
+                const fromCode = codeToNumericId(code);
+                if (needleIsNumeric && fromCode === needleNum) return true;
+                if (codeToId != null && sameAssignablePlayerId(player.id, codeToId)) return true;
+            }
             return false;
         }) || null
     );

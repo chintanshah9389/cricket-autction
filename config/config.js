@@ -819,7 +819,16 @@ function resolveConfigPlayerPhotoSrc(photo) {
 
 function findDraftDivisionPlayer(playerId) {
     if (playerId == null || playerId === "") return null;
-    return (draftDivisionPlayers || []).find((player) => String(player.id) === String(playerId)) || null;
+    if (typeof findPlayerByAssignableId === "function") {
+        return findPlayerByAssignableId(draftDivisionPlayers || [], playerId);
+    }
+    return (
+        (draftDivisionPlayers || []).find(
+            (player) =>
+                String(player.id) === String(playerId) ||
+                String(player.code || "") === String(playerId)
+        ) || null
+    );
 }
 
 function normalizeAssignableFormId(value) {
@@ -1275,11 +1284,21 @@ async function saveForm() {
         applyDivisionFieldsToForm(getDraftActiveDivision());
         const active = getActiveDivision(saved);
         const teamCount = (active.teams || []).length;
+        const iconAssigned = (active.teams || []).filter(
+            (team) => team.iconPlayerId != null && team.iconPlayerId !== ""
+        ).length;
+        const captionAssigned = (active.teams || []).filter(
+            (team) => team.captionPlayerId != null && team.captionPlayerId !== ""
+        ).length;
         const orderLabel =
             active.auctionOrder === "RANDOM"
                 ? "Random"
                 : active.categorySequence.map((name, index) => `${index + 1}. ${displayCategoryName(name)}`).join(" → ");
-        saveStatus.textContent = `Saved in database. ${getTournamentTitle(saved.tournament)}. ${saved.divisions.length} division(s). Active: ${active.name} (${teamCount} teams). Order: ${orderLabel}. Kitty ${formatMoney(active.teamKitty)}.`;
+        const iconNote =
+            active.iconCaption?.enabled || iconAssigned || captionAssigned
+                ? ` Icon/Caption on (${iconAssigned} icon, ${captionAssigned} caption).`
+                : "";
+        saveStatus.textContent = `Saved in database. ${getTournamentTitle(saved.tournament)}. ${saved.divisions.length} division(s). Active: ${active.name} (${teamCount} teams). Order: ${orderLabel}. Kitty ${formatMoney(active.teamKitty)}.${iconNote}`;
         renderAll();
     } catch (error) {
         saveStatus.textContent = error.message || "Could not save configuration to database.";
