@@ -42,6 +42,7 @@ const PLAYER_FIELD_ALIASES = {
     category: [
         "category",
         "catagory",
+        "cata gory",
         "categories",
         "player category",
         "auction category",
@@ -66,6 +67,11 @@ function normalizeHeaderKey(value) {
         .toLowerCase()
         .replace(/[_\-]+/g, " ")
         .replace(/\s+/g, " ");
+}
+
+/** Compact form so "CATA GORY" matches "catagory" / "category". */
+function compactHeaderKey(value) {
+    return normalizeHeaderKey(value).replace(/\s+/g, "");
 }
 
 function normalizeRoleName(rawRole) {
@@ -113,14 +119,18 @@ function codeToNumericId(code, fallbackIndex) {
 
 function pickRowValue(row, aliases, { skipKeys = [] } = {}) {
     const map = {};
+    const compactMap = {};
     const skip = new Set((skipKeys || []).map((key) => normalizeHeaderKey(key)));
+    const skipCompact = new Set((skipKeys || []).map((key) => compactHeaderKey(key)));
     Object.keys(row || {}).forEach((key) => {
         const normalized = normalizeHeaderKey(key);
-        if (skip.has(normalized)) return;
+        const compact = compactHeaderKey(key);
+        if (skip.has(normalized) || skipCompact.has(compact)) return;
         map[normalized] = row[key];
+        compactMap[compact] = row[key];
     });
     for (const alias of aliases) {
-        const value = map[normalizeHeaderKey(alias)];
+        const value = map[normalizeHeaderKey(alias)] ?? compactMap[compactHeaderKey(alias)];
         if (value != null && String(value).trim() !== "") return value;
     }
     return "";
@@ -204,8 +214,11 @@ function resolvePlayerCategory(rawCategory, code = "", { forceFromCode = false }
 function rowHasCategoryColumn(row) {
     if (!row || typeof row !== "object") return false;
     const keys = Object.keys(row).map((key) => normalizeHeaderKey(key));
+    const compactKeys = new Set(Object.keys(row).map((key) => compactHeaderKey(key)));
     const aliases = PLAYER_FIELD_ALIASES.category.map((alias) => normalizeHeaderKey(alias));
-    return aliases.some((alias) => keys.includes(alias));
+    return aliases.some(
+        (alias) => keys.includes(alias) || compactKeys.has(compactHeaderKey(alias))
+    );
 }
 
 const RESERVED_PLAYER_KEYS = new Set([

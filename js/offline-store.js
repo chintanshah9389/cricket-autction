@@ -586,9 +586,7 @@ async function cachePlayersPhotos(players, divisionId, { assetPrefix = "", onPro
         return { players: list, cached, failed, total: list.length, mode: saas ? "r2" : "disk" };
     };
 
-    if (window.SaasAuth?.withBusy) {
-        return window.SaasAuth.withBusy(`Storing ${list.length} photos…`, run);
-    }
+    // Avoid nested busy overlays when Excel import already shows progress.
     return run();
 }
 

@@ -34,6 +34,12 @@ const importPackBtn = document.getElementById("import-pack-btn");
 const packFile = document.getElementById("pack-file");
 const bulkDeleteBtn = document.getElementById("bulk-delete-btn");
 const excelColumnsHelp = document.getElementById("excel-columns-help");
+const playersFileLabel = document.getElementById("players-file-label");
+const importProgress = document.getElementById("import-progress");
+const importProgressLabel = document.getElementById("import-progress-label");
+const importProgressPct = document.getElementById("import-progress-pct");
+const importProgressBar = document.getElementById("import-progress-bar");
+const importProgressFill = document.getElementById("import-progress-fill");
 
 let playersCache = [];
 let editingKey = "";
@@ -42,6 +48,54 @@ let activeDivisionId = "div_1";
 let divisionsCache = [];
 let selectedPlayerKeys = new Set();
 let lastDetectedExcelColumns = [];
+let importInFlight = false;
+
+function setImportProgress(percent, label) {
+    const pct = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    if (importProgress) importProgress.hidden = false;
+    if (importProgressLabel && label) importProgressLabel.textContent = label;
+    if (importProgressPct) importProgressPct.textContent = `${pct}%`;
+    if (importProgressFill) importProgressFill.style.width = `${pct}%`;
+    if (importProgressBar) importProgressBar.setAttribute("aria-valuenow", String(pct));
+    if (window.SaasAuth?.updateBusy && label) {
+        window.SaasAuth.updateBusy(label);
+    }
+}
+
+function hideImportProgress() {
+    if (importProgress) importProgress.hidden = true;
+    if (importProgressFill) importProgressFill.style.width = "0%";
+    if (importProgressPct) importProgressPct.textContent = "0%";
+    if (importProgressBar) importProgressBar.setAttribute("aria-valuenow", "0");
+}
+
+function syncImportButtons() {
+    const hasFile = Boolean(fileInput?.files?.[0]);
+    if (importReplaceBtn) importReplaceBtn.disabled = !hasFile || importInFlight;
+    if (importMergeBtn) importMergeBtn.disabled = !hasFile || importInFlight;
+    const drop = fileInput?.closest?.(".file-drop");
+    if (drop) {
+        drop.classList.toggle("has-file", hasFile);
+        drop.classList.toggle("is-uploading", importInFlight);
+    }
+}
+
+function onPlayersFileChosen() {
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        if (playersFileLabel) {
+            playersFileLabel.textContent = "CSV, Excel, or JSON — then click Upload";
+        }
+        setStatus("Choose a spreadsheet, then click Upload players.");
+        syncImportButtons();
+        return;
+    }
+    if (playersFileLabel) {
+        playersFileLabel.textContent = `Selected: ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB)`;
+    }
+    setStatus(`Ready: ${file.name}. Click Upload players (or Merge upload).`);
+    syncImportButtons();
+}
 
 function getActiveDivisionConfigSlice() {
     return divisionsCache.find((item) => item.id === activeDivisionId) || null;
@@ -906,20 +960,38 @@ async function runImport(mode) {
         setStatus("Choose a CSV or Excel file first.", true);
         return;
     }
+    if (importInFlight) {
+        setStatus("Upload already in progress…");
+        return;
+    }
     if (typeof usesTournamentDb === "function" && !usesTournamentDb()) {
         setStatus("Select a tournament from the dashboard first, then import Excel.", true);
         return;
     }
+    if (typeof parseSpreadsheetFile !== "function") {
+        setStatus("Players import helper is not loaded. Refresh the page.", true);
+        return;
+    }
+    if (
+        /\.xlsx?$/i.test(file.name) &&
+        typeof XLSX === "undefined"
+    ) {
+        setStatus("Excel library failed to load. Refresh the Players page and try again.", true);
+        return;
+    }
+
+    importInFlight = true;
+    syncImportButtons();
+    setImportProgress(2, `Reading ${file.name}…`);
+    setStatus(`Uploading ${file.name}…`);
 
     const importWork = async () => {
-        if (window.SaasAuth?.updateBusy) {
-            window.SaasAuth.updateBusy(`Reading ${file.name}…`);
-        }
-        setStatus(`Reading ${file.name}...`);
+        setImportProgress(8, `Reading ${file.name}…`);
         const rows = await parseSpreadsheetFile(file);
         if (!rows.length) {
             throw new Error("No rows found in the spreadsheet.");
         }
+        setImportProgress(22, `Parsed ${rows.length} rows…`);
         const detectedColumns =
             typeof getDetectedSpreadsheetColumns === "function"
                 ? getDetectedSpreadsheetColumns(rows)
@@ -931,6 +1003,7 @@ async function runImport(mode) {
         // Turn on auction Player fields that exist in this Excel/CSV
         if (typeof detectPlayerFieldPresenceFromRows === "function" &&
             typeof applyPlayerFieldsFromSpreadsheet === "function") {
+            setImportProgress(30, "Updating player fields…");
             const presence = detectPlayerFieldPresenceFromRows(rows);
             config = applyPlayerFieldsFromSpreadsheet(config, activeDivisionId, presence);
             if (typeof setActiveDivisionId === "function") {
@@ -949,9 +1022,7 @@ async function runImport(mode) {
             applyPlayersFormFieldPolicy();
         }
 
-        if (window.SaasAuth?.updateBusy) {
-            window.SaasAuth.updateBusy(`Saving ${rows.length} players to database…`);
-        }
+        setImportProgress(45, `Saving ${rows.length} players to database…`);
         let saved =
             typeof importPlayerRowsToDb === "function"
                 ? await importPlayerRowsToDb(rows, {
@@ -961,6 +1032,7 @@ async function runImport(mode) {
                   })
                 : importPlayerRows(rows, { mode, config, divisionId: activeDivisionId });
 
+        setImportProgress(70, `Saved ${saved.length} players…`);
         const catSummary = formatCategoryBreakdown(saved);
         const shownFields =
             typeof getExpectedSpreadsheetColumns === "function"
@@ -992,8 +1064,7 @@ async function runImport(mode) {
                     (!hasCategoryCol
                         ? "No CATEGORY column detected — almost everyone may default to Rising Star. "
                         : "Most players are Rising Star. ") +
-                    "Use “Fix categories from ID (CPL-R/K/E)” if IDs encode the pool.",
-                true
+                    "Use “Fix categories from ID (CPL-R/K/E)” if IDs encode the pool."
             );
         } else {
             setStatus(
@@ -1002,19 +1073,22 @@ async function runImport(mode) {
             );
         }
 
-        // Photos are optional and must not block Excel import.
+        // Photos are optional — finish roster first so Excel never looks "stuck".
+        setImportProgress(78, "Roster saved. Checking photos…");
         if (photoCandidates.length && typeof cachePlayersPhotos === "function") {
             setOfflineStatus(`Storing ${photoCandidates.length} photo URL(s) in cloud…`);
             try {
-                if (window.SaasAuth?.updateBusy) {
-                    window.SaasAuth.updateBusy(
-                        `Storing photos 0/${photoCandidates.length}…`
-                    );
-                }
                 const result = await cachePlayersPhotos(saved, activeDivisionId, {
                     assetPrefix: "../",
                     onProgress: (done, total, cached) => {
-                        setOfflineStatus(`Saving photos ${done}/${total} (written ${cached})…`);
+                        const pct = 78 + Math.round((done / Math.max(1, total)) * 20);
+                        setImportProgress(
+                            pct,
+                            `Storing photos ${done}/${total} (saved ${cached})…`
+                        );
+                        setOfflineStatus(
+                            `Saving photos ${done}/${total} (written ${cached})…`
+                        );
                     }
                 });
                 saved = await saveStoredPlayersToDisk(result.players, activeDivisionId);
@@ -1039,17 +1113,23 @@ async function runImport(mode) {
                 `Players saved in database: ${saved.length}. No photo URLs in Excel — upload photo files if needed.`
             );
         }
+        setImportProgress(100, `Done — ${saved.length} players uploaded`);
     };
 
     try {
         if (window.SaasAuth?.withBusy) {
-            await window.SaasAuth.withBusy(`Importing ${file.name}…`, importWork);
+            await window.SaasAuth.withBusy(`Uploading ${file.name}…`, importWork);
         } else {
             await importWork();
         }
     } catch (error) {
         console.error(error);
+        setImportProgress(100, "Upload failed");
         setStatus(error.message || "Import failed.", true);
+    } finally {
+        importInFlight = false;
+        syncImportButtons();
+        setTimeout(() => hideImportProgress(), 1800);
     }
 }
 
@@ -1200,12 +1280,14 @@ async function deleteSelectedPlayers() {
     }
 }
 
+fileInput?.addEventListener("change", onPlayersFileChosen);
 importReplaceBtn.addEventListener("click", () => runImport("replace"));
 importMergeBtn.addEventListener("click", () => runImport("merge"));
 reloadFileBtn.addEventListener("click", () => {
-    if (playersCache.length && !confirm("Replace the current editor list with data/players.json?")) return;
-    refreshPlayers({ preferFile: true });
+    if (playersCache.length && !confirm("Reload players for this division from the database?")) return;
+    refreshPlayers({ preferFile: false });
 });
+syncImportButtons();
 
 downloadTemplateBtn.addEventListener("click", () => {
     const fields = getActiveDivisionConfigSlice()?.playerFields;

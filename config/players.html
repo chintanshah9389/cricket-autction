@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=17">
-    <link rel="stylesheet" href="players.css?v=24">
+    <link rel="stylesheet" href="players.css?v=25">
 </head>
 <body>
     <div class="desk-shell">
@@ -58,16 +58,25 @@
                 <div class="upload-panel">
                     <label class="file-drop" for="players-file">
                         <span class="file-drop-title">Choose spreadsheet</span>
-                        <span class="help tight">CSV, Excel, or JSON</span>
+                        <span class="help tight" id="players-file-label">CSV, Excel, or JSON — then click Upload</span>
                         <input id="players-file" type="file" accept=".csv,.xlsx,.xls,.json,text/csv">
                     </label>
+                    <div class="upload-progress" id="import-progress" hidden>
+                        <div class="upload-progress-meta">
+                            <span id="import-progress-label">Waiting…</span>
+                            <span id="import-progress-pct">0%</span>
+                        </div>
+                        <div class="upload-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="import-progress-bar">
+                            <div class="upload-progress-fill" id="import-progress-fill"></div>
+                        </div>
+                    </div>
                     <div class="tool-strip compact">
                         <div class="tool-group">
                             <h3 class="tool-label">Bring in</h3>
                             <div class="upload-actions">
-                                <button type="button" id="import-replace-btn" class="primary compact-primary">Import &amp; Replace</button>
-                                <button type="button" id="import-merge-btn" class="secondary-btn">Merge</button>
-                                <button type="button" id="reload-file-btn" class="ghost-btn">Reload data/players.json</button>
+                                <button type="button" id="import-replace-btn" class="primary compact-primary" disabled>Upload players</button>
+                                <button type="button" id="import-merge-btn" class="secondary-btn" disabled>Merge upload</button>
+                                <button type="button" id="reload-file-btn" class="ghost-btn">Reload from database</button>
                             </div>
                         </div>
                         <div class="tool-group">
@@ -81,7 +90,7 @@
                         </div>
                     </div>
                 </div>
-                <p id="import-status" class="status" aria-live="polite"></p>
+                <p id="import-status" class="status" aria-live="polite">Choose a spreadsheet, then click Upload players.</p>
             </section>
 
             <section class="config-panel">
@@ -264,9 +273,9 @@
     <script src="../js/config-store.js?v=28"></script>
     <script src="/app/js/saas-auth.js?v=3"></script>
     <script src="../js/project-store.js?v=26"></script>
-    <script src="../js/players-store.js?v=30"></script>
-    <script src="../js/offline-store.js?v=25"></script>
-    <script src="players.js?v=32"></script>
+    <script src="../js/players-store.js?v=31"></script>
+    <script src="../js/offline-store.js?v=26"></script>
+    <script src="players.js?v=33"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

@@ -39,6 +39,53 @@
     gap: 14px;
 }
 
+.upload-progress {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(18, 50, 95, 0.12);
+    background: linear-gradient(180deg, #f7fbff, #eef6fb);
+}
+
+.upload-progress[hidden] {
+    display: none !important;
+}
+
+.upload-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--pitch-deep, #16325c);
+}
+
+.upload-progress-track {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(22, 50, 92, 0.12);
+    overflow: hidden;
+}
+
+.upload-progress-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0f9d94, #1f8fbf);
+    transition: width 180ms ease;
+}
+
+.file-drop.has-file {
+    border-color: rgba(15, 157, 148, 0.55);
+    background: #f3fbfa;
+}
+
+.file-drop.is-uploading {
+    pointer-events: none;
+    opacity: 0.72;
+}
+
 .player-editor {
     display: grid;
     grid-template-columns: 220px minmax(0, 1fr);
