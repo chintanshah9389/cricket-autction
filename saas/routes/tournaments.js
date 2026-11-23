@@ -53,6 +53,16 @@ function sanitizeDivisionCode(value, fallbackIndex) {
 function mapTeamRow(row) {
   const logo = row.logo_key ? publicUrlForKey(row.logo_key) : "";
   const video = row.video_key ? publicUrlForKey(row.video_key) : "";
+  const iconRef =
+    row.icon_player_ref ||
+    row.icon_external_id ||
+    row.icon_player_code ||
+    null;
+  const captionRef =
+    row.caption_player_ref ||
+    row.caption_external_id ||
+    row.caption_player_code ||
+    null;
   return {
     id: row.team_key,
     team_id: row.team_key,
@@ -63,8 +73,8 @@ function mapTeamRow(row) {
     logoKey: row.logo_key || null,
     video: video || "",
     videoKey: row.video_key || null,
-    iconPlayerId: row.icon_player_id || null,
-    captionPlayerId: row.caption_player_id || null,
+    ...(iconRef != null && iconRef !== "" ? { iconPlayerId: iconRef } : {}),
+    ...(captionRef != null && captionRef !== "" ? { captionPlayerId: captionRef } : {}),
     dbId: row.id
   };
 }
@@ -136,7 +146,16 @@ async function buildSnapshot(tournamentId) {
 
   for (const division of divisions) {
     const teams = await query(
-      `SELECT * FROM teams WHERE division_id = $1 ORDER BY team_key ASC`,
+      `SELECT t.*,
+              ip.external_id AS icon_external_id,
+              ip.code AS icon_player_code,
+              cp.external_id AS caption_external_id,
+              cp.code AS caption_player_code
+       FROM teams t
+       LEFT JOIN players ip ON ip.id = t.icon_player_id
+       LEFT JOIN players cp ON cp.id = t.caption_player_id
+       WHERE t.division_id = $1
+       ORDER BY t.team_key ASC`,
       [division.id]
     );
     const players = await query(
@@ -168,9 +187,14 @@ async function buildSnapshot(tournamentId) {
     [tournamentId]
   );
 
+  const savedActive = String(tournament.active_division_code || "").trim();
   const activeDivisionId =
+    (savedActive && projectDivisions.some((d) => d.id === savedActive) && savedActive) ||
     projectDivisions[0]?.id ||
     (divisions[0] ? divisionCodeFromSort(divisions[0].sort_order) : "div_1");
+
+  const activeDivision =
+    projectDivisions.find((d) => d.id === activeDivisionId) || projectDivisions[0] || null;
 
   return {
     ok: true,
@@ -187,7 +211,8 @@ async function buildSnapshot(tournamentId) {
       year: tournament.year,
       slug: tournament.slug,
       logoKey: tournament.logo_key,
-      logo: tournament.logo_key ? publicUrlForKey(tournament.logo_key) : null
+      logo: tournament.logo_key ? publicUrlForKey(tournament.logo_key) : null,
+      activeDivisionId
     },
     project: {
       tournament: {
@@ -198,11 +223,28 @@ async function buildSnapshot(tournamentId) {
       },
       activeDivisionId,
       divisions: projectDivisions,
-      teams: projectDivisions[0]?.teams || []
+      teams: activeDivision?.teams || projectDivisions[0]?.teams || []
     },
     divisions: divisionPayloads,
     partners: partners.rows.map(mapPartnerRow)
   };
+}
+
+async function resolvePlayerIdByRef(client, divisionDbId, ref) {
+  const value = ref == null ? "" : String(ref).trim();
+  if (!value) return null;
+  const found = await client.query(
+    `SELECT id FROM players
+     WHERE division_id = $1
+       AND (
+         external_id = $2
+         OR code = $2
+         OR id::text = $2
+       )
+     LIMIT 1`,
+    [divisionDbId, value]
+  );
+  return found.rows[0]?.id || null;
 }
 
 async function syncTeamsForDivision(client, divisionDbId, teams) {
@@ -222,6 +264,16 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
     const prev = existingByKey.get(teamKey);
     const logoKey = resolveMediaKey(team, "logoKey", "logo");
     const videoKey = resolveMediaKey(team, "videoKey", "video");
+    const iconRef =
+      team.iconPlayerId != null && String(team.iconPlayerId).trim() !== ""
+        ? String(team.iconPlayerId).trim()
+        : null;
+    const captionRef =
+      team.captionPlayerId != null && String(team.captionPlayerId).trim() !== ""
+        ? String(team.captionPlayerId).trim()
+        : null;
+    const iconPlayerId = await resolvePlayerIdByRef(client, divisionDbId, iconRef);
+    const captionPlayerId = await resolvePlayerIdByRef(client, divisionDbId, captionRef);
     if (prev?.logo_key && prev.logo_key !== logoKey) {
       await deleteObjectQuiet(prev.logo_key);
       await client.query(`DELETE FROM media_objects WHERE object_key = $1`, [prev.logo_key]);
@@ -231,13 +283,20 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
       await client.query(`DELETE FROM media_objects WHERE object_key = $1`, [prev.video_key]);
     }
     await client.query(
-      `INSERT INTO teams (division_id, team_key, team_name, color, logo_key, video_key)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO teams (
+         division_id, team_key, team_name, color, logo_key, video_key,
+         icon_player_id, caption_player_id, icon_player_ref, caption_player_ref
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (division_id, team_key) DO UPDATE SET
          team_name = EXCLUDED.team_name,
          color = EXCLUDED.color,
          logo_key = EXCLUDED.logo_key,
          video_key = EXCLUDED.video_key,
+         icon_player_id = EXCLUDED.icon_player_id,
+         caption_player_id = EXCLUDED.caption_player_id,
+         icon_player_ref = EXCLUDED.icon_player_ref,
+         caption_player_ref = EXCLUDED.caption_player_ref,
          updated_at = NOW()`,
       [
         divisionDbId,
@@ -245,7 +304,11 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
         String(team.teamName || team.team_name || team.name || `Team ${teamKey}`),
         String(team.color || "#3498db"),
         logoKey,
-        videoKey
+        videoKey,
+        iconPlayerId,
+        captionPlayerId,
+        iconRef,
+        captionRef
       ]
     );
   }
@@ -335,6 +398,7 @@ async function handleTournamentRoutes(req, res, url) {
     const config = body.config || body;
     const tournamentMeta = config.tournament || {};
     const divisions = Array.isArray(config.divisions) ? config.divisions : [];
+    const requestedActive = String(config.activeDivisionId || "").trim();
 
     const client = await require("../db/pool").getPool().connect();
     try {
@@ -351,20 +415,6 @@ async function handleTournamentRoutes(req, res, url) {
           previousLogoKey
         ]);
       }
-      await client.query(
-        `UPDATE tournaments
-         SET name = COALESCE(NULLIF($2, ''), name),
-             year = COALESCE(NULLIF($3, ''), year),
-             logo_key = $4,
-             updated_at = NOW()
-         WHERE id = $1`,
-        [
-          tournamentId,
-          String(tournamentMeta.name || "").trim(),
-          String(tournamentMeta.year || "").trim(),
-          nextLogoKey
-        ]
-      );
 
       const keepCodes = [];
       for (let i = 0; i < divisions.length; i++) {
@@ -430,6 +480,28 @@ async function handleTournamentRoutes(req, res, url) {
         );
       }
 
+      const activeDivisionCode =
+        (requestedActive && keepCodes.includes(requestedActive) && requestedActive) ||
+        keepCodes[0] ||
+        null;
+
+      await client.query(
+        `UPDATE tournaments
+         SET name = COALESCE(NULLIF($2, ''), name),
+             year = COALESCE(NULLIF($3, ''), year),
+             logo_key = $4,
+             active_division_code = $5,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [
+          tournamentId,
+          String(tournamentMeta.name || "").trim(),
+          String(tournamentMeta.year || "").trim(),
+          nextLogoKey,
+          activeDivisionCode
+        ]
+      );
+
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -439,6 +511,21 @@ async function handleTournamentRoutes(req, res, url) {
     }
 
     sendJson(res, 200, { ok: true, config: (await buildSnapshot(tournamentId)).project });
+    return true;
+  }
+
+  // Full config GET — same payload as snapshot.project for clients that only need settings.
+  if (configMatch && req.method === "GET") {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+    const tournamentId = configMatch[1];
+    const ctx = await requireTournamentAccess(user, tournamentId, READ_ROLES);
+    if (!ctx) {
+      sendJson(res, 403, { error: "Forbidden" });
+      return true;
+    }
+    const snapshot = await buildSnapshot(tournamentId);
+    sendJson(res, 200, { ok: true, config: snapshot.project, snapshot });
     return true;
   }
 
@@ -539,6 +626,7 @@ async function handleTournamentRoutes(req, res, url) {
          SET name = COALESCE(NULLIF(name, ''), 'New Auction'),
              year = COALESCE(NULLIF(year, ''), $2),
              logo_key = NULL,
+             active_division_code = 'div_1',
              updated_at = NOW()
          WHERE id = $1`,
         [tournamentId, year]

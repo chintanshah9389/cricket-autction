@@ -1155,8 +1155,16 @@ async function syncDraftPlayerFieldsFromRoster(divisionId = draftActiveDivisionI
 }
 
 async function loadForm() {
-    if (typeof hydrateLocalStorageFromProjectFolder === "function") {
-        await hydrateLocalStorageFromProjectFolder();
+    try {
+        if (typeof reloadTournamentFromDb === "function") {
+            await reloadTournamentFromDb();
+        } else if (typeof hydrateLocalStorageFromProjectFolder === "function") {
+            await hydrateLocalStorageFromProjectFolder();
+        }
+    } catch (error) {
+        if (saveStatus) {
+            saveStatus.textContent = error.message || "Could not load configuration from database.";
+        }
     }
     const config = await getAuctionConfig();
     draftTournament = JSON.parse(JSON.stringify(config.tournament || DEFAULT_TOURNAMENT));
@@ -1164,7 +1172,7 @@ async function loadForm() {
     draftActiveDivisionId = config.activeDivisionId || draftDivisions[0]?.id || "div_1";
     const synced = await syncDraftPlayerFieldsFromRoster(draftActiveDivisionId);
     if (synced) {
-        // Keep Config toggles + disk aligned with Excel/roster columns
+        // Keep Config toggles + DB aligned with Excel/roster columns
         try {
             const saveFn =
                 typeof saveAuctionConfigToDisk === "function"
@@ -1183,6 +1191,10 @@ async function loadForm() {
     tournamentYearInput.value = draftTournament.year || "";
     applyDivisionFieldsToForm(getDraftActiveDivision());
     renderAll();
+    if (saveStatus && !String(saveStatus.textContent || "").includes("Could not load")) {
+        const teamCount = (getDraftActiveDivision()?.teams || []).length;
+        saveStatus.textContent = `Loaded from database: ${getTournamentTitle(draftTournament)} · ${draftDivisions.length} division(s) · ${teamCount} teams in active division.`;
+    }
 }
 
 function addCategory() {
@@ -1253,12 +1265,20 @@ async function saveForm() {
     }
 
     try {
-        saveStatus.textContent = "Saving to database…";
+        saveStatus.textContent = "Saving full configuration to database…";
         const saveFn =
             typeof saveAuctionConfigToDisk === "function" ? saveAuctionConfigToDisk : saveAuctionConfig;
-        const saved = await saveFn(draft);
+        await saveFn(draft);
+        // Re-fetch from Postgres so the form matches what will load next visit.
+        if (typeof reloadTournamentFromDb === "function") {
+            await reloadTournamentFromDb();
+        }
+        const saved = await getAuctionConfig();
+        draftTournament = JSON.parse(JSON.stringify(saved.tournament || DEFAULT_TOURNAMENT));
         draftDivisions = JSON.parse(JSON.stringify(saved.divisions || []));
-        draftActiveDivisionId = saved.activeDivisionId;
+        draftActiveDivisionId = saved.activeDivisionId || draftDivisions[0]?.id || "div_1";
+        tournamentNameInput.value = draftTournament.name || "";
+        tournamentYearInput.value = draftTournament.year || "";
         applyDivisionFieldsToForm(getDraftActiveDivision());
         const active = getActiveDivision(saved);
         const teamCount = (active.teams || []).length;
@@ -1266,10 +1286,10 @@ async function saveForm() {
             active.auctionOrder === "RANDOM"
                 ? "Random"
                 : active.categorySequence.map((name, index) => `${index + 1}. ${displayCategoryName(name)}`).join(" → ");
-        saveStatus.textContent = `Saved. ${getTournamentTitle(saved.tournament)}. ${saved.divisions.length} division(s). Active: ${active.name} (${teamCount} teams). Order: ${orderLabel}. Kitty ${formatMoney(active.teamKitty)}.`;
+        saveStatus.textContent = `Saved in database. ${getTournamentTitle(saved.tournament)}. ${saved.divisions.length} division(s). Active: ${active.name} (${teamCount} teams). Order: ${orderLabel}. Kitty ${formatMoney(active.teamKitty)}.`;
         renderAll();
     } catch (error) {
-        saveStatus.textContent = error.message || "Could not save configuration.";
+        saveStatus.textContent = error.message || "Could not save configuration to database.";
     }
 }
 

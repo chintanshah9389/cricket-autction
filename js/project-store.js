@@ -342,7 +342,15 @@ async function persistConfigToProjectFolder(config) {
             // write incoming as-is if snapshot unavailable
         }
 
-        await putProjectConfig(next);
+        const saved = await putProjectConfig(next);
+        // Always keep local cache aligned with what Postgres actually stored.
+        if (saved && typeof saved === "object") {
+            try {
+                localStorage.setItem("auctionConfig", JSON.stringify(saved));
+            } catch (_) {
+                // ignore quota
+            }
+        }
         return true;
     });
 }
