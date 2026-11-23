@@ -1,5 +1,5 @@
 /**
- * SaaS auction API — Postgres + Cloudflare R2 + legacy desk file APIs.
+ * SaaS auction API — Postgres + Cloudflare R2 only (no data-project).
  * Local: copy .env.example → .env, then:
  *   npm install
  *   npm run saas:migrate

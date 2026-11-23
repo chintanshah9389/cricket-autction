@@ -160,112 +160,57 @@ function fillForm(partner) {
     nameInput.focus();
 }
 
-function usesSaasPartners() {
-    return Boolean(
-        typeof usesTournamentDb === "function" &&
-            usesTournamentDb() &&
-            window.SaasAuth?.api &&
-            window.SaasAuth?.getActiveTournamentId?.()
-    );
+function requireSaasPartners() {
+    if (!window.SaasAuth?.api || !window.SaasAuth?.getActiveTournamentId?.()) {
+        throw new Error("Select a tournament first. Partners are stored in the database.");
+    }
 }
 
 function partnersApiBase() {
+    requireSaasPartners();
     const id = encodeURIComponent(window.SaasAuth.getActiveTournamentId());
     return `/api/v1/tournaments/${id}/partners`;
 }
 
 async function fetchPartners() {
-    if (usesSaasPartners()) {
-        const payload = await window.SaasAuth.api(partnersApiBase());
-        partners = sortPartners(payload.partners || []);
-        return;
-    }
-    const response = await fetch(PARTNERS_API, { cache: "no-store" });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not load partners.");
+    const payload = await window.SaasAuth.api(partnersApiBase());
     partners = sortPartners(payload.partners || []);
 }
 
 async function savePartnersList(nextList) {
-    if (usesSaasPartners()) {
-        const payload = await window.SaasAuth.api(partnersApiBase(), {
-            method: "PUT",
-            body: { partners: nextList }
-        });
-        partners = sortPartners(payload.partners || nextList);
-        return;
-    }
-    const response = await fetch(PARTNERS_API, {
+    const payload = await window.SaasAuth.api(partnersApiBase(), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partners: nextList })
+        body: { partners: nextList }
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not save partners.");
     partners = sortPartners(payload.partners || nextList);
 }
 
 async function uploadLogo(partnerId, dataUrl) {
-    if (usesSaasPartners() && window.SaasAuth?.uploadMedia) {
-        const blob = await (await fetch(dataUrl)).blob();
-        const file = new File([blob], `${partnerId || "partner"}-logo.jpg`, {
-            type: blob.type || "image/jpeg"
-        });
-        const uploaded = await window.SaasAuth.uploadMedia(file, "partner-logo");
-        return { path: uploaded.publicUrl || "", key: uploaded.objectKey };
-    }
-    const mimeMatch = String(dataUrl || "").match(/^data:([^;]+);base64,/);
-    const mimeType = mimeMatch?.[1] || "image/jpeg";
-    const response = await fetch(`${PARTNERS_API}/logo`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            id: partnerId,
-            dataBase64: dataUrl,
-            mimeType
-        })
+    requireSaasPartners();
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], `${partnerId || "partner"}-logo.jpg`, {
+        type: blob.type || "image/jpeg"
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not upload logo.");
-    return { path: payload.path, key: null };
+    const uploaded = await window.SaasAuth.uploadMedia(file, "partner-logo");
+    return { path: uploaded.publicUrl || "", key: uploaded.objectKey };
 }
 
 async function deleteLogo(partnerId, logoKey = "") {
-    if (usesSaasPartners() && logoKey && window.SaasAuth?.deleteMedia) {
+    if (logoKey && window.SaasAuth?.deleteMedia) {
         await window.SaasAuth.deleteMedia(logoKey).catch(() => {});
-        return;
     }
-    await fetch(`${PARTNERS_API}/logo/${encodeURIComponent(partnerId)}`, {
-        method: "DELETE"
-    }).catch(() => {});
 }
 
 async function uploadVideo(partnerId, file) {
-    if (usesSaasPartners() && window.SaasAuth?.uploadMedia) {
-        const uploaded = await window.SaasAuth.uploadMedia(file, "partner-video");
-        return { path: uploaded.publicUrl || "", key: uploaded.objectKey };
-    }
-    const response = await fetch(`${PARTNERS_API}/video?id=${encodeURIComponent(partnerId)}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": file.type || "video/mp4",
-            "X-Partner-Id": partnerId
-        },
-        body: file
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Could not upload video.");
-    return { path: payload.path, key: null };
+    requireSaasPartners();
+    const uploaded = await window.SaasAuth.uploadMedia(file, "partner-video");
+    return { path: uploaded.publicUrl || "", key: uploaded.objectKey };
 }
 
 async function deleteVideo(partnerId, videoKey = "") {
-    if (usesSaasPartners() && videoKey && window.SaasAuth?.deleteMedia) {
+    if (videoKey && window.SaasAuth?.deleteMedia) {
         await window.SaasAuth.deleteMedia(videoKey).catch(() => {});
-        return;
     }
-    await fetch(`${PARTNERS_API}/video/${encodeURIComponent(partnerId)}`, {
-        method: "DELETE"
-    }).catch(() => {});
 }
 
 function readImageFileAsDataUrl(file) {
@@ -517,18 +462,13 @@ async function boot() {
         renderList();
         setStatus(
             partners.length
-                ? usesSaasPartners()
-                    ? "Partners loaded for this tournament."
-                    : "Partners loaded from data-project."
+                ? "Partners loaded from database for this tournament."
                 : "Ready to add partners."
         );
     } catch (error) {
         resetForm();
         renderList();
-        setStatus(
-            error.message || "Could not load partners. Start with: node server.js",
-            true
-        );
+        setStatus(error.message || "Could not load partners from database.", true);
     }
 }
 

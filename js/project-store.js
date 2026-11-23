@@ -1,9 +1,7 @@
 /**
- * Project sync — SaaS tournament DB (preferred) or legacy data-project/ APIs.
- * localStorage is a fast cache hydrated on boot from the server source of truth.
+ * Project sync — SaaS only (Postgres + R2).
+ * localStorage is a fast cache. No data-project / offline file server.
  */
-
-const PROJECT_API_BASE = "/api/project";
 
 let projectApiReadyCache = null;
 let projectApiReadyAt = 0;
@@ -23,30 +21,29 @@ function getSaasTournamentId() {
     }
 }
 
+function requireTournamentDb() {
+    if (!window.SaasAuth?.api) {
+        throw new Error("SaaS auth required. Open /app/login.html and sign in.");
+    }
+    const id = getSaasTournamentId();
+    if (!id) {
+        throw new Error("Select a tournament from the dashboard first.");
+    }
+    return id;
+}
+
 function usesTournamentDb() {
     return Boolean(getSaasTournamentId() && window.SaasAuth?.api);
 }
 
 function tournamentApiBase() {
-    const id = encodeURIComponent(getSaasTournamentId());
+    const id = encodeURIComponent(requireTournamentDb());
     return `/api/v1/tournaments/${id}`;
 }
 
 async function projectApiFetch(path, { method = "GET", body } = {}) {
-    if (usesTournamentDb()) {
-        return window.SaasAuth.api(path, { method, body });
-    }
-    const response = await fetch(path, {
-        method,
-        headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        cache: "no-store"
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(payload.error || `Request failed (${response.status})`);
-    }
-    return payload;
+    requireTournamentDb();
+    return window.SaasAuth.api(path, { method, body });
 }
 
 async function checkProjectApiReady({ force = false } = {}) {
@@ -55,12 +52,11 @@ async function checkProjectApiReady({ force = false } = {}) {
         return projectApiReadyCache;
     }
     try {
-        if (usesTournamentDb()) {
-            const health = await window.SaasAuth.api("/api/v1/health");
-            projectApiReadyCache = Boolean(health?.ok);
+        if (!usesTournamentDb()) {
+            projectApiReadyCache = false;
         } else {
-            const response = await fetch(`${PROJECT_API_BASE}/health`, { cache: "no-store" });
-            projectApiReadyCache = response.ok;
+            const health = await window.SaasAuth.api("/api/v1/health");
+            projectApiReadyCache = Boolean(health?.ok && health?.db);
         }
     } catch (_) {
         projectApiReadyCache = false;
@@ -70,21 +66,11 @@ async function checkProjectApiReady({ force = false } = {}) {
 }
 
 async function fetchProjectSnapshot() {
-    if (usesTournamentDb()) {
-        return projectApiFetch(`${tournamentApiBase()}/snapshot`);
-    }
-    return projectApiFetch(PROJECT_API_BASE);
+    return projectApiFetch(`${tournamentApiBase()}/snapshot`);
 }
 
 async function putProjectConfig(config) {
-    if (usesTournamentDb()) {
-        const payload = await projectApiFetch(`${tournamentApiBase()}/config`, {
-            method: "PUT",
-            body: { config }
-        });
-        return payload.config;
-    }
-    const payload = await projectApiFetch(`${PROJECT_API_BASE}/config`, {
+    const payload = await projectApiFetch(`${tournamentApiBase()}/config`, {
         method: "PUT",
         body: { config }
     });
@@ -93,14 +79,7 @@ async function putProjectConfig(config) {
 
 async function putDivisionPlayers(divisionId, players) {
     const id = encodeURIComponent(divisionId || "div_1");
-    if (usesTournamentDb()) {
-        const payload = await projectApiFetch(
-            `${tournamentApiBase()}/divisions/${id}/players`,
-            { method: "PUT", body: { players: players || [] } }
-        );
-        return payload.players;
-    }
-    const payload = await projectApiFetch(`${PROJECT_API_BASE}/divisions/${id}/players`, {
+    const payload = await projectApiFetch(`${tournamentApiBase()}/divisions/${id}/players`, {
         method: "PUT",
         body: { players: players || [] }
     });
@@ -109,45 +88,22 @@ async function putDivisionPlayers(divisionId, players) {
 
 async function putDivisionAuction(divisionId, auction) {
     const id = encodeURIComponent(divisionId || "div_1");
-    if (usesTournamentDb()) {
-        const payload = await projectApiFetch(
-            `${tournamentApiBase()}/divisions/${id}/auction`,
-            { method: "PUT", body: { auction: auction || null, status: "live" } }
-        );
-        return payload.auction;
-    }
-    const payload = await projectApiFetch(`${PROJECT_API_BASE}/divisions/${id}/auction`, {
+    const payload = await projectApiFetch(`${tournamentApiBase()}/divisions/${id}/auction`, {
         method: "PUT",
-        body: { auction: auction || null }
+        body: { auction: auction || null, status: "live" }
     });
     return payload.auction;
 }
 
 async function deleteDivisionAuction(divisionId) {
     const id = encodeURIComponent(divisionId || "div_1");
-    if (usesTournamentDb()) {
-        await projectApiFetch(`${tournamentApiBase()}/divisions/${id}/auction`, {
-            method: "DELETE"
-        });
-        return;
-    }
-    await projectApiFetch(`${PROJECT_API_BASE}/divisions/${id}/auction`, {
+    await projectApiFetch(`${tournamentApiBase()}/divisions/${id}/auction`, {
         method: "DELETE"
     });
 }
 
 async function resetProjectFolderOnDisk() {
-    if (usesTournamentDb()) {
-        throw new Error("Reset tournament from Org dashboard / Tournaments (DB mode).");
-    }
-    const generation = bumpProjectPersistGeneration();
-    await flushProjectPersistQueue();
-    return enqueueProjectPersist(async () => {
-        if (generation !== projectPersistGeneration) {
-            throw new Error("Reset superseded by a newer project write.");
-        }
-        return projectApiFetch(PROJECT_API_BASE, { method: "DELETE" });
-    });
+    throw new Error("Reset tournament from Org dashboard / Tournaments. No local data-project folder.");
 }
 
 /** True when auction snapshot has a roster worth resuming. */
@@ -170,9 +126,9 @@ function readLocalAuctionSnapshot(divisionId) {
 }
 
 /**
- * Apply disk snapshot to localStorage.
- * Config + players: disk wins.
- * Auction: disk wins when present; if disk has no auction.json, keep a meaningful
+ * Apply DB snapshot to localStorage cache.
+ * Config + players: DB wins.
+ * Auction: DB wins when present; if DB has no auction yet, keep a meaningful
  * local mid-auction cache so refresh does not wipe Resume.
  */
 function applyProjectSnapshotToLocalStorage(snapshot, options = {}) {
@@ -253,10 +209,13 @@ function clearAuctionLocalStorageCaches() {
 }
 
 /**
- * Boot: data-project/ is the source of truth.
- * localStorage is only a fast cache — never push browser cache over disk on boot.
+ * Boot: Postgres tournament snapshot is the source of truth.
+ * localStorage is only a fast cache — never push browser cache over DB on boot.
  */
 async function hydrateLocalStorageFromProjectFolder() {
+    if (!usesTournamentDb()) {
+        return { ok: false, reason: "saas-required" };
+    }
     const ready = await checkProjectApiReady({ force: true });
     if (!ready) return { ok: false, reason: "offline" };
 
@@ -398,7 +357,7 @@ async function persistAuctionToProjectFolder(divisionId, auction) {
 }
 
 /**
- * Serialize disk writes so an older in-flight PUT cannot overwrite a newer
+ * Serialize DB writes so an older in-flight PUT cannot overwrite a newer
  * reset/import. bumpProjectPersistGeneration() invalidates queued work.
  */
 let projectPersistChain = Promise.resolve();
@@ -422,12 +381,12 @@ function enqueueProjectPersist(task) {
         return result;
     });
     projectPersistChain = run.catch((error) => {
-        console.warn("Project folder sync:", error?.message || error);
+        console.warn("Tournament DB sync:", error?.message || error);
     });
     return run;
 }
 
-/** Fire-and-forget disk sync helper (serialized; skips stale generations) */
+/** Fire-and-forget DB sync helper (serialized; skips stale generations) */
 function voidProjectPersist(task) {
     enqueueProjectPersist(task);
 }

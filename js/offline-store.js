@@ -1,9 +1,6 @@
 /**
- * Player photos on disk via local server.js
- * Paths: data-project/divisions/<divisionId>/photos/<code>.jpg
- * (legacy assets/players-photo/ still recognized)
- *
- * Legacy idb: refs still resolve if present in IndexedDB.
+ * Tournament media helpers — SaaS R2 only (keys stored in Postgres).
+ * No data-project / offline file server.
  */
 
 const OFFLINE_DB_NAME = "cricket-auction-offline";
@@ -170,12 +167,14 @@ function usesSaasMedia() {
     );
 }
 
-async function requireAssetsApi() {
-    if (usesSaasMedia()) return;
-    const ready = await checkAssetsApiReady({ force: true });
-    if (!ready) {
-        throw new Error("Start the desk with: node server.js  (needed to save into data-project/)");
+function requireSaasMedia() {
+    if (!usesSaasMedia()) {
+        throw new Error("Cloud media requires login + selected tournament (Postgres + R2).");
     }
+}
+
+async function requireAssetsApi() {
+    requireSaasMedia();
 }
 
 function blobToDataUrl(blob) {
@@ -261,47 +260,19 @@ async function fetchImageAsBlob(url, { timeoutMs = 12000 } = {}) {
     }
 }
 
-/**
- * Save a photo blob into data-project/divisions/<divisionId>/photos/<code>.ext
- * Returns the relative project path.
- */
+/** Upload a photo blob to R2 and return { path, photoKey }. */
 async function putOfflineMedia({ divisionId, kind = "player", id, blob, mimeType }) {
     if (!blob) throw new Error("Missing media blob.");
     const code = String(id || "").trim();
     if (!code) throw new Error("Missing player code.");
-
-    if (typeof usesTournamentDb === "function" && usesTournamentDb() && window.SaasAuth?.uploadMedia) {
-        const file = new File([blob], `${code}.jpg`, {
-            type: mimeType || blob.type || "image/jpeg"
-        });
-        const uploaded = await window.SaasAuth.uploadMedia(file, "player-photo");
-        return {
-            path: uploaded.publicUrl || "",
-            photoKey: uploaded.objectKey || null
-        };
-    }
-
-    await requireAssetsApi();
-    const dataUrl = await blobToDataUrl(blob);
-    const response = await fetch("/api/photos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            divisionId: divisionId || "div_1",
-            code,
-            mimeType: mimeType || blob.type || "image/jpeg",
-            dataBase64: dataUrlToBase64(dataUrl)
-        })
+    requireSaasMedia();
+    const file = new File([blob], `${code}.jpg`, {
+        type: mimeType || blob.type || "image/jpeg"
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(payload.error || `Could not save photo (${response.status}).`);
-    }
+    const uploaded = await window.SaasAuth.uploadMedia(file, kind === "player" ? "player-photo" : kind);
     return {
-        path:
-            payload.path ||
-            `data-project/divisions/${divisionId || "div_1"}/photos/${code}.jpg`,
-        photoKey: null
+        path: uploaded.publicUrl || "",
+        photoKey: uploaded.objectKey || null
     };
 }
 

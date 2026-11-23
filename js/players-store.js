@@ -607,7 +607,7 @@ function saveStoredPlayers(players, divisionId = getActivePlayersDivisionId(), o
     return list;
 }
 
-/** Save roster and wait until data-project/divisions/<id>/players.json is written. */
+/** Save roster and wait until Postgres tournament players are written. */
 async function saveStoredPlayersToDisk(players, divisionId = getActivePlayersDivisionId(), options = {}) {
     const list = (players || []).map((player, index) => normalizePlayerRecord(player, index));
     localStorage.setItem(resolvePlayersStorageKey(divisionId), JSON.stringify(list));
