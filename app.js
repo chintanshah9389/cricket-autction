@@ -480,15 +480,266 @@ async function handleWelcomeResume() {
     startMainApplication();
 }
 
+let pendingResetAuctionEnterDesk = true;
+
+function getResetAuctionCategoryOptions(config) {
+    const normalized =
+        typeof normalizeConfig === "function"
+            ? normalizeConfig(config || welcomeConfigCache || state?.config || {})
+            : config || {};
+    const sequence =
+        typeof getCategorySequence === "function"
+            ? getCategorySequence(normalized).map((name) => normalizeCategoryName(name))
+            : Object.keys(normalized.categories || {}).map((name) => normalizeCategoryName(name));
+    const master = state?.allPlayers || state?.players || [];
+    const present = new Set(
+        master.map((player) => normalizeCategoryName(player?.category)).filter(Boolean)
+    );
+    const names = [
+        ...sequence.filter(Boolean),
+        ...[...present].filter((name) => !sequence.includes(name))
+    ];
+    return names.map((name) => {
+        const stats =
+            typeof getCategoryRoundStats === "function"
+                ? getCategoryRoundStats(name)
+                : { total: 0, sold: 0, unsold: 0, pending: 0 };
+        return {
+            category: name,
+            label: typeof displayCategoryName === "function" ? displayCategoryName(name) : name,
+            ...stats
+        };
+    });
+}
+
+function closeResetAuctionModal() {
+    const modal = document.getElementById("reset-auction-modal");
+    if (!modal) return;
+    modal.style.display = "none";
+    modal.setAttribute("aria-hidden", "true");
+}
+
+function openResetAuctionModal({ enterDesk = true } = {}) {
+    if (!requireServerOnline("reset the auction")) return;
+    pendingResetAuctionEnterDesk = enterDesk !== false;
+    setDeskMenuOpen?.(false);
+    setWelcomeMenuOpen?.(false);
+
+    const modal = document.getElementById("reset-auction-modal");
+    const list = document.getElementById("reset-auction-category-list");
+    const selectAll = document.getElementById("reset-auction-select-all");
+    const title = document.getElementById("reset-auction-title");
+    if (!modal || !list) {
+        resetAuctionProgressOnly({ enterDesk: pendingResetAuctionEnterDesk, confirmFirst: true });
+        return;
+    }
+
+    const config = welcomeConfigCache || state?.config || {};
+    const division = typeof getActiveDivision === "function" ? getActiveDivision(config) : null;
+    if (title) {
+        title.textContent = division?.name
+            ? `Reset Auction — ${division.name}`
+            : "Reset Auction";
+    }
+
+    const options = getResetAuctionCategoryOptions(config);
+    if (!options.length) {
+        list.innerHTML = `<div class="unsold-pool-empty">No categories found for this division.</div>`;
+    } else {
+        list.innerHTML = options
+            .map((row) => {
+                const meta = `${row.pending || 0} waiting · ${row.sold || 0} sold · ${row.unsold || 0} unsold`;
+                return `
+                    <label class="category-switch-row reset-auction-category-row">
+                        <span>
+                            <strong>${row.label}</strong>
+                            <small>${meta}</small>
+                        </span>
+                        <input type="checkbox" class="reset-auction-category-cb" value="${row.category}" checked>
+                    </label>
+                `;
+            })
+            .join("");
+    }
+
+    if (selectAll) {
+        selectAll.checked = true;
+        selectAll.onchange = () => {
+            list.querySelectorAll(".reset-auction-category-cb").forEach((box) => {
+                box.checked = selectAll.checked;
+            });
+        };
+    }
+    list.querySelectorAll(".reset-auction-category-cb").forEach((box) => {
+        box.addEventListener("change", () => {
+            if (!selectAll) return;
+            const boxes = [...list.querySelectorAll(".reset-auction-category-cb")];
+            selectAll.checked = boxes.length > 0 && boxes.every((item) => item.checked);
+        });
+    });
+
+    modal.style.display = "flex";
+    modal.setAttribute("aria-hidden", "false");
+}
+
+function getSelectedResetAuctionCategories() {
+    return [...document.querySelectorAll("#reset-auction-category-list .reset-auction-category-cb:checked")]
+        .map((box) => normalizeCategoryName(box.value))
+        .filter(Boolean);
+}
+
+function clearPlayerAuctionResult(player) {
+    if (!player) return;
+    player.status = "not-auctioned";
+    player.bids = [];
+    player.finalPrice = null;
+    player.team = null;
+    delete player.preAssignRole;
+}
+
+function removePlayerFromTeamRoster(team, player) {
+    if (!team || !player) return;
+    const before = Array.isArray(team.players) ? team.players.length : 0;
+    const sameId =
+        typeof sameAssignablePlayerId === "function"
+            ? sameAssignablePlayerId
+            : (a, b) => String(a) === String(b);
+    team.players = (team.players || []).filter((id) => !sameId(id, player.id));
+    if ((team.players || []).length === before) return;
+    const price = Number(player.finalPrice) || 0;
+    team.player_bought = Math.max(0, (Number(team.player_bought) || 0) - 1);
+    team.total_cost = Math.max(0, (Number(team.total_cost) || 0) - price);
+    team.remaining_budget = (Number(team.team_budget) || 0) - (Number(team.total_cost) || 0);
+}
+
+/**
+ * Reset only the chosen categories inside the active division.
+ * Other categories and other divisions keep their progress.
+ */
+function resetAuctionCategoriesInState(categoryNames) {
+    const targets = new Set(
+        (categoryNames || []).map((name) => normalizeCategoryName(name)).filter(Boolean)
+    );
+    if (!targets.size || !state) return 0;
+
+    const master = Array.isArray(state.allPlayers) && state.allPlayers.length
+        ? state.allPlayers
+        : Array.isArray(state.players)
+          ? state.players
+          : [];
+    const queue = Array.isArray(state.players) ? state.players : [];
+    const byId = new Map();
+    master.forEach((player) => {
+        if (player?.id != null) byId.set(String(player.id), player);
+        if (player?.code) byId.set(String(player.code), player);
+    });
+
+    let resetCount = 0;
+    const touchPlayer = (player) => {
+        if (!player) return;
+        const category = normalizeCategoryName(player.category);
+        if (!targets.has(category)) return;
+        if (String(player.status || "").toLowerCase() === "sold" && player.team != null) {
+            const team = (state.teams || []).find(
+                (entry) => Number(entry.team_id) === Number(player.team)
+            );
+            removePlayerFromTeamRoster(team, player);
+        }
+        clearPlayerAuctionResult(player);
+        resetCount += 1;
+    };
+
+    master.forEach(touchPlayer);
+    queue.forEach((player) => {
+        const source = byId.get(String(player?.id)) || byId.get(String(player?.code));
+        if (source && source !== player && targets.has(normalizeCategoryName(source.category))) {
+            // Keep queue copy aligned with master after master clear
+            clearPlayerAuctionResult(player);
+        } else {
+            touchPlayer(player);
+        }
+    });
+
+    state.allPlayers = master;
+    state.soldPlayers = master
+        .filter((player) => String(player.status || "").toLowerCase() === "sold")
+        .map((player) => player.id);
+    state.unsoldPlayers = master
+        .filter((player) => {
+            const status = String(player.status || "").toLowerCase();
+            return status === "unsold" || status === "skipped";
+        })
+        .map((player) => player.id);
+    state.soldCount = state.soldPlayers.length;
+    state.unsoldCount = state.unsoldPlayers.length;
+
+    if (typeof ensureIconCaptionAssignments === "function") {
+        ensureIconCaptionAssignments(state, welcomeConfigCache || state.config);
+    }
+
+    const config = welcomeConfigCache || state.config;
+    const remaining = master.filter((player) => {
+        const status = String(player.status || "").toLowerCase();
+        return status !== "sold" && status !== "unsold" && status !== "skipped";
+    });
+    state.players =
+        typeof orderPlayersForAuction === "function"
+            ? orderPlayersForAuction(remaining, config)
+            : remaining.slice();
+
+    const preferred =
+        [...targets].find((name) =>
+            (state.players || []).some(
+                (player) => normalizeCategoryName(player.category) === name
+            )
+        ) ||
+        normalizeCategoryName(state.players?.[0]?.category) ||
+        "";
+    if (preferred) setActiveAuctionCategory(preferred);
+    const nextIndex = (state.players || []).findIndex(
+        (player) => normalizeCategoryName(player.category) === preferred
+    );
+    state.auctionCount = nextIndex >= 0 ? nextIndex : 0;
+    history = { undoStack: [], redoStack: [] };
+    return resetCount;
+}
+
 /**
  * Clear sold/unsold/bid progress for the active division only.
  * Keeps Config, teams, players, Icon/Caption picks, and partners unchanged.
+ * Pass categoryNames to reset only those categories; omit / all = full division restart.
  */
-async function resetAuctionProgressOnly({ enterDesk = true, confirmFirst = true } = {}) {
+async function resetAuctionProgressOnly({
+    enterDesk = true,
+    confirmFirst = true,
+    categoryNames = null
+} = {}) {
     if (!requireServerOnline("reset the auction")) return false;
+
+    const available = getResetAuctionCategoryOptions(
+        welcomeConfigCache || state?.config || {}
+    ).map((row) => row.category);
+    const selected = Array.isArray(categoryNames)
+        ? categoryNames.map((name) => normalizeCategoryName(name)).filter(Boolean)
+        : available.slice();
+    if (!selected.length) {
+        alert("Select at least one category to reset.");
+        return false;
+    }
+
+    const resettingAll =
+        available.length > 0 && available.every((name) => selected.includes(name));
+
     if (confirmFirst) {
+        const labels = selected
+            .map((name) =>
+                typeof displayCategoryName === "function" ? displayCategoryName(name) : name
+            )
+            .join(", ");
         const ok = confirm(
-            "Reset Auction?\n\nThis clears sold / unsold / bid progress for this division only.\nConfig, teams, players, and Icon/Caption picks stay unchanged."
+            resettingAll
+                ? `Reset all categories for this division?\n\nConfig, teams, players, and Icon/Caption picks stay unchanged.`
+                : `Reset only these categories?\n\n${labels}\n\nOther categories keep their progress. Config and players stay unchanged.`
         );
         if (!ok) return false;
     }
@@ -504,6 +755,7 @@ async function resetAuctionProgressOnly({ enterDesk = true, confirmFirst = true 
     try {
         setDeskMenuOpen?.(false);
         setWelcomeMenuOpen?.(false);
+        closeResetAuctionModal();
 
         if (typeof getAuctionConfig === "function") {
             welcomeConfigCache = await getAuctionConfig();
@@ -512,19 +764,34 @@ async function resetAuctionProgressOnly({ enterDesk = true, confirmFirst = true 
             }
         }
 
-        localStorage.removeItem(getAuctionDataStorageKey(divisionId));
-        if (divisionId === "div_1") localStorage.removeItem("auctionData");
-        if (typeof bumpProjectPersistGeneration === "function") {
-            bumpProjectPersistGeneration();
-        }
-        if (typeof persistAuctionToProjectFolder === "function") {
-            await persistAuctionToProjectFolder(divisionId, null);
-            if (typeof flushProjectPersistQueue === "function") {
-                await flushProjectPersistQueue();
+        const hasAuction =
+            Boolean(state?.allPlayers?.length || state?.players?.length) ||
+            (typeof divisionHasSavedAuction === "function" &&
+                divisionHasSavedAuction(divisionId));
+
+        if (resettingAll || !hasAuction) {
+            localStorage.removeItem(getAuctionDataStorageKey(divisionId));
+            if (divisionId === "div_1") localStorage.removeItem("auctionData");
+            if (typeof bumpProjectPersistGeneration === "function") {
+                bumpProjectPersistGeneration();
             }
+            if (typeof persistAuctionToProjectFolder === "function") {
+                await persistAuctionToProjectFolder(divisionId, null);
+                if (typeof flushProjectPersistQueue === "function") {
+                    await flushProjectPersistQueue();
+                }
+            }
+            await loadAuctionStateForActiveDivision(welcomeConfigCache);
+        } else {
+            // Partial category reset — keep other categories' sold/unsold progress
+            if (!state?.allPlayers?.length && !state?.players?.length) {
+                await loadAuctionStateForActiveDivision(welcomeConfigCache);
+            } else {
+                state.config = welcomeConfigCache;
+            }
+            resetAuctionCategoriesInState(selected);
         }
 
-        await loadAuctionStateForActiveDivision(welcomeConfigCache);
         await saveAuctionProgress({ awaitDisk: true, critical: true });
 
         const iconCount = (state.teams || []).reduce((sum, team) => {
@@ -557,6 +824,19 @@ async function resetAuctionProgressOnly({ enterDesk = true, confirmFirst = true 
         alert(error?.message || "Could not reset auction progress.");
         return false;
     }
+}
+
+async function confirmResetAuctionFromModal() {
+    const selected = getSelectedResetAuctionCategories();
+    if (!selected.length) {
+        alert("Select at least one category to reset.");
+        return;
+    }
+    await resetAuctionProgressOnly({
+        enterDesk: pendingResetAuctionEnterDesk,
+        confirmFirst: true,
+        categoryNames: selected
+    });
 }
 
 async function handleWelcomeStartNew() {
@@ -4250,10 +4530,15 @@ const initApp = async () => {
         resetEntireProjectFlow();
     });
     document.getElementById("welcome-reset-auction-btn")?.addEventListener("click", () => {
-        resetAuctionProgressOnly({ enterDesk: false, confirmFirst: true });
+        openResetAuctionModal({ enterDesk: false });
     });
     document.getElementById("reset-auction-button")?.addEventListener("click", () => {
-        resetAuctionProgressOnly({ enterDesk: true, confirmFirst: true });
+        openResetAuctionModal({ enterDesk: true });
+    });
+    document.getElementById("reset-auction-close-btn")?.addEventListener("click", closeResetAuctionModal);
+    document.getElementById("reset-auction-cancel-btn")?.addEventListener("click", closeResetAuctionModal);
+    document.getElementById("reset-auction-confirm-btn")?.addEventListener("click", () => {
+        confirmResetAuctionFromModal();
     });
     document.getElementById("desk-reset-project-btn")?.addEventListener("click", () => {
         resetEntireProjectFlow();

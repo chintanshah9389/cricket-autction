@@ -435,6 +435,24 @@
         </div>
     </div>
 
+    <div id="reset-auction-modal" class="modal-overlay" style="display: none;" aria-hidden="true">
+        <div class="modal-content category-complete-modal">
+            <span class="modal-close" id="reset-auction-close-btn">&times;</span>
+            <p class="modal-eyebrow">Active division only</p>
+            <h2 id="reset-auction-title">Reset Auction</h2>
+            <p id="reset-auction-text">Choose which categories to clear. Config, teams, players, and Icon/Caption picks stay unchanged. Other divisions are not touched.</p>
+            <label class="find-player-include" style="margin: 0.75rem 0 0.5rem;">
+                <input type="checkbox" id="reset-auction-select-all" checked>
+                <span>Select all categories</span>
+            </label>
+            <div id="reset-auction-category-list" class="category-switch-list" role="group" aria-label="Categories to reset"></div>
+            <div class="modal-buttons">
+                <button type="button" id="reset-auction-cancel-btn" class="modal-submit-btn reset">Cancel</button>
+                <button type="button" id="reset-auction-confirm-btn" class="modal-submit-btn resume">Reset selected</button>
+            </div>
+        </div>
+    </div>
+
     <div id="category-switch-modal" class="modal-overlay" style="display: none;" aria-hidden="true">
         <div class="modal-content category-complete-modal">
             <span class="modal-close" id="category-switch-close-btn">&times;</span>
@@ -554,7 +572,7 @@
     <script src="js/project-store.js?v=30"></script>
     <script src="js/players-store.js?v=34"></script>
     <script src="js/offline-store.js?v=27"></script>
-    <script src="app.js?v=61"></script>
+    <script src="app.js?v=62"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>
