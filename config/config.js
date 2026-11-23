@@ -748,8 +748,14 @@ function readIconCaptionFromForm(fallback = {}) {
                   captionFee: 0,
                   countTowardCategoryQuota: true
               };
+    const hasAssignments = (draftTeams || []).some(
+        (team) =>
+            (team?.iconPlayerId != null && team.iconPlayerId !== "") ||
+            (team?.captionPlayerId != null && team.captionPlayerId !== "")
+    );
     return {
-        enabled: Boolean(iconCaptionEnabled?.checked),
+        // Keep feature on when teams already have Icon/Caption picks
+        enabled: Boolean(iconCaptionEnabled?.checked) || hasAssignments,
         iconFee: parseMoneyInput(iconFeeInput?.value) || 0,
         captionFee: parseMoneyInput(captionFeeInput?.value) || 0,
         countTowardCategoryQuota: iconCaptionCountQuota ? iconCaptionCountQuota.checked : normalized.countTowardCategoryQuota !== false

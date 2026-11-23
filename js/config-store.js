@@ -1408,18 +1408,60 @@ function getCategoryConfig(config, categoryName) {
 }
 
 function sameAssignablePlayerId(a, b) {
-    if (a == null || b == null) return false;
-    return String(a) === String(b) || Number(a) === Number(b);
+    if (a == null || b == null || a === "" || b === "") return false;
+    if (String(a) === String(b)) return true;
+    const na = Number(a);
+    const nb = Number(b);
+    return Number.isFinite(na) && Number.isFinite(nb) && na === nb;
 }
 
 function findPlayerByAssignableId(list, playerId) {
     if (playerId == null || playerId === "") return null;
-    return (list || []).find((player) => sameAssignablePlayerId(player?.id, playerId)) || null;
+    const needle = String(playerId).trim();
+    if (!needle) return null;
+    return (
+        (list || []).find((player) => {
+            if (!player) return false;
+            if (sameAssignablePlayerId(player.id, playerId)) return true;
+            if (sameAssignablePlayerId(player.code, playerId)) return true;
+            const code = String(player.code || "").trim();
+            if (code && code.toLowerCase() === needle.toLowerCase()) return true;
+            return false;
+        }) || null
+    );
 }
 
 function isIconCaptionPreAssignedPlayer(player) {
     const role = String(player?.preAssignRole || "").toLowerCase();
     return role === "icon" || role === "caption";
+}
+
+/** True when Config has at least one Icon/Caption player picked on a team. */
+function divisionHasIconCaptionAssignments(division) {
+    return (division?.teams || []).some(
+        (team) =>
+            (team?.iconPlayerId != null && team.iconPlayerId !== "") ||
+            (team?.captionPlayerId != null && team.captionPlayerId !== "")
+    );
+}
+
+function resolveIconCaptionSettings(division) {
+    const settings = normalizeIconCaptionSettings(division?.iconCaption);
+    // Recover when teams still have picks but the enabled flag was lost in a save/reload.
+    if (!settings.enabled && divisionHasIconCaptionAssignments(division)) {
+        return { ...settings, enabled: true };
+    }
+    return settings;
+}
+
+function syncIconCaptionPlayerCopy(target, source) {
+    if (!target || !source) return;
+    target.status = source.status;
+    target.team = source.team;
+    target.finalPrice = source.finalPrice;
+    target.bids = Array.isArray(source.bids) ? source.bids.slice() : [];
+    if (source.preAssignRole) target.preAssignRole = source.preAssignRole;
+    else delete target.preAssignRole;
 }
 
 function countTeamPlayersInCategory(state, teamId, categoryName) {
@@ -1428,7 +1470,8 @@ function countTeamPlayersInCategory(state, teamId, categoryName) {
     if (!team) return 0;
 
     const config = getActiveConfig(state);
-    const iconCaption = normalizeIconCaptionSettings(config?.iconCaption);
+    const activeDivision = getActiveDivision(config);
+    const iconCaption = resolveIconCaptionSettings(activeDivision);
     const countPreAssign = iconCaption.countTowardCategoryQuota !== false;
     const master = state.allPlayers || state.players || [];
 
@@ -1448,7 +1491,7 @@ function applyIconCaptionAssignments(state, config) {
     if (!state) return state;
     const normalized = normalizeConfig(config || state.config || {});
     const division = getActiveDivision(normalized);
-    const settings = normalizeIconCaptionSettings(division.iconCaption);
+    const settings = resolveIconCaptionSettings(division);
     const master = Array.isArray(state.allPlayers) && state.allPlayers.length
         ? state.allPlayers
         : Array.isArray(state.players)
@@ -1459,9 +1502,6 @@ function applyIconCaptionAssignments(state, config) {
     master.forEach((player) => {
         if (!isIconCaptionPreAssignedPlayer(player)) return;
         delete player.preAssignRole;
-        if (player.status === "sold" && (player.finalPrice === settings.iconFee || player.finalPrice === settings.captionFee)) {
-            // leave sold if still on a team roster; apply below will re-set
-        }
     });
 
     if (!settings.enabled) {
@@ -1471,6 +1511,18 @@ function applyIconCaptionAssignments(state, config) {
 
     if (!Array.isArray(state.teams)) state.teams = buildFreshTeamsFromConfig(normalized);
     if (!Array.isArray(state.soldPlayers)) state.soldPlayers = [];
+
+    // Fresh apply: reset team rosters/budgets then assign Icons/Captions only
+    const kitty = Number(division.teamKitty) || 0;
+    state.teams.forEach((team) => {
+        team.players = [];
+        team.player_bought = 0;
+        team.total_cost = 0;
+        team.team_budget = kitty || Number(team.team_budget) || 0;
+        team.remaining_budget = team.team_budget;
+    });
+    state.soldPlayers = [];
+    state.soldCount = 0;
 
     const usedPlayerIds = new Set();
 
@@ -1500,9 +1552,6 @@ function applyIconCaptionAssignments(state, config) {
             team.player_bought = (Number(team.player_bought) || 0) + 1;
             team.total_cost = (Number(team.total_cost) || 0) + amount;
             team.remaining_budget = (Number(team.team_budget) || 0) - (Number(team.total_cost) || 0);
-        } else {
-            player.finalPrice = amount;
-            player.bids = [{ team: team.team_id, amount }];
         }
 
         if (!state.soldPlayers.some((id) => sameAssignablePlayerId(id, player.id))) {
@@ -1510,12 +1559,17 @@ function applyIconCaptionAssignments(state, config) {
         }
         state.soldCount = state.soldPlayers.length;
         usedPlayerIds.add(player.id);
+        if (player.code) usedPlayerIds.add(player.code);
     };
 
     state.teams.forEach((team) => {
         const configTeam =
             getConfigTeams(normalized).find((entry) => Number(entry.team_id) === Number(team.team_id)) ||
             team;
+        if (configTeam.iconPlayerId != null) team.iconPlayerId = configTeam.iconPlayerId;
+        else delete team.iconPlayerId;
+        if (configTeam.captionPlayerId != null) team.captionPlayerId = configTeam.captionPlayerId;
+        else delete team.captionPlayerId;
         assignRole(team, configTeam.iconPlayerId, "icon", settings.iconFee);
         assignRole(team, configTeam.captionPlayerId, "caption", settings.captionFee);
     });
@@ -1531,6 +1585,21 @@ function applyIconCaptionAssignments(state, config) {
         state.auctionCount = 0;
     }
 
+    // Keep division iconCaption enabled in live config when assignments exist
+    if (settings.enabled) {
+        const idx = (normalized.divisions || []).findIndex((item) => item.id === division.id);
+        if (idx >= 0) {
+            normalized.divisions[idx].iconCaption = {
+                ...normalizeIconCaptionSettings(normalized.divisions[idx].iconCaption),
+                enabled: true
+            };
+        }
+        normalized.iconCaption = {
+            ...normalizeIconCaptionSettings(normalized.iconCaption),
+            enabled: true
+        };
+    }
+
     state.config = normalized;
     return state;
 }
@@ -1544,7 +1613,7 @@ function ensureIconCaptionAssignments(state, config) {
     if (!state) return state;
     const normalized = normalizeConfig(config || state.config || {});
     const division = getActiveDivision(normalized);
-    const settings = normalizeIconCaptionSettings(division.iconCaption);
+    const settings = resolveIconCaptionSettings(division);
     state.config = normalized;
 
     const master = Array.isArray(state.allPlayers) && state.allPlayers.length
@@ -1560,16 +1629,16 @@ function ensureIconCaptionAssignments(state, config) {
             const configTeam =
                 getConfigTeams(normalized).find((entry) => Number(entry.team_id) === Number(team.team_id)) ||
                 team;
-            if (configTeam.iconPlayerId != null) {
-                expected.set(String(configTeam.iconPlayerId), {
+            if (configTeam.iconPlayerId != null && configTeam.iconPlayerId !== "") {
+                expected.set(`icon:${String(configTeam.iconPlayerId)}`, {
                     team,
                     role: "icon",
                     fee: settings.iconFee,
                     playerId: configTeam.iconPlayerId
                 });
             }
-            if (configTeam.captionPlayerId != null) {
-                expected.set(String(configTeam.captionPlayerId), {
+            if (configTeam.captionPlayerId != null && configTeam.captionPlayerId !== "") {
+                expected.set(`caption:${String(configTeam.captionPlayerId)}`, {
                     team,
                     role: "caption",
                     fee: settings.captionFee,
@@ -1586,24 +1655,35 @@ function ensureIconCaptionAssignments(state, config) {
     // Drop stale pre-assign marks that are no longer in Config
     master.forEach((player) => {
         if (!isIconCaptionPreAssignedPlayer(player)) return;
-        const stillExpected = [...expected.values()].some((entry) =>
-            sameAssignablePlayerId(entry.playerId, player.id)
+        const stillExpected = [...expected.values()].some(
+            (entry) =>
+                sameAssignablePlayerId(entry.playerId, player.id) ||
+                sameAssignablePlayerId(entry.playerId, player.code)
         );
         if (!stillExpected) delete player.preAssignRole;
     });
 
     if (!settings.enabled) return state;
 
+    const assignedIds = new Set();
     const used = new Set();
     expected.forEach((entry) => {
         if ([...used].some((id) => sameAssignablePlayerId(id, entry.playerId))) return;
         const player = findPlayerByAssignableId(master, entry.playerId);
-        if (!player) return;
+        if (!player) {
+            console.warn(
+                `Icon/Caption resume: player ${entry.playerId} not found for ${entry.team?.team_name} ${entry.role}`
+            );
+            return;
+        }
         const team = entry.team;
         const amount = Math.max(0, Number(entry.fee) || 0);
         const alreadyOnTeam =
             Array.isArray(team.players) &&
-            team.players.some((id) => sameAssignablePlayerId(id, player.id));
+            team.players.some(
+                (id) =>
+                    sameAssignablePlayerId(id, player.id) || sameAssignablePlayerId(id, player.code)
+            );
 
         player.preAssignRole = entry.role;
         player.status = "sold";
@@ -1629,15 +1709,30 @@ function ensureIconCaptionAssignments(state, config) {
         }
         state.soldCount = state.soldPlayers.length;
         used.add(player.id);
+        if (player.code) used.add(player.code);
+        assignedIds.add(String(player.id));
+        if (player.code) assignedIds.add(String(player.code));
     });
 
-    // Keep auction progress: only strip pre-assigned players still sitting in the live queue
+    // Resume snapshots keep separate object copies in players[] vs allPlayers[].
+    // Mirror sold/preAssign marks onto the live queue, then strip by id/code.
     if (Array.isArray(state.players) && state.players.length) {
+        state.players.forEach((queuePlayer) => {
+            const source = findPlayerByAssignableId(master, queuePlayer.id) ||
+                findPlayerByAssignableId(master, queuePlayer.code);
+            if (source && isIconCaptionPreAssignedPlayer(source)) {
+                syncIconCaptionPlayerCopy(queuePlayer, source);
+            }
+        });
         const before = Math.max(0, Number(state.auctionCount) || 0);
+        const isAssignedQueuePlayer = (player) =>
+            isIconCaptionPreAssignedPlayer(player) ||
+            assignedIds.has(String(player?.id)) ||
+            (player?.code != null && assignedIds.has(String(player.code)));
         const removedBefore = state.players
             .slice(0, before)
-            .filter((player) => isIconCaptionPreAssignedPlayer(player)).length;
-        state.players = state.players.filter((player) => !isIconCaptionPreAssignedPlayer(player));
+            .filter((player) => isAssignedQueuePlayer(player)).length;
+        state.players = state.players.filter((player) => !isAssignedQueuePlayer(player));
         state.auctionCount = Math.max(0, Math.min(before - removedBefore, state.players.length));
     }
 

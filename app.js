@@ -812,12 +812,22 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         (state.allPlayers || []).forEach(normalizeSavedPlayer);
 
         // Re-bind Icon/Caption from Config so category quota setting still applies after DB resume
+        let iconEnsured = false;
         if (typeof ensureIconCaptionAssignments === "function") {
+            const beforeBought = (state.teams || []).reduce(
+                (sum, team) => sum + (Number(team.player_bought) || 0),
+                0
+            );
             ensureIconCaptionAssignments(state, auctionConfig);
+            const afterBought = (state.teams || []).reduce(
+                (sum, team) => sum + (Number(team.player_bought) || 0),
+                0
+            );
+            iconEnsured = afterBought !== beforeBought;
         }
 
         if (state.auctionCount < (state.players || []).length) {
-            const lastPlayerStatus = state.players[state.auctionCount].status;
+            const lastPlayerStatus = state.players[state.auctionCount]?.status;
             if (lastPlayerStatus === "sold" || lastPlayerStatus === "unsold" || lastPlayerStatus === "skipped") {
                 state.auctionCount++;
             }
@@ -830,6 +840,15 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
 
         // Repair truncated queues (waiting players still in allPlayers but missing from players)
         ensureAuctionQueueFromMaster();
+
+        // Persist repaired Icon/Caption counts so the next resume matches the desk
+        if (iconEnsured) {
+            try {
+                await saveAuctionProgress({ awaitDisk: true, critical: false });
+            } catch (_) {
+                // desk can continue; next bid will save
+            }
+        }
     } else {
         state.players = await getPlayersData(division.id);
         state.allPlayers = state.players.slice();
