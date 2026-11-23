@@ -332,17 +332,25 @@ async function maybeShowPartnersIntro() {
     }
 
     try {
-        const tournamentId =
-            (typeof getSaasTournamentId === "function" && getSaasTournamentId()) ||
-            window.SaasAuth?.getActiveTournamentId?.();
-        if (!tournamentId || !window.SaasAuth?.api) {
-            clearPartnersIntroQuery();
-            return;
+        let all = [];
+        try {
+            all = JSON.parse(localStorage.getItem("auctionPartners") || "[]");
+        } catch (_) {
+            all = [];
         }
-        const payload = await window.SaasAuth.api(
-            `/api/v1/tournaments/${encodeURIComponent(tournamentId)}/partners`
-        );
-        const all = Array.isArray(payload.partners) ? payload.partners : [];
+        if (!Array.isArray(all) || !all.length) {
+            const tournamentId =
+                (typeof getSaasTournamentId === "function" && getSaasTournamentId()) ||
+                window.SaasAuth?.getActiveTournamentId?.();
+            if (!tournamentId || !window.SaasAuth?.api) {
+                clearPartnersIntroQuery();
+                return;
+            }
+            const payload = await window.SaasAuth.api(
+                `/api/v1/tournaments/${encodeURIComponent(tournamentId)}/partners`
+            );
+            all = Array.isArray(payload.partners) ? payload.partners : [];
+        }
         partnersIntroList = all
             .filter((p) => p && p.highlight)
             .sort((a, b) => Number(a.order || a.sortOrder || 0) - Number(b.order || b.sortOrder || 0));
@@ -658,7 +666,11 @@ async function selectWelcomeDivision(divisionId) {
     });
 
     try {
-        saveAuctionConfig(welcomeConfigCache);
+        if (typeof saveAuctionConfigToDisk === "function") {
+            await saveAuctionConfigToDisk(welcomeConfigCache);
+        } else {
+            saveAuctionConfig(welcomeConfigCache);
+        }
         await loadAuctionStateForActiveDivision(welcomeConfigCache);
     } catch (error) {
         if (token !== welcomeDivisionSwitchToken) return;
@@ -3852,6 +3864,9 @@ function showFinishScreen() {
 }
 
 async function bootLiveProjectFromServer() {
+    if (typeof reloadTournamentFromDb === "function") {
+        await reloadTournamentFromDb();
+    }
     welcomeConfigCache = await getAuctionConfig();
     await loadAuctionStateForActiveDivision(welcomeConfigCache);
     renderWelcomeDivisions();
@@ -3884,6 +3899,25 @@ const initApp = async () => {
     if (welcomeScreen) welcomeScreen.hidden = false;
     if (bigContainer) bigContainer.hidden = true;
 
+    // SaaS desk: auth + tournament required before any config hydrate.
+    try {
+        if (window.SaasAuth?.requireAuth) {
+            const me = await window.SaasAuth.requireAuth();
+            if (!me) return;
+        }
+        if (typeof usesTournamentDb === "function" && !usesTournamentDb()) {
+            window.location.replace("/app/tournaments.html");
+            return;
+        }
+    } catch (error) {
+        if (welcomeTitle) welcomeTitle.innerText = "Sign in required";
+        if (welcomeDivisionNote) {
+            welcomeDivisionNote.textContent =
+                error.message || "Sign in and select a tournament to load configuration from the database.";
+        }
+        return;
+    }
+
     const online = await updateServerStatusUI();
     if (!online) {
         setOfflineOnlyMode(true);
@@ -3907,15 +3941,30 @@ const initApp = async () => {
         return;
     }
 
-    // Fallback tournament file, then overlay configurable branding.
+    // Load full tournament config + players + partners from Postgres only.
     try {
-        state.tournament = await getTournamentData();
+        if (welcomeDivisionNote) {
+            welcomeDivisionNote.textContent = "Loading configuration from database…";
+        }
+        await bootLiveProjectFromServer();
+        state.tournament = buildTournamentState(welcomeConfigCache || DEFAULT_AUCTION_CONFIG);
+        const active = getActiveDivision(welcomeConfigCache || {});
+        const teamCount = (active?.teams || []).length;
+        if (welcomeDivisionNote) {
+            welcomeDivisionNote.textContent = `Loaded from database: ${
+                getTournamentTitle?.(welcomeConfigCache?.tournament) || "Tournament"
+            } · ${(welcomeConfigCache?.divisions || []).length || 0} division(s) · ${teamCount} teams.`;
+        }
     } catch (error) {
-        console.error("Could not load tournament data:", error);
-        state.tournament = buildTournamentState(DEFAULT_AUCTION_CONFIG);
+        console.error("Could not load tournament from database:", error);
+        if (welcomeTitle) welcomeTitle.innerText = "Database load failed";
+        if (welcomeDivisionNote) {
+            welcomeDivisionNote.textContent =
+                error.message ||
+                "Could not load configuration from database. Open Config, click Save, then refresh.";
+        }
+        return;
     }
-
-    await bootLiveProjectFromServer();
 
     if (forceBlankBoot) {
         // Drop ?blank=1 from the URL after a successful blank boot

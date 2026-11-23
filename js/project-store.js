@@ -134,7 +134,7 @@ function readLocalAuctionSnapshot(divisionId) {
 
 /**
  * Apply DB snapshot to localStorage cache.
- * Config + players: DB wins.
+ * Config + players + partners: DB wins.
  * Auction: DB wins when present; if DB has no auction yet, keep a meaningful
  * local mid-auction cache so refresh does not wipe Resume.
  */
@@ -145,7 +145,11 @@ function applyProjectSnapshotToLocalStorage(snapshot, options = {}) {
     const preservedAuctionIds = [];
 
     if (snapshot.project) {
-        localStorage.setItem("auctionConfig", JSON.stringify(snapshot.project));
+        const project =
+            typeof normalizeConfig === "function"
+                ? normalizeConfig(snapshot.project)
+                : snapshot.project;
+        localStorage.setItem("auctionConfig", JSON.stringify(project));
     }
 
     const seen = new Set();
@@ -165,6 +169,16 @@ function applyProjectSnapshotToLocalStorage(snapshot, options = {}) {
             }
         }
     });
+
+    // Partners are part of tournament config surface — keep a local mirror for desk/showcase.
+    try {
+        localStorage.setItem(
+            "auctionPartners",
+            JSON.stringify(Array.isArray(snapshot.partners) ? snapshot.partners : [])
+        );
+    } catch (_) {
+        // ignore
+    }
 
     // Drop stale division keys not present on disk
     const keysToRemove = [];
@@ -228,6 +242,9 @@ async function hydrateLocalStorageFromProjectFolder() {
 
     const forceBlank = isForceBlankProjectBoot();
     const snapshot = await fetchProjectSnapshot();
+    if (!snapshot?.project) {
+        return { ok: false, reason: "empty-snapshot" };
+    }
 
     if (forceBlank) {
         clearAuctionLocalStorageCaches();
@@ -237,21 +254,21 @@ async function hydrateLocalStorageFromProjectFolder() {
         } catch (_) {
             // ignore
         }
-        return { ok: true, blank: true, root: snapshot.root };
+        return { ok: true, blank: true, root: snapshot.root, snapshot };
     }
 
-    // Config/players: disk wins. Auction: keep local mid-progress if disk empty.
+    // Config/players/partners: Postgres wins. Auction: keep local mid-progress if DB empty.
     const applied = applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: false });
     const preservedAuctionIds = applied?.preservedAuctionIds || [];
 
-    // Heal disk so the next refresh also finds Resume (auction.json was missing).
+    // Heal DB so the next refresh also finds Resume (auction snapshot was missing).
     for (const id of preservedAuctionIds) {
         const auction = readLocalAuctionSnapshot(id);
         if (!auction) continue;
         try {
             await persistAuctionToProjectFolder(id, auction);
         } catch (error) {
-            console.warn("Could not restore auction.json for", id, error?.message || error);
+            console.warn("Could not restore auction snapshot for", id, error?.message || error);
         }
     }
 
@@ -259,7 +276,8 @@ async function hydrateLocalStorageFromProjectFolder() {
         ok: true,
         migrated: false,
         root: snapshot.root,
-        preservedAuctionIds
+        preservedAuctionIds,
+        snapshot
     };
 }
 
@@ -381,11 +399,13 @@ async function persistAuctionToProjectFolder(divisionId, auction) {
     });
 }
 
-/** Reload config + players from Postgres into localStorage (source of truth). */
+/** Reload config + players + partners from Postgres into localStorage (source of truth). */
 async function reloadTournamentFromDb() {
     await requireProjectApiReady({ force: true });
     const snapshot = await fetchProjectSnapshot();
-    if (!snapshot) throw new Error("Could not load tournament from database.");
+    if (!snapshot?.project) {
+        throw new Error("Could not load tournament configuration from database.");
+    }
     applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: false });
     return snapshot;
 }

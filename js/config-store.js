@@ -1148,12 +1148,30 @@ async function loadDefaultConfigFile() {
 }
 
 async function getAuctionConfig() {
-    // Prefer WhatsApp-style disk project when server is available
-    if (typeof hydrateLocalStorageFromProjectFolder === "function") {
+    const saasMode =
+        typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);
+
+    // SaaS: Postgres snapshot is mandatory. Never silently fall back to empty defaults.
+    if (saasMode) {
+        if (typeof reloadTournamentFromDb === "function") {
+            await reloadTournamentFromDb();
+        } else if (typeof hydrateLocalStorageFromProjectFolder === "function") {
+            const hydrated = await hydrateLocalStorageFromProjectFolder();
+            if (!hydrated?.ok) {
+                throw new Error(
+                    hydrated?.reason === "saas-required"
+                        ? "Select a tournament first from the dashboard."
+                        : "Could not load configuration from database."
+                );
+            }
+        } else {
+            throw new Error("Database sync is unavailable on this page.");
+        }
+    } else if (typeof hydrateLocalStorageFromProjectFolder === "function") {
         try {
             await hydrateLocalStorageFromProjectFolder();
         } catch (_) {
-            // fall through to localStorage / defaults
+            // legacy offline path only
         }
     }
 
@@ -1162,17 +1180,19 @@ async function getAuctionConfig() {
     if (saved) {
         try {
             config = await ensureConfigBranding(JSON.parse(saved));
-        } catch (_) {
+        } catch (error) {
+            if (saasMode) throw error;
             config = await ensureConfigBranding(await loadDefaultConfigFile());
         }
+    } else if (saasMode) {
+        throw new Error("No tournament configuration found in database. Open Config and click Save.");
     } else {
         config = await ensureConfigBranding(await loadDefaultConfigFile());
     }
 
     migrateLegacyDivisionStorage(config.activeDivisionId);
 
-    // Keep local cache in sync after hydrate/normalize — do NOT write back to disk here.
-    // Disk already won via hydrate; writing would let a stale tab race and wipe divisions.
+    // Keep local cache in sync after hydrate/normalize — do NOT write back to DB here.
     try {
         localStorage.setItem(AUCTION_CONFIG_KEY, JSON.stringify(config));
     } catch (_) {

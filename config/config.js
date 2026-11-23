@@ -1558,9 +1558,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             window.location.href = "/app/tournaments.html";
             return;
         }
+        saveStatus.textContent = "Loading configuration from database…";
+        await loadForm();
     } catch (error) {
         saveStatus.textContent = error.message || "Sign in required.";
-        return;
     }
-    loadForm();
 });
