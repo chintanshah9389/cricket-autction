@@ -614,7 +614,9 @@
         if (action === "edit-org") return editOrg(id);
         if (action === "delete-org") {
           if (!confirm(`Delete organization "${name}"?\n\nThis permanently deletes:\n• all tournaments, players, teams, auctions, media\n• related users who only belong to this org\n\nSuper Admin accounts are kept.`)) return;
-          const result = await SaasAuth.api(`/api/v1/super/organizations/${id}`, { method: "DELETE" });
+          const result = await SaasAuth.withBusy(`Deleting organization "${name}"…`, () =>
+            SaasAuth.api(`/api/v1/super/organizations/${id}`, { method: "DELETE" })
+          );
           SaasAuth.setStatus(
             statusEl(),
             `Organization deleted · ${result.deletedUserCount || 0} related user(s) removed`,
@@ -628,7 +630,9 @@
         if (action === "edit-user") return editUser(id);
         if (action === "delete-user") {
           if (!confirm(`Delete user "${name}"?\nMemberships and sessions will be removed.`)) return;
-          await SaasAuth.api(`/api/v1/super/users/${id}`, { method: "DELETE" });
+          await SaasAuth.withBusy(`Deleting user "${name}"…`, () =>
+            SaasAuth.api(`/api/v1/super/users/${id}`, { method: "DELETE" })
+          );
           SaasAuth.setStatus(statusEl(), "User deleted", false);
           await refreshAll();
           showSection("users");
@@ -638,7 +642,9 @@
         if (action === "edit-tournament") return editTournament(id);
         if (action === "delete-tournament") {
           if (!confirm(`Delete tournament "${name}"?\n\nThis permanently deletes:\n• divisions, players, teams, partners, auction sessions\n• related org users who only belong to this organization\n\nSuper Admin accounts are kept.`)) return;
-          const result = await SaasAuth.api(`/api/v1/super/tournaments/${id}`, { method: "DELETE" });
+          const result = await SaasAuth.withBusy(`Deleting tournament "${name}"…`, () =>
+            SaasAuth.api(`/api/v1/super/tournaments/${id}`, { method: "DELETE" })
+          );
           SaasAuth.setStatus(
             statusEl(),
             `Tournament deleted · related data cleared · ${result.deletedUserCount || 0} related user(s) removed`,

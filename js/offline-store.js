@@ -569,45 +569,54 @@ async function cachePlayersPhotos(players, divisionId, { assetPrefix = "", onPro
     const saas = usesSaasMedia();
     if (!saas) await requireAssetsApi();
     const list = players || [];
-    let photoIndex = saas ? { files: [] } : await fetchDivisionPhotoIndex(divisionId);
-    let cached = 0;
-    let failed = 0;
-    for (let i = 0; i < list.length; i++) {
-        const before = String(list[i].photo || "");
-        const hadKey = Boolean(list[i].photoKey);
-        try {
-            list[i].photo = await cachePlayerPhoto(list[i], divisionId, {
-                assetPrefix,
-                photoIndex
-            });
-            if (saas) {
-                if (list[i].photoKey && /^https?:\/\//i.test(String(list[i].photo || ""))) {
-                    cached += 1;
-                } else if (String(list[i].photo || "").trim()) {
-                    // Kept a usable URL but could not store a key
-                    failed += 1;
-                } else if (before) {
-                    failed += 1;
-                }
-            } else {
-                const nowLocal = isDivisionAssetsPhotoPath(list[i].photo, divisionId);
-                const existedBefore = photoRefExistsInIndex(before, divisionId, photoIndex);
-                if (nowLocal && !existedBefore) {
-                    photoIndex = await fetchDivisionPhotoIndex(divisionId);
-                    if (photoRefExistsInIndex(list[i].photo, divisionId, photoIndex)) cached += 1;
-                    else failed += 1;
-                } else if (!nowLocal && /^https?:\/\//i.test(before)) {
-                    failed += 1;
-                } else if (nowLocal && hadKey === false && existedBefore) {
-                    // already on disk
-                }
+    const run = async () => {
+        let photoIndex = saas ? { files: [] } : await fetchDivisionPhotoIndex(divisionId);
+        let cached = 0;
+        let failed = 0;
+        for (let i = 0; i < list.length; i++) {
+            const before = String(list[i].photo || "");
+            const hadKey = Boolean(list[i].photoKey);
+            if (window.SaasAuth?.updateBusy) {
+                window.SaasAuth.updateBusy(`Storing photos ${i + 1}/${list.length}…`);
             }
-        } catch (_) {
-            failed += 1;
+            try {
+                list[i].photo = await cachePlayerPhoto(list[i], divisionId, {
+                    assetPrefix,
+                    photoIndex
+                });
+                if (saas) {
+                    if (list[i].photoKey && /^https?:\/\//i.test(String(list[i].photo || ""))) {
+                        cached += 1;
+                    } else if (String(list[i].photo || "").trim()) {
+                        failed += 1;
+                    } else if (before) {
+                        failed += 1;
+                    }
+                } else {
+                    const nowLocal = isDivisionAssetsPhotoPath(list[i].photo, divisionId);
+                    const existedBefore = photoRefExistsInIndex(before, divisionId, photoIndex);
+                    if (nowLocal && !existedBefore) {
+                        photoIndex = await fetchDivisionPhotoIndex(divisionId);
+                        if (photoRefExistsInIndex(list[i].photo, divisionId, photoIndex)) cached += 1;
+                        else failed += 1;
+                    } else if (!nowLocal && /^https?:\/\//i.test(before)) {
+                        failed += 1;
+                    } else if (nowLocal && hadKey === false && existedBefore) {
+                        // already on disk
+                    }
+                }
+            } catch (_) {
+                failed += 1;
+            }
+            if (typeof onProgress === "function") onProgress(i + 1, list.length, cached, failed);
         }
-        if (typeof onProgress === "function") onProgress(i + 1, list.length, cached, failed);
+        return { players: list, cached, failed, total: list.length, mode: saas ? "r2" : "disk" };
+    };
+
+    if (window.SaasAuth?.withBusy) {
+        return window.SaasAuth.withBusy(`Storing ${list.length} photos…`, run);
     }
-    return { players: list, cached, failed, total: list.length, mode: saas ? "r2" : "disk" };
+    return run();
 }
 
 async function importPhotoFilesForDivision(files, players, divisionId) {
@@ -623,27 +632,42 @@ async function importPhotoFilesForDivision(files, players, divisionId) {
         if (base) byCode.set(base, player);
     });
 
-    let matched = 0;
-    for (const file of files || []) {
-        if (!file || !String(file.type || "").startsWith("image/")) continue;
-        const name = String(file.name || "").replace(/\.[^.]+$/, "").trim().toLowerCase();
-        const player = byCode.get(name);
-        if (!player) continue;
-        const id = String(player.code || player.id);
-        const resized = await resizeImageBlob(file);
-        applyMediaResult(
-            player,
-            await putOfflineMedia({
-                divisionId,
-                kind: "player",
-                id,
-                blob: resized,
-                mimeType: resized.type
-            })
+    const run = async () => {
+        let matched = 0;
+        const imageFiles = (files || []).filter(
+            (file) => file && String(file.type || "").startsWith("image/")
         );
-        matched += 1;
+        for (let i = 0; i < imageFiles.length; i++) {
+            const file = imageFiles[i];
+            if (window.SaasAuth?.updateBusy) {
+                window.SaasAuth.updateBusy(
+                    `Uploading photo files ${i + 1}/${imageFiles.length}…`
+                );
+            }
+            const name = String(file.name || "").replace(/\.[^.]+$/, "").trim().toLowerCase();
+            const player = byCode.get(name);
+            if (!player) continue;
+            const id = String(player.code || player.id);
+            const resized = await resizeImageBlob(file);
+            applyMediaResult(
+                player,
+                await putOfflineMedia({
+                    divisionId,
+                    kind: "player",
+                    id,
+                    blob: resized,
+                    mimeType: resized.type
+                })
+            );
+            matched += 1;
+        }
+        return { players: list, matched };
+    };
+
+    if (window.SaasAuth?.withBusy) {
+        return window.SaasAuth.withBusy("Uploading photo files…", run);
     }
-    return { players: list, matched };
+    return run();
 }
 
 async function countCachedPlayerPhotos(players, divisionId) {

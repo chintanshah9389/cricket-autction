@@ -232,53 +232,175 @@
     el.dataset.state = isError ? "error" : "ok";
   }
 
+  let busyDepth = 0;
+  let busyStyleReady = false;
+
+  function ensureBusyStyles() {
+    if (busyStyleReady || typeof document === "undefined") return;
+    busyStyleReady = true;
+    const style = document.createElement("style");
+    style.id = "saas-busy-style";
+    style.textContent = `
+      .saas-busy-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.25rem;
+        background: rgba(12, 24, 41, 0.48);
+        backdrop-filter: blur(2px);
+      }
+      .saas-busy-overlay[hidden] { display: none !important; }
+      .saas-busy-card {
+        min-width: min(320px, 92vw);
+        max-width: 420px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,0.35);
+        background: #fff;
+        box-shadow: 0 18px 50px rgba(12, 24, 41, 0.28);
+        padding: 1.15rem 1.25rem;
+        display: grid;
+        gap: 0.75rem;
+        justify-items: center;
+        text-align: center;
+        font-family: Hind, system-ui, sans-serif;
+        color: #16325c;
+      }
+      .saas-busy-spinner {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 3px solid rgba(22, 50, 92, 0.18);
+        border-top-color: #1f8fbf;
+        animation: saas-busy-spin 0.75s linear infinite;
+      }
+      .saas-busy-text {
+        margin: 0;
+        font-size: 0.98rem;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      @keyframes saas-busy-spin { to { transform: rotate(360deg); } }
+      body.saas-busy { cursor: progress; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function showBusy(message) {
+    if (typeof document === "undefined") return;
+    ensureBusyStyles();
+    busyDepth += 1;
+    let overlay = document.getElementById("saas-busy-overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "saas-busy-overlay";
+      overlay.className = "saas-busy-overlay";
+      overlay.setAttribute("role", "status");
+      overlay.setAttribute("aria-live", "polite");
+      overlay.innerHTML = `
+        <div class="saas-busy-card">
+          <div class="saas-busy-spinner" aria-hidden="true"></div>
+          <p class="saas-busy-text" id="saas-busy-text">Working…</p>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+    }
+    const text = document.getElementById("saas-busy-text");
+    if (text) text.textContent = message || "Working…";
+    overlay.hidden = false;
+    document.body.classList.add("saas-busy");
+  }
+
+  function hideBusy() {
+    if (typeof document === "undefined") return;
+    busyDepth = Math.max(0, busyDepth - 1);
+    if (busyDepth > 0) return;
+    const overlay = document.getElementById("saas-busy-overlay");
+    if (overlay) overlay.hidden = true;
+    document.body.classList.remove("saas-busy");
+  }
+
+  function updateBusy(message) {
+    if (typeof document === "undefined" || busyDepth <= 0) return;
+    const text = document.getElementById("saas-busy-text");
+    if (text && message) text.textContent = message;
+  }
+
+  async function withBusy(message, fn) {
+    showBusy(message);
+    try {
+      return await fn();
+    } finally {
+      hideBusy();
+    }
+  }
+
   /**
    * Upload a file to R2 for the active org/tournament.
    * Returns { objectKey, publicUrl }.
    */
-  async function uploadMedia(file, purpose = "upload") {
-    if (!file) throw new Error("No file selected.");
-    const orgId = getActiveOrgId();
-    const tournamentId = getActiveTournamentId();
-    if (!orgId) throw new Error("Select an organization first.");
-    const signed = await api("/api/v1/media/sign-upload", {
-      method: "POST",
-      body: {
-        orgId,
-        tournamentId,
-        purpose,
-        fileName: file.name || "file.bin",
-        contentType: file.type || "application/octet-stream"
+  async function uploadMedia(file, purpose = "upload", options = {}) {
+    const label = options.message || `Uploading ${purpose.replace(/-/g, " ")}…`;
+    const run = async () => {
+      if (!file) throw new Error("No file selected.");
+      const orgId = getActiveOrgId();
+      const tournamentId = getActiveTournamentId();
+      if (!orgId) throw new Error("Select an organization first.");
+      const signed = await api("/api/v1/media/sign-upload", {
+        method: "POST",
+        body: {
+          orgId,
+          tournamentId,
+          purpose,
+          fileName: file.name || "file.bin",
+          contentType: file.type || "application/octet-stream"
+        }
+      });
+      const headers = {
+        "Content-Type": file.type || "application/octet-stream",
+        ...(signed.uploadHeaders || {})
+      };
+      const put = await fetch(signed.uploadUrl, {
+        method: "PUT",
+        headers,
+        body: file
+      });
+      if (!put.ok) {
+        throw new Error(`Upload failed (HTTP ${put.status})`);
       }
-    });
-    const headers = {
-      "Content-Type": file.type || "application/octet-stream",
-      ...(signed.uploadHeaders || {})
+      return {
+        objectKey: signed.objectKey,
+        publicUrl: signed.publicUrl || null,
+        mode: signed.mode || "r2"
+      };
     };
-    const put = await fetch(signed.uploadUrl, {
-      method: "PUT",
-      headers,
-      body: file
-    });
-    if (!put.ok) {
-      throw new Error(`Upload failed (HTTP ${put.status})`);
+    // If a parent batch loader is already open, only update its text.
+    if (busyDepth > 0) {
+      updateBusy(label);
+      return run();
     }
-    return {
-      objectKey: signed.objectKey,
-      publicUrl: signed.publicUrl || null,
-      mode: signed.mode || "r2"
-    };
+    return withBusy(label, run);
   }
 
-  async function deleteMedia(objectKey) {
+  async function deleteMedia(objectKey, options = {}) {
     const key = String(objectKey || "").trim();
     if (!key) return { deleted: false };
-    const orgId = getActiveOrgId();
-    if (!orgId) throw new Error("Select an organization first.");
-    return api("/api/v1/media", {
-      method: "DELETE",
-      body: { orgId, objectKey: key }
-    });
+    const label = options.message || "Deleting file…";
+    const run = async () => {
+      const orgId = getActiveOrgId();
+      if (!orgId) throw new Error("Select an organization first.");
+      return api("/api/v1/media", {
+        method: "DELETE",
+        body: { orgId, objectKey: key }
+      });
+    };
+    if (busyDepth > 0) {
+      updateBusy(label);
+      return run();
+    }
+    return withBusy(label, run);
   }
 
   global.SaasAuth = {
@@ -297,6 +419,10 @@
     api,
     uploadMedia,
     deleteMedia,
+    showBusy,
+    hideBusy,
+    updateBusy,
+    withBusy,
     login,
     registerOwner,
     logout,

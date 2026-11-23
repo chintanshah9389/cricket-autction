@@ -321,41 +321,57 @@ form.addEventListener("submit", async (event) => {
     let videoKey = draftVideoKey;
 
     try {
-        setStatus("Saving…");
-        if (draftLogoDataUrl) {
-            if (logoKey) await deleteLogo(id, logoKey);
-            const uploaded = await uploadLogo(id, draftLogoDataUrl);
-            logoPath = uploaded.path || "";
-            logoKey = uploaded.key || "";
-        }
-        if (draftVideoFile) {
-            setStatus("Uploading video…");
-            if (videoKey) await deleteVideo(id, videoKey);
-            const uploaded = await uploadVideo(id, draftVideoFile);
-            videoPath = uploaded.path || "";
-            videoKey = uploaded.key || "";
-        }
+        const savePartner = async () => {
+            setStatus("Saving…");
+            if (draftLogoDataUrl) {
+                if (window.SaasAuth?.updateBusy) {
+                    window.SaasAuth.updateBusy("Uploading partner logo…");
+                }
+                if (logoKey) await deleteLogo(id, logoKey);
+                const uploaded = await uploadLogo(id, draftLogoDataUrl);
+                logoPath = uploaded.path || "";
+                logoKey = uploaded.key || "";
+            }
+            if (draftVideoFile) {
+                setStatus("Uploading video…");
+                if (window.SaasAuth?.updateBusy) {
+                    window.SaasAuth.updateBusy("Uploading partner video…");
+                }
+                if (videoKey) await deleteVideo(id, videoKey);
+                const uploaded = await uploadVideo(id, draftVideoFile);
+                videoPath = uploaded.path || "";
+                videoKey = uploaded.key || "";
+            }
 
-        const record = {
-            id,
-            name,
-            tier: tierInput.value || "partner",
-            url: urlInput.value.trim(),
-            tagline: taglineInput.value.trim(),
-            logo: logoPath || "",
-            logoKey: logoKey || null,
-            video: videoPath || "",
-            videoKey: videoKey || null,
-            highlight: Boolean(highlightInput.checked),
-            order: Number(orderInput.value) || nextOrder(),
-            sortOrder: Number(orderInput.value) || nextOrder()
+            if (window.SaasAuth?.updateBusy) {
+                window.SaasAuth.updateBusy("Saving partner…");
+            }
+            const record = {
+                id,
+                name,
+                tier: tierInput.value || "partner",
+                url: urlInput.value.trim(),
+                tagline: taglineInput.value.trim(),
+                logo: logoPath || "",
+                logoKey: logoKey || null,
+                video: videoPath || "",
+                videoKey: videoKey || null,
+                highlight: Boolean(highlightInput.checked),
+                order: Number(orderInput.value) || nextOrder(),
+                sortOrder: Number(orderInput.value) || nextOrder()
+            };
+
+            const without = partners.filter((p) => p.id !== id);
+            await savePartnersList([...without, record]);
+            resetForm();
+            renderList();
+            setStatus(`Saved ${name}.`);
         };
-
-        const without = partners.filter((p) => p.id !== id);
-        await savePartnersList([...without, record]);
-        resetForm();
-        renderList();
-        setStatus(`Saved ${name}.`);
+        if (window.SaasAuth?.withBusy) {
+            await window.SaasAuth.withBusy("Saving partner…", savePartner);
+        } else {
+            await savePartner();
+        }
     } catch (error) {
         setStatus(error.message || "Could not save partner.", true);
     }
