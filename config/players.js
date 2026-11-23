@@ -859,26 +859,21 @@ function renderPlayersTable() {
     refreshOfflinePhotoStatus();
 }
 
-function persistAndRefresh(list, message, options = {}) {
-    const saved = saveStoredPlayers(list, activeDivisionId, options);
-    playersCache = enrichPlayers(saved);
-    updateFilterOptions();
-    renderPlayersTable();
-    renderPlayersDivisionTabs();
-    if (message) setStatus(message);
-    return saved;
+async function persistAndRefresh(list, message, options = {}) {
+    return persistAndRefreshToDisk(list, message, options);
 }
 
 async function persistAndRefreshToDisk(list, message, options = {}) {
+    setStatus(message ? `${message} Saving to database…` : "Saving players to database…");
     const saved =
         typeof saveStoredPlayersToDisk === "function"
             ? await saveStoredPlayersToDisk(list, activeDivisionId, options)
-            : saveStoredPlayers(list, activeDivisionId, options);
+            : saveStoredPlayers(list, activeDivisionId, { ...options, awaitDisk: true });
     playersCache = enrichPlayers(saved);
     updateFilterOptions();
     renderPlayersTable();
     renderPlayersDivisionTabs();
-    if (message) setStatus(message);
+    if (message) setStatus(`${message} Saved in database.`);
     return saved;
 }
 
@@ -902,7 +897,7 @@ async function refreshPlayers({ preferFile = false } = {}) {
     try {
         if (preferFile) {
             const filePlayers = await fetchFilePlayers();
-            persistAndRefresh(
+            await persistAndRefresh(
                 filePlayers,
                 `Loaded ${filePlayers.length} players from data/players.json into ${divisionName}`
             );
@@ -910,6 +905,15 @@ async function refreshPlayers({ preferFile = false } = {}) {
             applyPlayersFormFieldPolicy();
             renderPlayersDivisionTabs();
             return;
+        }
+
+        // Always reload from Postgres first so returning users see saved roster/config.
+        if (typeof reloadTournamentFromDb === "function") {
+            try {
+                await reloadTournamentFromDb();
+            } catch (_) {
+                // fall through to local cache if offline briefly
+            }
         }
 
         // Always use this division's own list (including empty). Never borrow Main's file pool.
@@ -926,7 +930,7 @@ async function refreshPlayers({ preferFile = false } = {}) {
         const soldCount = playersCache.filter((p) => p.status === "sold").length;
         setStatus(
             playersCache.length
-                ? `Editing ${playersCache.length} players for ${divisionName}${soldCount ? ` · ${soldCount} sold in live auction` : ""}.`
+                ? `Loaded ${playersCache.length} players from database for ${divisionName}${soldCount ? ` · ${soldCount} sold in live auction` : ""}.`
                 : `No players in ${divisionName} yet. Upload CSV/Excel for this division only.`
         );
     } catch (error) {
@@ -1033,6 +1037,27 @@ async function runImport(mode) {
                 : importPlayerRows(rows, { mode, config, divisionId: activeDivisionId });
 
         setImportProgress(70, `Saved ${saved.length} players…`);
+        if (typeof flushProjectPersistQueue === "function") {
+            await flushProjectPersistQueue();
+        }
+        // Confirm Postgres has the roster + playerFields, then reload local cache from DB.
+        if (typeof reloadTournamentFromDb === "function") {
+            setImportProgress(74, "Confirming save in database…");
+            const snapshot = await reloadTournamentFromDb();
+            const fromDb =
+                (snapshot?.divisions || []).find((d) => d.id === activeDivisionId)?.players ||
+                [];
+            if (Array.isArray(fromDb) && fromDb.length) {
+                saved = fromDb;
+            }
+            try {
+                const configAfter = await getAuctionConfig();
+                divisionsCache = listDivisions(configAfter);
+            } catch (_) {
+                // keep prior divisionsCache
+            }
+        }
+
         const catSummary = formatCategoryBreakdown(saved);
         const shownFields =
             typeof getExpectedSpreadsheetColumns === "function"
@@ -1060,16 +1085,17 @@ async function runImport(mode) {
 
         if (!hasCategoryCol || mostlyRising) {
             setStatus(
-                `Imported ${saved.length} to database (${mode}). ${catSummary}. ` +
+                `Saved ${saved.length} players in database (${mode}). ${catSummary}. ` +
                     (!hasCategoryCol
                         ? "No CATEGORY column detected — almost everyone may default to Rising Star. "
                         : "Most players are Rising Star. ") +
-                    "Use “Fix categories from ID (CPL-R/K/E)” if IDs encode the pool."
+                    "Use “Fix categories from ID (CPL-R/K/E)” if IDs encode the pool. Reload later to see the same list."
             );
         } else {
             setStatus(
-                `Imported ${saved.length} players to database (${mode}). ${catSummary}.` +
-                    (shownFields ? ` Fields: ${shownFields}.` : "")
+                `Saved ${saved.length} players in database (${mode}). ${catSummary}.` +
+                    (shownFields ? ` Fields: ${shownFields}.` : "") +
+                    " They will load again next visit."
             );
         }
 
@@ -1406,7 +1432,7 @@ playersTableBody.addEventListener("click", (event) => {
     }
 });
 
-playerForm.addEventListener("submit", (event) => {
+playerForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const draft = getFormPlayer();
     if (!draft.name || !draft.code) {
@@ -1448,13 +1474,17 @@ playerForm.addEventListener("submit", (event) => {
     );
     withoutDup.push(normalizePlayerRecord(draft, withoutDup.length));
     withoutDup.sort((a, b) => Number(a.id) - Number(b.id));
-    persistAndRefresh(withoutDup, `Saved ${draft.name}.`);
-    fillForm(findPlayer(draft.code || draft.id));
+    try {
+        await persistAndRefresh(withoutDup, `Saved ${draft.name}.`);
+        fillForm(findPlayer(draft.code || draft.id));
+    } catch (error) {
+        setStatus(error.message || "Could not save player to database.", true);
+    }
 });
 
 resetFormBtn.addEventListener("click", resetForm);
 
-fixCategoriesFromIdBtn?.addEventListener("click", () => {
+fixCategoriesFromIdBtn?.addEventListener("click", async () => {
     if (!playersCache.length) {
         setStatus("No players to fix.", true);
         return;
@@ -1474,10 +1504,14 @@ fixCategoriesFromIdBtn?.addEventListener("click", () => {
         setStatus(`No changes. Categories already match IDs. ${formatCategoryBreakdown(playersCache)}`);
         return;
     }
-    persistAndRefresh(
-        next,
-        `Updated ${changed} player categor${changed === 1 ? "y" : "ies"} from ID. ${formatCategoryBreakdown(next)}. Start New Auction to apply on the desk.`
-    );
+    try {
+        await persistAndRefresh(
+            next,
+            `Updated ${changed} player categor${changed === 1 ? "y" : "ies"} from ID. ${formatCategoryBreakdown(next)}. Start New Auction to apply on the desk.`
+        );
+    } catch (error) {
+        setStatus(error.message || "Could not save categories to database.", true);
+    }
 });
 
 cachePhotosBtn?.addEventListener("click", async () => {
@@ -1496,7 +1530,7 @@ cachePhotosBtn?.addEventListener("click", async () => {
                 );
             }
         });
-        persistAndRefresh(
+        await persistAndRefresh(
             result.players,
             saas
                 ? `Stored in cloud: ${result.cached} photos, ${result.failed} skipped.`
@@ -1522,7 +1556,10 @@ photosFiles?.addEventListener("change", async () => {
     try {
         setOfflineStatus(`Matching ${files.length} photo file(s)…`);
         const result = await importPhotoFilesForDivision(files, playersCache, activeDivisionId);
-        persistAndRefresh(result.players, `Matched and stored ${result.matched} photo file(s) offline.`);
+        await persistAndRefresh(
+            result.players,
+            `Matched and stored ${result.matched} photo file(s) in database.`
+        );
         setOfflineStatus(`Stored ${result.matched} photo(s) for this division.`);
     } catch (error) {
         setOfflineStatus(error.message || "Could not import photos.", true);

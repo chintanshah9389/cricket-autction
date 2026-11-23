@@ -1238,8 +1238,15 @@ function saveAuctionConfig(config, options = {}) {
     if (typeof persistConfigToProjectFolder === "function") {
         const persistPromise = persistConfigToProjectFolder(normalized);
         if (options.awaitDisk === true) {
-            return Promise.resolve(persistPromise).then(() => normalized);
+            return Promise.resolve(persistPromise).then((ok) => {
+                if (ok === false) {
+                    throw new Error("Configuration was not written to the database.");
+                }
+                return normalized;
+            });
         }
+    } else if (options.awaitDisk === true) {
+        return Promise.reject(new Error("Database sync is unavailable on this page."));
     }
     return normalized;
 }

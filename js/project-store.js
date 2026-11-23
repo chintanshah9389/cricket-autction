@@ -304,11 +304,21 @@ async function pushLocalStorageToProjectFolder() {
     return true;
 }
 
+async function requireProjectApiReady({ force = true } = {}) {
+    const ready = await checkProjectApiReady({ force });
+    if (!ready) {
+        throw new Error(
+            "Database not ready. Sign in, select a tournament, then save again so data persists."
+        );
+    }
+    return true;
+}
+
 async function persistConfigToProjectFolder(config) {
     const generation = projectPersistGeneration;
     return enqueueProjectPersist(async () => {
         if (generation !== projectPersistGeneration) return false;
-        if (!(await checkProjectApiReady())) return false;
+        await requireProjectApiReady({ force: true });
         if (generation !== projectPersistGeneration) return false;
 
         // Stale tabs can save an older 1-division cache and wipe WOMENS/etc.
@@ -341,7 +351,7 @@ async function persistPlayersToProjectFolder(divisionId, players) {
     const generation = projectPersistGeneration;
     return enqueueProjectPersist(async () => {
         if (generation !== projectPersistGeneration) return false;
-        if (!(await checkProjectApiReady())) return false;
+        await requireProjectApiReady({ force: true });
         if (generation !== projectPersistGeneration) return false;
         await putDivisionPlayers(divisionId, players);
         return true;
@@ -352,7 +362,7 @@ async function persistAuctionToProjectFolder(divisionId, auction) {
     const generation = projectPersistGeneration;
     return enqueueProjectPersist(async () => {
         if (generation !== projectPersistGeneration) return false;
-        if (!(await checkProjectApiReady())) return false;
+        await requireProjectApiReady({ force: true });
         if (generation !== projectPersistGeneration) return false;
         if (auction == null) {
             await deleteDivisionAuction(divisionId).catch(() => {});
@@ -361,6 +371,15 @@ async function persistAuctionToProjectFolder(divisionId, auction) {
         }
         return true;
     });
+}
+
+/** Reload config + players from Postgres into localStorage (source of truth). */
+async function reloadTournamentFromDb() {
+    await requireProjectApiReady({ force: true });
+    const snapshot = await fetchProjectSnapshot();
+    if (!snapshot) throw new Error("Could not load tournament from database.");
+    applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: false });
+    return snapshot;
 }
 
 /**

@@ -610,8 +610,8 @@ function buildPlayerFieldPresenceFromRoster(players, excelHeaders = []) {
 function saveStoredPlayers(players, divisionId = getActivePlayersDivisionId(), options = {}) {
     const list = (players || []).map((player, index) => normalizePlayerRecord(player, index));
     localStorage.setItem(resolvePlayersStorageKey(divisionId), JSON.stringify(list));
-    // persistPlayersToProjectFolder already enqueues — call it once, never nest.
-    if (typeof persistPlayersToProjectFolder === "function") {
+    // Fire-and-forget only when caller does not need DB confirmation.
+    if (options.awaitDisk !== true && typeof persistPlayersToProjectFolder === "function") {
         persistPlayersToProjectFolder(divisionId, list);
     }
     if (options.resetAuction) {
@@ -624,8 +624,12 @@ function saveStoredPlayers(players, divisionId = getActivePlayersDivisionId(), o
 async function saveStoredPlayersToDisk(players, divisionId = getActivePlayersDivisionId(), options = {}) {
     const list = (players || []).map((player, index) => normalizePlayerRecord(player, index));
     localStorage.setItem(resolvePlayersStorageKey(divisionId), JSON.stringify(list));
-    if (typeof persistPlayersToProjectFolder === "function") {
-        await persistPlayersToProjectFolder(divisionId, list);
+    if (typeof persistPlayersToProjectFolder !== "function") {
+        throw new Error("Database sync is unavailable. Open Players after signing in.");
+    }
+    const ok = await persistPlayersToProjectFolder(divisionId, list);
+    if (ok === false) {
+        throw new Error("Players were not written to the database.");
     }
     if (options.resetAuction) {
         invalidateDivisionAuctionProgress(divisionId);
