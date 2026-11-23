@@ -455,41 +455,66 @@ function requireServerOnline(actionLabel = "continue") {
     return false;
 }
 
-function handleWelcomeResume() {
+async function handleWelcomeResume() {
     if (!requireServerOnline("resume auction")) return;
+    try {
+        // Always resume from DB so Icon/Caption + category settings match last Save
+        if (typeof getAuctionConfig === "function") {
+            const divisionId =
+                welcomeConfigCache?.activeDivisionId ||
+                (typeof getActiveDivisionIdFromConfig === "function"
+                    ? getActiveDivisionIdFromConfig(welcomeConfigCache)
+                    : null);
+            welcomeConfigCache = await getAuctionConfig();
+            if (divisionId && typeof setActiveDivisionId === "function") {
+                welcomeConfigCache = setActiveDivisionId(welcomeConfigCache, divisionId);
+            }
+        }
+        await loadAuctionStateForActiveDivision(welcomeConfigCache);
+        showTournamentDetails();
+        refreshWelcomeDivisionActions();
+    } catch (error) {
+        alert(error?.message || "Could not reload tournament from the database.");
+        return;
+    }
     startMainApplication();
 }
 
 async function handleWelcomeStartNew() {
     if (!requireServerOnline("start a new auction")) return;
-    // Reload players/config from storage so uploads done after page open are included
-    if (welcomeConfigCache) {
-        const divisionId = welcomeConfigCache.activeDivisionId;
+    const divisionId =
+        welcomeConfigCache?.activeDivisionId ||
+        (typeof getActiveDivisionIdFromConfig === "function"
+            ? getActiveDivisionIdFromConfig(welcomeConfigCache)
+            : "div_1");
+    try {
+        // Config + players + Icon/Caption assignments come from DB only
+        if (typeof getAuctionConfig === "function") {
+            welcomeConfigCache = await getAuctionConfig();
+            if (divisionId && typeof setActiveDivisionId === "function") {
+                welcomeConfigCache = setActiveDivisionId(welcomeConfigCache, divisionId);
+            }
+        }
         localStorage.removeItem(getAuctionDataStorageKey(divisionId));
         if (divisionId === "div_1") localStorage.removeItem("auctionData");
-        if (typeof invalidateDivisionAuctionProgress === "function") {
-            invalidateDivisionAuctionProgress(divisionId);
-        } else if (typeof persistAuctionToProjectFolder === "function") {
-            persistAuctionToProjectFolder(divisionId, null);
+        if (typeof bumpProjectPersistGeneration === "function") {
+            bumpProjectPersistGeneration();
         }
-        // Re-read local config (avoid disk hydrate racing an in-flight Excel field save)
-        try {
-            const raw = localStorage.getItem("auctionConfig");
-            if (raw) {
-                welcomeConfigCache =
-                    typeof normalizeConfig === "function"
-                        ? normalizeConfig(JSON.parse(raw))
-                        : JSON.parse(raw);
-                if (divisionId && typeof setActiveDivisionId === "function") {
-                    welcomeConfigCache = setActiveDivisionId(welcomeConfigCache, divisionId);
-                }
+        // Await DB clear so we never rebuild on top of a stale auction snapshot
+        if (typeof persistAuctionToProjectFolder === "function") {
+            await persistAuctionToProjectFolder(divisionId, null);
+            if (typeof flushProjectPersistQueue === "function") {
+                await flushProjectPersistQueue();
             }
-        } catch (_) {
-            // keep cached config
         }
         await loadAuctionStateForActiveDivision(welcomeConfigCache);
+        // Persist Icon/Caption pre-assigns immediately so Resume picks them up from DB
+        await saveAuctionProgress({ awaitDisk: true, critical: true });
         showTournamentDetails();
         refreshWelcomeDivisionActions();
+    } catch (error) {
+        alert(error?.message || "Could not start a new auction from the database.");
+        return;
     }
     startMainApplication();
 }
@@ -785,6 +810,11 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         };
         (state.players || []).forEach(normalizeSavedPlayer);
         (state.allPlayers || []).forEach(normalizeSavedPlayer);
+
+        // Re-bind Icon/Caption from Config so category quota setting still applies after DB resume
+        if (typeof ensureIconCaptionAssignments === "function") {
+            ensureIconCaptionAssignments(state, auctionConfig);
+        }
 
         if (state.auctionCount < (state.players || []).length) {
             const lastPlayerStatus = state.players[state.auctionCount].status;
@@ -1812,12 +1842,13 @@ function ensureAuctionQueueFromMaster() {
 
     const queue = Array.isArray(state.players) ? state.players : [];
     const queueIds = new Set(queue.map((player) => player.id));
+    // Only repair when unsettled players are missing — sold Icon/Caption may
+    // intentionally be absent from the live queue (shorter than master).
     const missingUnsettled = master.some(
         (player) => !isAuctionSettledStatus(player.status) && !queueIds.has(player.id)
     );
-    const queueTooSmall = queue.length < master.length;
 
-    if (missingUnsettled || queueTooSmall) {
+    if (missingUnsettled) {
         return rebuildAuctionQueueFromMaster();
     }
 

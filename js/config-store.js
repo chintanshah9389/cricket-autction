@@ -672,6 +672,8 @@ function normalizeConfig(raw) {
                     auctionOrder: source.auctionOrder,
                     shuffleWithinCategory: source.shuffleWithinCategory,
                     playerWheelEnabled: source.playerWheelEnabled,
+                    playerFields: source.playerFields,
+                    iconCaption: source.iconCaption,
                     categorySequence: source.categorySequence,
                     categories: source.categories,
                     basePrices: source.basePrices,
@@ -1530,6 +1532,116 @@ function applyIconCaptionAssignments(state, config) {
     }
 
     state.config = normalized;
+    return state;
+}
+
+/**
+ * Resume-safe Icon / Caption restore from saved Config (DB).
+ * Restores preAssignRole + sold/on-team marks without resetting auction progress,
+ * so category max still respects countTowardCategoryQuota after reload.
+ */
+function ensureIconCaptionAssignments(state, config) {
+    if (!state) return state;
+    const normalized = normalizeConfig(config || state.config || {});
+    const division = getActiveDivision(normalized);
+    const settings = normalizeIconCaptionSettings(division.iconCaption);
+    state.config = normalized;
+
+    const master = Array.isArray(state.allPlayers) && state.allPlayers.length
+        ? state.allPlayers
+        : Array.isArray(state.players)
+          ? state.players
+          : [];
+    if (!master.length) return state;
+
+    const expected = new Map();
+    if (settings.enabled && Array.isArray(state.teams)) {
+        state.teams.forEach((team) => {
+            const configTeam =
+                getConfigTeams(normalized).find((entry) => Number(entry.team_id) === Number(team.team_id)) ||
+                team;
+            if (configTeam.iconPlayerId != null) {
+                expected.set(String(configTeam.iconPlayerId), {
+                    team,
+                    role: "icon",
+                    fee: settings.iconFee,
+                    playerId: configTeam.iconPlayerId
+                });
+            }
+            if (configTeam.captionPlayerId != null) {
+                expected.set(String(configTeam.captionPlayerId), {
+                    team,
+                    role: "caption",
+                    fee: settings.captionFee,
+                    playerId: configTeam.captionPlayerId
+                });
+            }
+            if (configTeam.iconPlayerId != null) team.iconPlayerId = configTeam.iconPlayerId;
+            else delete team.iconPlayerId;
+            if (configTeam.captionPlayerId != null) team.captionPlayerId = configTeam.captionPlayerId;
+            else delete team.captionPlayerId;
+        });
+    }
+
+    // Drop stale pre-assign marks that are no longer in Config
+    master.forEach((player) => {
+        if (!isIconCaptionPreAssignedPlayer(player)) return;
+        const stillExpected = [...expected.values()].some((entry) =>
+            sameAssignablePlayerId(entry.playerId, player.id)
+        );
+        if (!stillExpected) delete player.preAssignRole;
+    });
+
+    if (!settings.enabled) return state;
+
+    const used = new Set();
+    expected.forEach((entry) => {
+        if ([...used].some((id) => sameAssignablePlayerId(id, entry.playerId))) return;
+        const player = findPlayerByAssignableId(master, entry.playerId);
+        if (!player) return;
+        const team = entry.team;
+        const amount = Math.max(0, Number(entry.fee) || 0);
+        const alreadyOnTeam =
+            Array.isArray(team.players) &&
+            team.players.some((id) => sameAssignablePlayerId(id, player.id));
+
+        player.preAssignRole = entry.role;
+        player.status = "sold";
+        player.team = team.team_id;
+        if (!Array.isArray(player.bids) || !player.bids.length) {
+            player.finalPrice = amount;
+            player.bids = [{ team: team.team_id, amount }];
+        } else if (player.finalPrice == null) {
+            player.finalPrice = amount;
+        }
+
+        if (!Array.isArray(team.players)) team.players = [];
+        if (!alreadyOnTeam) {
+            team.players.push(player.id);
+            team.player_bought = (Number(team.player_bought) || 0) + 1;
+            team.total_cost = (Number(team.total_cost) || 0) + amount;
+            team.remaining_budget = (Number(team.team_budget) || 0) - (Number(team.total_cost) || 0);
+        }
+
+        if (!Array.isArray(state.soldPlayers)) state.soldPlayers = [];
+        if (!state.soldPlayers.some((id) => sameAssignablePlayerId(id, player.id))) {
+            state.soldPlayers.push(player.id);
+        }
+        state.soldCount = state.soldPlayers.length;
+        used.add(player.id);
+    });
+
+    // Keep auction progress: only strip pre-assigned players still sitting in the live queue
+    if (Array.isArray(state.players) && state.players.length) {
+        const before = Math.max(0, Number(state.auctionCount) || 0);
+        const removedBefore = state.players
+            .slice(0, before)
+            .filter((player) => isIconCaptionPreAssignedPlayer(player)).length;
+        state.players = state.players.filter((player) => !isIconCaptionPreAssignedPlayer(player));
+        state.auctionCount = Math.max(0, Math.min(before - removedBefore, state.players.length));
+    }
+
+    state.allPlayers = master;
     return state;
 }
 
