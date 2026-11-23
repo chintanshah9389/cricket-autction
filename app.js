@@ -828,6 +828,11 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         (state.players || []).forEach(normalizeSavedPlayer);
         (state.allPlayers || []).forEach(normalizeSavedPlayer);
 
+        // Latest Config base prices / category max (do not keep stale 20L defaults)
+        if (typeof syncLiveAuctionPricingFromConfig === "function") {
+            syncLiveAuctionPricingFromConfig(state, auctionConfig);
+        }
+
         // Re-bind Icon/Caption from Config so category quota setting still applies after DB resume
         let iconEnsured = false;
         if (typeof ensureIconCaptionAssignments === "function") {
@@ -845,10 +850,24 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
                 afterBought !== beforeBought || (state.players || []).length !== queueBefore;
         }
 
+        if (!state.activeAuctionCategory) {
+            setActiveAuctionCategory(
+                getPlayerAuctionCategoryName(state.players?.[state.auctionCount]) ||
+                    getCategorySequence?.(auctionConfig)?.[0]
+            );
+        } else {
+            setActiveAuctionCategory(state.activeAuctionCategory);
+        }
+
         if (state.auctionCount < (state.players || []).length) {
             const lastPlayerStatus = state.players[state.auctionCount]?.status;
             if (lastPlayerStatus === "sold" || lastPlayerStatus === "unsold" || lastPlayerStatus === "skipped") {
-                state.auctionCount++;
+                const locked = getCurrentAuctionCategoryName();
+                const nextSame = findNextEligibleAuctionIndex(state.auctionCount, {
+                    categoryName: locked || null
+                });
+                // Prefer next waiting player in the locked category — never auto-skip to Evergreen
+                if (nextSame >= 0) state.auctionCount = nextSame;
             }
         }
 
@@ -879,6 +898,15 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         // Second pass: catch id/code mismatches that the first apply missed
         if (typeof ensureIconCaptionAssignments === "function") {
             ensureIconCaptionAssignments(state, auctionConfig);
+        }
+        if (typeof syncLiveAuctionPricingFromConfig === "function") {
+            syncLiveAuctionPricingFromConfig(state, auctionConfig);
+        }
+        if (!state.activeAuctionCategory) {
+            setActiveAuctionCategory(
+                getPlayerAuctionCategoryName(state.players?.[0]) ||
+                    getCategorySequence?.(auctionConfig)?.[0]
+            );
         }
     }
 }
@@ -1066,7 +1094,11 @@ function showPlayerDetails(i) {
     }
     updateCategoryJumpControls();
     playerId.innerText = getPlayerDisplayCode(state.players[i]);
-    playerBasePrice.innerText = showAmount(state.players[i].basePrice);
+    const liveBase =
+        Number(state.players[i].basePrice) ||
+        Number(categoryMeta.basePrice) ||
+        0;
+    playerBasePrice.innerText = showAmount(liveBase);
 
     updateCurrentBidPanel(state.players[i]);
 
@@ -1867,8 +1899,23 @@ function rebuildAuctionQueueFromMaster() {
     state.allPlayers = master;
     state.players = ordered;
 
-    const nextIndex = ordered.findIndex((player) => !isAuctionSettledStatus(player.status));
+    const locked = state.activeAuctionCategory
+        ? normalizeCategoryName(state.activeAuctionCategory)
+        : "";
+    const nextIndex = ordered.findIndex((player) => {
+        if (isAuctionSettledStatus(player.status)) return false;
+        if (!locked) return true;
+        return normalizeCategoryName(player.category) === locked;
+    });
     if (nextIndex < 0) {
+        // Keep pointer inside the locked category when possible — never auto-skip to Evergreen
+        if (locked) {
+            const inLocked = ordered.findIndex(
+                (player) => normalizeCategoryName(player.category) === locked
+            );
+            state.auctionCount = inLocked >= 0 ? inLocked : ordered.length;
+            return false;
+        }
         state.auctionCount = ordered.length;
         return false;
     }
@@ -1894,17 +1941,23 @@ function ensureAuctionQueueFromMaster() {
         return rebuildAuctionQueueFromMaster();
     }
 
+    const locked = state.activeAuctionCategory
+        ? normalizeCategoryName(state.activeAuctionCategory)
+        : "";
     const current = queue[state.auctionCount];
     if (!current || isAuctionSettledStatus(current.status)) {
-        const nextIndex = queue.findIndex(
-            (player, index) =>
-                index >= Number(state.auctionCount || 0) && !isAuctionSettledStatus(player.status)
-        );
+        const nextIndex = queue.findIndex((player, index) => {
+            if (index < Number(state.auctionCount || 0)) return false;
+            if (isAuctionSettledStatus(player.status)) return false;
+            if (!locked) return true;
+            return normalizeCategoryName(player.category) === locked;
+        });
         if (nextIndex >= 0) {
             state.auctionCount = nextIndex;
             return true;
         }
-        // Past end of truncated queue — try master rebuild
+        // Category exhausted — do not jump into the next category here
+        if (locked) return false;
         return rebuildAuctionQueueFromMaster();
     }
 
@@ -1928,14 +1981,17 @@ function getWheelPoolPlayers(anchorPlayer = null) {
     const remaining = getWheelEligiblePlayers();
     if (getAuctionOrderMode() === "RANDOM") return remaining;
 
+    const locked = getCurrentAuctionCategoryName();
     const anchor =
         anchorPlayer ||
         state.players?.[state.auctionCount] ||
         remaining[0] ||
         null;
-    if (!anchor) return [];
+    const category =
+        locked ||
+        (anchor ? normalizeCategoryName(anchor.category) : "");
+    if (!category) return [];
 
-    const category = normalizeCategoryName(anchor.category);
     const sameCategory = remaining.filter(
         (player) => normalizeCategoryName(player.category) === category
     );
@@ -2281,7 +2337,9 @@ function continueToNextCategory() {
         return;
     }
     const toIndex = Number(pendingCategoryTransition.toIndex);
+    const toCategory = pendingCategoryTransition.toCategory;
     closeCategoryCompleteModal();
+    if (toCategory) setActiveAuctionCategory(toCategory);
     if (Number.isFinite(toIndex) && toIndex >= 0) {
         state.auctionCount = toIndex;
         revealPlayerAtCount(state.auctionCount, { useWheel: true });
@@ -2293,12 +2351,24 @@ function continueToNextCategory() {
 
 function stayOnCompletedCategory() {
     closeCategoryCompleteModal();
+    // Stay locked on the finished category — do not reveal the next category yet
     renderUI();
 }
 
-function getCurrentAuctionCategoryName() {
-    const player = state.players?.[state.auctionCount];
+function getPlayerAuctionCategoryName(player = state?.players?.[state?.auctionCount]) {
     return normalizeCategoryName(player?.category);
+}
+
+function getCurrentAuctionCategoryName() {
+    if (state?.activeAuctionCategory) {
+        return normalizeCategoryName(state.activeAuctionCategory);
+    }
+    return getPlayerAuctionCategoryName();
+}
+
+function setActiveAuctionCategory(categoryName) {
+    if (!state) return;
+    state.activeAuctionCategory = normalizeCategoryName(categoryName) || "";
 }
 
 /** Categories available to jump to, in sequence order. */
@@ -2438,6 +2508,7 @@ function jumpToCategory(categoryName, { confirmIfPending = true } = {}) {
 
     closeCategoryCompleteModal();
     closeCategorySwitchModal();
+    setActiveAuctionCategory(target);
     state.auctionCount = option.firstEligibleIndex;
     revealPlayerAtCount(state.auctionCount, { useWheel: true });
     saveAuctionProgress({ awaitDisk: true, critical: true });
@@ -2681,28 +2752,66 @@ function openCategorySwitchModal() {
     modal.setAttribute("aria-hidden", "false");
 }
 
-function findNextEligibleAuctionIndex(fromIndex = state.auctionCount) {
+function findNextEligibleAuctionIndex(fromIndex = state.auctionCount, { categoryName = null } = {}) {
     const players = state.players || [];
+    const wanted = categoryName ? normalizeCategoryName(categoryName) : null;
     for (let i = Math.max(0, Number(fromIndex) + 1); i < players.length; i++) {
-        if (isWheelEligiblePlayer(players[i])) return i;
+        if (!isWheelEligiblePlayer(players[i])) continue;
+        if (wanted && normalizeCategoryName(players[i].category) !== wanted) continue;
+        return i;
     }
     return -1;
 }
 
+function buildCategoryExhaustedTransition(fromCategory) {
+    const from = normalizeCategoryName(fromCategory);
+    if (!from) return null;
+    const stats = getCategoryRoundStats(from);
+    const options = getCategoryJumpOptions();
+    const next =
+        options.find((row) => row.isNext && row.canJump) ||
+        options.find((row) => row.canJump && !row.isCurrent);
+    if (!next || next.firstEligibleIndex < 0) return null;
+    return {
+        fromIndex: state.auctionCount,
+        toIndex: next.firstEligibleIndex,
+        fromCategory: from,
+        toCategory: next.category,
+        stats
+    };
+}
+
 function advanceToNextPlayer({ useWheel = true } = {}) {
-    let nextIndex = findNextEligibleAuctionIndex(state.auctionCount);
+    const locked = getCurrentAuctionCategoryName();
+    let nextIndex = findNextEligibleAuctionIndex(state.auctionCount, {
+        categoryName: locked || null
+    });
     if (nextIndex < 0) {
         // Live queue may have dropped waiting players — rebuild from master first
         if (ensureAuctionQueueFromMaster()) {
-            nextIndex = findNextEligibleAuctionIndex(state.auctionCount - 1);
+            nextIndex = findNextEligibleAuctionIndex(state.auctionCount - 1, {
+                categoryName: locked || null
+            });
         }
     }
     if (nextIndex < 0) {
+        // Do not auto-jump into the next category (e.g. Evergreen during KEY PLAYER)
+        const transition =
+            findCategoryCompletion(state.auctionCount) ||
+            buildCategoryExhaustedTransition(locked);
+        if (transition) {
+            openCategoryCompleteModal(transition);
+            saveData();
+            return;
+        }
         openRoundEndModal();
         saveData();
         return;
     }
     state.auctionCount = nextIndex;
+    if (!state.activeAuctionCategory) {
+        setActiveAuctionCategory(state.players[nextIndex]?.category);
+    }
     revealPlayerAtCount(state.auctionCount, { useWheel });
     saveData();
 }
@@ -2951,12 +3060,6 @@ function applyTeamsFilter() {
         const name = normalizeTeamsFilterQuery(btn.dataset.teamName || "");
         btn.hidden = Boolean(query) && !name.includes(query);
     });
-}
-
-function getCurrentAuctionCategoryName() {
-    const player = state?.players?.[state.auctionCount];
-    if (!player) return "";
-    return normalizeCategoryName(player.category);
 }
 
 function getTeamsOrderedForCurrentCategory() {

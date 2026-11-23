@@ -1844,6 +1844,36 @@ function canTeamAffordBid(state, teamId, amount, options = {}) {
     };
 }
 
+/**
+ * Re-apply category base prices from the latest Config (DB) onto the live roster.
+ * Resume / Config edits must not keep stale baked prices (e.g. default Evergreen 20L).
+ */
+function syncLiveAuctionPricingFromConfig(state, config) {
+    if (!state) return state;
+    let normalized = normalizeConfig(config || state.config || {});
+    if (
+        state.divisionId &&
+        (normalized.divisions || []).some((division) => division.id === state.divisionId)
+    ) {
+        normalized = setActiveDivisionId(normalized, state.divisionId);
+    }
+    const division = getActiveDivision(normalized);
+    state.config = normalized;
+
+    const applyCategory = (player) => {
+        if (!player) return;
+        player.category = normalizeCategoryName(player.category);
+        if (division.useCategoryBasePrices === false) return;
+        const category = division.categories?.[player.category];
+        if (!category || category.basePrice == null) return;
+        player.basePrice = Number(category.basePrice) || 0;
+    };
+
+    if (Array.isArray(state.players)) state.players.forEach(applyCategory);
+    if (Array.isArray(state.allPlayers)) state.allPlayers.forEach(applyCategory);
+    return state;
+}
+
 function applyConfigToAuctionState(state, config) {
     if (!state || !config) return state;
     const normalized = normalizeConfig(config);
@@ -1863,21 +1893,6 @@ function applyConfigToAuctionState(state, config) {
         });
     }
 
-    const applyCategory = (player) => {
-        if (!player) return;
-        // Category from player data only — do not infer from ID (CPL-E / CPL-R / …)
-        player.category = normalizeCategoryName(player.category);
-        if (division.useCategoryBasePrices) {
-            const category = division.categories[player.category];
-            if (category) {
-                player.basePrice = category.basePrice;
-            }
-        }
-    };
-
-    if (Array.isArray(state.players)) state.players.forEach(applyCategory);
-    if (Array.isArray(state.allPlayers)) state.allPlayers.forEach(applyCategory);
-
     // Keep a master copy, then set the live auction queue from the chosen order
     if (Array.isArray(state.players)) {
         if (!Array.isArray(state.allPlayers) || state.allPlayers.length === 0) {
@@ -1888,6 +1903,16 @@ function applyConfigToAuctionState(state, config) {
     }
 
     state.config = normalized;
+    syncLiveAuctionPricingFromConfig(state, normalized);
     applyIconCaptionAssignments(state, normalized);
+    const first = (state.players || []).find(
+        (player) =>
+            String(player?.status || "").toLowerCase() !== "sold" &&
+            String(player?.status || "").toLowerCase() !== "unsold" &&
+            String(player?.status || "").toLowerCase() !== "skipped"
+    );
+    state.activeAuctionCategory = normalizeCategoryName(
+        first?.category || getCategorySequence(normalized)[0] || ""
+    );
     return state;
 }
