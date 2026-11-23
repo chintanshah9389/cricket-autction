@@ -1380,7 +1380,7 @@ function showPlayerDetails(i) {
     const poolCount = (state.allPlayers || state.players || []).filter(
         (p) =>
             normalizeCategoryName(p.category) === categoryName &&
-            !isPreAssignedIconCaptionPlayer(p)
+            !isAssignedAsIconOrCaption(p)
     ).length;
     const remainingInPool = (state.players || []).filter(
         (p) =>
@@ -1388,7 +1388,7 @@ function showPlayerDetails(i) {
             p.status !== "sold" &&
             p.status !== "unsold" &&
             p.status !== "skipped" &&
-            !isPreAssignedIconCaptionPlayer(p)
+            !isAssignedAsIconOrCaption(p)
     ).length;
     playerCategory.title =
         iconsTaken > 0
@@ -2195,11 +2195,61 @@ function isPreAssignedIconCaptionPlayer(player) {
     return role === "icon" || role === "caption";
 }
 
+/** Icon/Caption picks from live teams + Config (resume often has ids on teams without preAssignRole). */
+function getAssignedIconCaptionPlayerIds() {
+    const ids = [];
+    const seen = new Set();
+    const push = (id) => {
+        if (id == null || id === "") return;
+        const key = String(id).trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        ids.push(id);
+    };
+    const collect = (teams) => {
+        (teams || []).forEach((team) => {
+            push(team?.iconPlayerId);
+            push(team?.captionPlayerId);
+        });
+    };
+    collect(state.teams);
+    try {
+        const config = typeof getActiveConfig === "function" ? getActiveConfig(state) : state.config;
+        if (typeof getConfigTeams === "function") collect(getConfigTeams(config));
+        if (typeof getActiveDivision === "function") collect(getActiveDivision(config)?.teams);
+    } catch (_) {
+        /* ignore */
+    }
+    return ids;
+}
+
+function playerMatchesAssignableId(player, assignableId) {
+    if (!player || assignableId == null || assignableId === "") return false;
+    if (typeof sameAssignablePlayerId === "function") {
+        return (
+            sameAssignablePlayerId(assignableId, player.id) ||
+            sameAssignablePlayerId(assignableId, player.code)
+        );
+    }
+    if (typeof findPlayerByAssignableId === "function") {
+        const hit = findPlayerByAssignableId([player], assignableId);
+        return Boolean(hit);
+    }
+    return String(player.id) === String(assignableId) || String(player.code) === String(assignableId);
+}
+
+/** True when this player is a Config/team Icon or Caption pick (even if still in the queue). */
+function isAssignedAsIconOrCaption(player) {
+    if (!player) return false;
+    if (isPreAssignedIconCaptionPlayer(player)) return true;
+    return getAssignedIconCaptionPlayerIds().some((id) => playerMatchesAssignableId(player, id));
+}
+
 function isWheelEligiblePlayer(player) {
     if (!player) return false;
-    // Sold / unsold / skipped / Icon-Caption pre-assigns never appear on the spinner
+    // Sold / unsold / skipped / Icon-Caption picks never appear on the spinner
     if (isAuctionSettledStatus(player.status)) return false;
-    if (isPreAssignedIconCaptionPlayer(player)) return false;
+    if (isAssignedAsIconOrCaption(player)) return false;
     return true;
 }
 
@@ -2208,6 +2258,11 @@ function countCategoryIconCaptionAssigned(categoryName) {
     const name = normalizeCategoryName(categoryName);
     if (!name) return 0;
     const master = getMasterPlayers();
+    const find =
+        typeof findPlayerByAssignableId === "function"
+            ? findPlayerByAssignableId
+            : (list, id) =>
+                  (list || []).find((entry) => String(entry?.id) === String(id)) || null;
     const counted = new Set();
     let total = 0;
 
@@ -2221,21 +2276,11 @@ function countCategoryIconCaptionAssigned(categoryName) {
     };
 
     master.forEach((player) => {
-        if (isPreAssignedIconCaptionPlayer(player)) consider(player);
+        if (isAssignedAsIconOrCaption(player)) consider(player);
     });
 
-    (state.teams || []).forEach((team) => {
-        const find =
-            typeof findPlayerByAssignableId === "function"
-                ? findPlayerByAssignableId
-                : (list, id) =>
-                      (list || []).find((entry) => String(entry?.id) === String(id)) || null;
-        if (team?.iconPlayerId != null && team.iconPlayerId !== "") {
-            consider(find(master, team.iconPlayerId));
-        }
-        if (team?.captionPlayerId != null && team.captionPlayerId !== "") {
-            consider(find(master, team.captionPlayerId));
-        }
+    getAssignedIconCaptionPlayerIds().forEach((id) => {
+        consider(find(master, id));
     });
 
     return total;
