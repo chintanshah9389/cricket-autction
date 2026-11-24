@@ -4018,13 +4018,9 @@ function openDirectBidModal(teamId = null) {
     }, 0);
 }
 
-/** Floor for custom bid: base price, or just above the previous competing bid. */
+/** Custom bid floor is only the player's base price. */
 function getDirectBidFloor(player) {
-    const basePrice = Number(player?.basePrice) || 0;
-    const bids = Array.isArray(player?.bids) ? player.bids : [];
-    if (bids.length <= 1) return basePrice;
-    const previous = bids[bids.length - 2];
-    return Math.max(basePrice, (Number(previous?.amount) || 0) + 1);
+    return Math.max(0, Number(player?.basePrice) || 0);
 }
 
 function updateDirectBidPreview() {
@@ -4038,19 +4034,13 @@ function updateDirectBidPreview() {
     }
 
     const player = state.players?.[state.auctionCount];
-    const bids = Array.isArray(player?.bids) ? player.bids : [];
-    const lastBid = bids.length ? bids[bids.length - 1] : null;
+    const floor = getDirectBidFloor(player);
     const money = formatMoney(amount);
-
-    if (lastBid && amount < Number(lastBid.amount)) {
-        preview.textContent = `Will correct current bid down to ${money}`;
+    if (amount < floor) {
+        preview.textContent = `Below base price (${formatMoney(floor)})`;
         return;
     }
-    if (lastBid && amount === Number(lastBid.amount)) {
-        preview.textContent = `Same as current bid (${money})`;
-        return;
-    }
-    preview.textContent = `Will show as ${money}`;
+    preview.textContent = `Will set current bid to ${money}`;
 }
 
 function stepDirectBidAmount(direction) {
@@ -4074,17 +4064,8 @@ function stepDirectBidAmount(direction) {
 
 function updateDirectBidSubmitLabel() {
     const btn = document.getElementById("submit-bid-btn");
-    if (!btn || !directBidAmountInput) return;
-    const player = state.players?.[state.auctionCount];
-    const amount = parseInt(directBidAmountInput.value, 10);
-    const lastBid = Array.isArray(player?.bids) && player.bids.length
-        ? player.bids[player.bids.length - 1]
-        : null;
-    if (lastBid && Number.isFinite(amount) && amount < Number(lastBid.amount)) {
-        btn.textContent = "Adjust Bid Down";
-    } else {
-        btn.textContent = "Place Bid";
-    }
+    if (!btn) return;
+    btn.textContent = "Set Bid";
 }
 
 function closeDirectBidModal() {
@@ -4092,73 +4073,48 @@ function closeDirectBidModal() {
 }
 
 /**
- * Handles the logic for a custom "Direct Bid"
- * — amount above current: place a new competing bid
- * — amount below current: correct / go back the current high bid
+ * Custom Bid: set any amount for the selected team.
+ * Rules only: >= base price, and within that team's spendable purse
+ * (category min-balance / reserve). No "must beat previous bid" ladder.
  */
 function handleDirectBidSubmit(event) {
-    event.preventDefault(); // Stop the form from reloading the page
-    
-    // 1. Get values from the form
-    const teamId = parseInt(teamSelectDropdown.value);
-    const amount = parseInt(directBidAmountInput.value);
-    
-    const player = state.players[state.auctionCount];
-    const team = state.teams.find(t => t.team_id === teamId);
+    event.preventDefault();
 
-    // 2. --- Validation ---
-    if (!team || isNaN(amount) || amount <= 0) {
+    const teamId = parseInt(teamSelectDropdown.value, 10);
+    const amount = parseInt(directBidAmountInput.value, 10);
+    const player = state.players[state.auctionCount];
+    const team = state.teams.find((entry) => Number(entry.team_id) === Number(teamId));
+
+    if (!player || !team || !Number.isFinite(amount) || amount <= 0) {
         alert("Invalid input. Please check the team and amount.");
         return;
     }
     if (!Array.isArray(player.bids)) player.bids = [];
 
-    const lastBid = player.bids.length ? player.bids[player.bids.length - 1] : null;
-    const adjustingDown = Boolean(lastBid && amount < Number(lastBid.amount));
+    const basePrice = getDirectBidFloor(player);
+    if (amount < basePrice) {
+        alert(`The bid must be at least the base price of ${formatMoney(basePrice)}.`);
+        return;
+    }
 
-    if (adjustingDown) {
-        const floor = getDirectBidFloor(player);
-        if (amount < floor) {
-            alert(
-                `Cannot go below ${formatMoney(floor)}` +
-                    (player.bids.length > 1
-                        ? " (must stay above the previous bid)."
-                        : ` (base price is ${formatMoney(player.basePrice)}).`)
-            );
+    const lastBid = player.bids.length ? player.bids[player.bids.length - 1] : null;
+    const sameLeadingTeam =
+        lastBid && Number(lastBid.team) === Number(teamId);
+
+    // Category max still applies when a new team takes the player
+    if (!sameLeadingTeam) {
+        const quota = getCategoryQuotaStatus(state, teamId, player.category);
+        if (quota.isFull) {
+            alert(`${team.team_name} already has ${quota.owned}/${quota.max} ${quota.name} players.`);
             return;
         }
-
-        // Correct the current high bid amount (same leading team)
-        const leadingTeam = findTeam(lastBid.team) || team;
-        saveHistory();
-        lastBid.amount = amount;
-        console.log(
-            `DIRECT BID ADJUST: ${player.name} current bid set back to ${formatMoney(amount)} (${leadingTeam.team_name})`
-        );
-        renderUI();
-        triggerAnim(document.getElementById("current-bid"), "updated");
-        triggerAnim(document.getElementById("current-bid-section"), "live-bid");
-        triggerAnim(document.getElementById(`team-${lastBid.team}`), "bid-flash");
-        triggerAnim(document.getElementById(`team-rail-${lastBid.team}`), "bid-flash");
-        saveData();
-        closeDirectBidModal();
-        return;
     }
 
-    const quota = getCategoryQuotaStatus(state, teamId, player.category);
-    if (quota.isFull) {
-        alert(`${team.team_name} already has ${quota.owned}/${quota.max} ${quota.name} players.`);
-        return;
-    }
-    if (player.bids.length === 0 && amount < player.basePrice) {
-        alert(`The bid must be at least the base price of ${formatMoney(player.basePrice)}.`);
-        return;
-    }
     const afford =
         typeof canTeamAffordBid === "function"
             ? canTeamAffordBid(state, teamId, amount, { fillingCategory: player.category })
             : {
-                  ok: team.remaining_budget >= amount,
+                  ok: Number(team.remaining_budget) >= amount,
                   purse: team.remaining_budget,
                   reserve: 0,
                   spendable: team.remaining_budget,
@@ -4172,29 +4128,36 @@ function handleDirectBidSubmit(event) {
         );
         return;
     }
-    if (lastBid) {
-        if (amount === Number(lastBid.amount)) {
-            alert(`Amount is already the current bid of ${formatMoney(lastBid.amount)}.`);
-            return;
-        }
-        if (Number(lastBid.team) === Number(teamId)) {
-            alert(`${team.team_name} cannot bid twice in a row. Use a lower amount to adjust the current bid down.`);
-            return;
-        }
+
+    if (
+        lastBid &&
+        Number(lastBid.team) === Number(teamId) &&
+        Number(lastBid.amount) === amount
+    ) {
+        alert(`Amount is already the current bid of ${formatMoney(amount)}.`);
+        return;
     }
 
-    // 3. --- Process the Bid ---
-    saveHistory(); // Save for undo
-    state.players[state.auctionCount].bids.push({ team: teamId, amount: amount });
-    console.log(`DIRECT BID: ${player.name} bidded by ${team.team_name} for ${formatMoney(amount)}`);
-    
-    renderUI(); // Update the main screen
+    saveHistory();
+    if (sameLeadingTeam) {
+        lastBid.amount = amount;
+        console.log(
+            `DIRECT BID SET: ${player.name} → ${formatMoney(amount)} (${team.team_name}, adjusted)`
+        );
+    } else {
+        player.bids.push({ team: teamId, amount });
+        console.log(
+            `DIRECT BID SET: ${player.name} → ${formatMoney(amount)} (${team.team_name})`
+        );
+    }
+
+    renderUI();
     triggerAnim(document.getElementById("current-bid"), "updated");
     triggerAnim(document.getElementById("current-bid-section"), "live-bid");
     triggerAnim(document.getElementById(`team-${teamId}`), "bid-flash");
     triggerAnim(document.getElementById(`team-rail-${teamId}`), "bid-flash");
-    saveData(); // Save to localStorage
-    closeDirectBidModal(); // Close the pop-up
+    saveData();
+    closeDirectBidModal();
 }
 
 const AUCTION_DESK_PREFS_KEY = "auctionDeskPrefs";

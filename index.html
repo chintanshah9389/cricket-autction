@@ -375,7 +375,7 @@
         <div class="modal-content">
             <span class="modal-close" id="direct-bid-close-btn">&times;</span>
             <h2>Custom Bid</h2>
-            <p class="direct-bid-hint">Type any amount in rupees. Go higher to place a new bid, or go lower to correct the current bid back. Example: 250000 = Rs 2.5 L.</p>
+            <p class="direct-bid-hint">Set any amount in rupees (≥ base price, within that team’s spendable purse after category reserves). Example: 250000 = Rs 2.5 L.</p>
             <form id="direct-bid-form" class="bid-form">
                 <div class="form-group">
                     <label for="team-select-dropdown">Select Team</label>
@@ -390,7 +390,7 @@
                     </div>
                     <small id="direct-bid-preview">Enter amount in full rupees</small>
                 </div>
-                <button type="submit" id="submit-bid-btn" class="modal-submit-btn">Place / Adjust Bid</button>
+                <button type="submit" id="submit-bid-btn" class="modal-submit-btn">Set Bid</button>
             </form>
         </div>
     </div>
@@ -576,7 +576,7 @@
     <script src="js/project-store.js?v=30"></script>
     <script src="js/players-store.js?v=34"></script>
     <script src="js/offline-store.js?v=27"></script>
-    <script src="app.js?v=65"></script>
+    <script src="app.js?v=66"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>
