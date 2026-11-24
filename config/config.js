@@ -488,20 +488,20 @@ function randomBidderPin() {
 }
 
 function bidderPortalLink(divisionId) {
-    const origin = window.location.origin;
-    const div = encodeURIComponent(divisionId || activeDivisionId || "div_1");
+    const origin = window.location.origin || "";
+    const div = encodeURIComponent(divisionId || draftActiveDivisionId || "div_1");
     return `${origin}/bidder/?div=${div}`;
 }
 
 function refreshBidderPortalBanner() {
     const input = document.getElementById("bidder-portal-url");
-    const link = bidderPortalLink(activeDivisionId);
+    const link = bidderPortalLink(draftActiveDivisionId);
     if (input) input.value = link;
 }
 
 document.getElementById("copy-bidder-portal-url-btn")?.addEventListener("click", async () => {
     const input = document.getElementById("bidder-portal-url");
-    const link = input?.value || bidderPortalLink(activeDivisionId);
+    const link = input?.value || bidderPortalLink(draftActiveDivisionId);
     try {
         await navigator.clipboard.writeText(link);
         if (input) {
@@ -529,8 +529,14 @@ function removeTeam(index) {
 }
 
 function renderTeamCards() {
-    refreshBidderPortalBanner();
+    if (!teamList) return;
+    try {
+        refreshBidderPortalBanner();
+    } catch (error) {
+        console.warn("Bidder URL banner:", error);
+    }
     teamList.innerHTML = "";
+    const portalUrl = bidderPortalLink(draftActiveDivisionId);
     draftTeams.forEach((team, index) => {
         const logoSrc = getTeamLogoSrc(team, "../assets/teams-logo");
         const hasUpload = Boolean(team.logo);
@@ -569,11 +575,11 @@ function renderTeamCards() {
                     <label class="team-bidder-url-label">
                         Bidder URL (share this link)
                         <div class="team-bidder-url-row">
-                            <input class="team-bidder-url" type="text" readonly value="${bidderPortalLink(activeDivisionId)}" aria-label="Bidder login URL">
+                            <input class="team-bidder-url" type="text" readonly value="${portalUrl}" aria-label="Bidder login URL">
                             <button type="button" class="ghost-btn" data-copy-bidder-link="${index}">Copy</button>
                         </div>
                     </label>
-                    <p class="help tight">Optional. Share the URL + this team’s code/PIN. Team opens the link, logs in, and can bid from their phone.</p>
+                    <p class="help tight">Optional. Share the URL + this team code/PIN. Team opens the link, logs in, and can bid from their phone.</p>
                 </div>
             </div>
             <button type="button" class="link-danger" data-remove-team="${index}">Remove</button>
@@ -602,7 +608,7 @@ function renderTeamCards() {
         button.addEventListener("click", async () => {
             const card = button.closest(".team-config-card");
             const urlInput = card?.querySelector(".team-bidder-url");
-            const link = urlInput?.value || bidderPortalLink(activeDivisionId);
+            const link = urlInput?.value || bidderPortalLink(draftActiveDivisionId);
             try {
                 await navigator.clipboard.writeText(link);
                 if (urlInput) {
