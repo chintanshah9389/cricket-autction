@@ -950,11 +950,12 @@ body:not(.welcome-active) #welcome-menu-overlay {
 
 #current-bid-section {
     display: grid;
-    grid-template-columns: 1.05fr 1.45fr auto;
+    grid-template-columns: minmax(140px, 1.05fr) minmax(0, 1.45fr) 88px;
     grid-template-rows: auto 1fr;
     grid-template-areas:
         "head head action"
         "amount team action";
+    min-width: 0;
 }
 
 .current-bid-head {
@@ -975,23 +976,24 @@ body:not(.welcome-active) #welcome-menu-overlay {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 14px;
-    padding: 10px 14px;
+    gap: 12px;
+    padding: 10px 12px;
     background: linear-gradient(180deg, #fff8e6, #ffe3a3);
     color: #9a6200;
     font-family: var(--font-display);
-    font-size: clamp(2.3rem, 3.6vw, 3.2rem);
+    font-size: clamp(1.85rem, 2.8vw, 3rem);
     font-weight: 700;
     min-width: 0;
 }
 
 .current-bid-info #current-bid {
     line-height: 1;
+    min-width: 0;
 }
 
 .current-bid-team-logo {
-    width: clamp(64px, 7vw, 88px);
-    height: clamp(64px, 7vw, 88px);
+    width: clamp(52px, 5.5vw, 78px);
+    height: clamp(52px, 5.5vw, 78px);
     flex: 0 0 auto;
     object-fit: contain;
     border-radius: 50%;
@@ -1009,25 +1011,28 @@ body:not(.welcome-active) #welcome-menu-overlay {
     display: grid;
     grid-template-rows: auto auto;
     align-content: center;
-    justify-items: center;
+    justify-items: stretch;
     gap: 8px;
-    padding: 12px 14px;
+    padding: 10px 12px;
     background: var(--teal);
     color: #fff;
     text-align: center;
     line-height: 1.2;
+    min-width: 0;
     overflow: hidden;
     transition: background-color 0.25s ease, transform 0.2s ease;
 }
 
 .current-bid-team-name {
     font-family: var(--font-player);
-    font-size: clamp(1rem, 1.35vw, 1.25rem);
+    font-size: clamp(0.95rem, 1.2vw, 1.2rem);
     font-weight: 700;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    justify-self: center;
+    max-width: 100%;
 }
 
 .current-bid-team-stats {
@@ -1035,14 +1040,15 @@ body:not(.welcome-active) #welcome-menu-overlay {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
     width: 100%;
+    min-width: 0;
 }
 
 #current-bid-team-spendable {
-    color: #ffe08a;
+    color: #fff6c8;
 }
 
 #current-bid-team-reserved {
-    color: #ffd0a8;
+    color: #ffe0c2;
 }
 
 .current-bid-team-stats[hidden] {
@@ -1052,29 +1058,36 @@ body:not(.welcome-active) #welcome-menu-overlay {
 .bid-team-stat {
     display: grid;
     gap: 2px;
-    padding: 7px 4px;
+    padding: 6px 4px;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.16);
     border: 1px solid rgba(255, 255, 255, 0.22);
     min-width: 0;
+    overflow: hidden;
 }
 
 .bid-team-stat em {
     font-style: normal;
     font-family: var(--font-body);
-    font-size: 0.62rem;
-    letter-spacing: 0.08em;
+    font-size: clamp(0.5rem, 0.7vw, 0.62rem);
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    opacity: 0.85;
+    opacity: 0.9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.1;
 }
 
 .bid-team-stat strong {
     font-family: var(--font-display);
-    font-size: clamp(0.85rem, 1.1vw, 1.05rem);
+    font-size: clamp(0.78rem, 1vw, 1rem);
     font-weight: 700;
+    color: #fff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.15;
 }
 
 #current-bid-section[data-has-bidder="true"] .current-bid-team {
@@ -1098,7 +1111,7 @@ body:not(.welcome-active) #welcome-menu-overlay {
 
 .custom-bid-button {
     grid-area: action;
-    width: 108px;
+    width: 88px;
     height: 100%;
     margin: 0;
     border: none;
@@ -1107,7 +1120,7 @@ body:not(.welcome-active) #welcome-menu-overlay {
     background: linear-gradient(180deg, #c23b8a, #4f5bd5);
     color: #fff;
     font-family: var(--font-display);
-    font-size: 1.25rem;
+    font-size: 1.1rem;
     font-weight: 600;
     letter-spacing: 0.12em;
     cursor: pointer;
@@ -1115,6 +1128,58 @@ body:not(.welcome-active) #welcome-menu-overlay {
 
 .custom-bid-button:hover {
     filter: brightness(1.08);
+}
+
+/* Locked BID drawer squeezes the desk — keep CURRENT BID readable */
+body.teams-drawer-locked .bid-board {
+    grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1.9fr);
+    gap: 10px;
+}
+
+body.teams-drawer-locked #current-bid-section {
+    grid-template-columns: minmax(120px, 0.85fr) minmax(0, 1.7fr) 72px;
+    min-height: 148px;
+}
+
+body.teams-drawer-locked .current-bid-info {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: clamp(1.55rem, 2.2vw, 2.2rem);
+}
+
+body.teams-drawer-locked .current-bid-team-logo {
+    width: 48px;
+    height: 48px;
+    border-width: 2px;
+}
+
+body.teams-drawer-locked .current-bid-team {
+    padding: 8px 10px;
+    gap: 6px;
+}
+
+body.teams-drawer-locked .current-bid-team-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+}
+
+body.teams-drawer-locked .bid-team-stat {
+    padding: 5px 4px;
+}
+
+body.teams-drawer-locked .bid-team-stat em {
+    font-size: 0.52rem;
+    letter-spacing: 0.03em;
+}
+
+body.teams-drawer-locked .bid-team-stat strong {
+    font-size: 0.86rem;
+}
+
+body.teams-drawer-locked .custom-bid-button {
+    width: 72px;
+    font-size: 1rem;
 }
 
 #current-bid-section.live-bid {
@@ -3519,28 +3584,33 @@ body.server-offline-only #big-container {
         flex: 1 1 calc(50% - 8px);
     }
 
-    #current-bid-section {
+    #current-bid-section,
+    body.teams-drawer-locked #current-bid-section {
         grid-template-columns: 1fr 1fr;
         grid-template-areas:
             "head head"
             "amount team"
             "action action";
+        min-height: 0;
     }
 
-    .current-bid-team-stats {
+    body.teams-drawer-locked .current-bid-info,
+    .current-bid-info {
+        flex-direction: row;
+    }
+
+    .current-bid-team-stats,
+    body.teams-drawer-locked .current-bid-team-stats {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    #current-bid-team-stats .bid-team-stat:nth-child(4),
-    #current-bid-team-stats .bid-team-stat:nth-child(5) {
-        grid-column: span 1;
-    }
-
-    .custom-bid-button {
+    .custom-bid-button,
+    body.teams-drawer-locked .custom-bid-button {
         width: 100%;
         min-height: 48px;
         writing-mode: horizontal-tb;
-    transform: none;
+        transform: none;
+        font-size: 1rem;
     }
 }
 
