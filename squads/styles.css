@@ -223,21 +223,57 @@ body {
 }
 
 .player-card .player-name {
-    padding: 10px 12px 4px;
+    padding: 10px 12px 2px;
     font-weight: 800;
     text-transform: uppercase;
     font-size: 0.9rem;
 }
 
+.player-category {
+    padding: 0 12px 6px;
+}
+
+.player-category span {
+    display: inline-block;
+    max-width: 100%;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--pitch-deep) 12%, #fff);
+    color: var(--pitch-deep);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.player-meta-line,
 .batting-style,
 .bowling-style,
 .final-price {
-    padding: 2px 12px;
+    padding: 1px 12px;
     color: var(--ink-soft);
-    font-size: 0.82rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.player-skill {
+    color: var(--ink);
+    font-weight: 700;
+}
+
+.player-location,
+.player-mobile {
+    color: var(--muted);
 }
 
 .final-price {
+    padding-top: 4px;
     padding-bottom: 12px;
     color: var(--bid);
     font-weight: 800;

@@ -114,15 +114,32 @@ function showPlayers(teamId) {
     spendBudget.innerText = showAmount(team.total_cost);
     remainingBudget.innerText = showAmount(team.remaining_budget);
 
+    const displayOrDash = (value) => {
+        const text = value == null ? "" : String(value).trim();
+        return text && text.toUpperCase() !== "N/A" ? text : "—";
+    };
+
     //Create Teams Player Card
-    const createCardHTML = (player) => `
+    const createCardHTML = (player) => {
+        const category = displayOrDash(player.category);
+        const location = displayOrDash(player.currentClub);
+        const mobile = displayOrDash(player.mobile);
+        const skill = displayOrDash(player.role);
+        const batting = displayOrDash(player.battingStyle);
+        const bowling = displayOrDash(player.bowlingStyle);
+        return `
         <div class="player-card" id="player-${player.id}">
             <div class="image-box"><img src="${resolveAssetUrl(player.photo, "../")}" data-photo-ref="${player.photo || ""}" alt="${player.name}" class="player-photo" onerror="this.src='../assets/placeholder.png'"></div>
             <div class="player-name"><span>${player.name}</span></div>
-            <div class="batting-style"><span>${player.battingStyle}</span></div>
-            <div class="bowling-style"><span>${player.bowlingStyle || "N/A"}</span></div>
+            <div class="player-category"><span>${category}</span></div>
+            <div class="player-meta-line player-skill"><span>${skill}</span></div>
+            <div class="player-meta-line player-location" title="Location"><span>${location}</span></div>
+            <div class="player-meta-line player-mobile" title="Mobile"><span>${mobile}</span></div>
+            <div class="batting-style"><span>Bat: ${batting}</span></div>
+            <div class="bowling-style"><span>Bowl: ${bowling}</span></div>
             <div class="final-price">Rs <span>${showAmount(player.finalPrice)}</span></div>
         </div>`;
+    };
         
     batters.forEach(p => batterSection.innerHTML += createCardHTML(p));
     bowlers.forEach(p => bowlerSection.innerHTML += createCardHTML(p));

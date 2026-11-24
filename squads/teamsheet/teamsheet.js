@@ -77,16 +77,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const teamPlayers = team.players.map(pId => state.allPlayers.find(p => p.id === pId));
 
+    const cell = (value) => {
+        const text = value == null ? "" : String(value).trim();
+        return text && text.toUpperCase() !== "N/A" ? text : "—";
+    };
+
     teamPlayers.forEach(player => {
         if (player) {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${getPlayerDisplayCode(player)}</td>
-                <td>${player.category}</td>
-                <td>${player.name}</td>
-                <td>${player.role}</td>
+                <td>${cell(player.category)}</td>
+                <td>${cell(player.name)}</td>
+                <td>${cell(player.role)}</td>
+                <td>${cell(player.currentClub)}</td>
+                <td>${cell(player.mobile)}</td>
                 <td>${formatMoney(player.basePrice)}</td>
-                <td>${player.finalPrice == null ? 'N/A' : formatMoney(player.finalPrice)}</td>
+                <td>${player.finalPrice == null ? "—" : formatMoney(player.finalPrice)}</td>
             `;
             playerListBody.appendChild(row);
         }
@@ -95,7 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(teamPlayers.length == 0){
         const row = document.createElement('tr');
             row.innerHTML = `
-                <td colspan="6"><center>No player signed.<center></td>
+                <td colspan="8"><center>No player signed.</center></td>
             `;
             playerListBody.appendChild(row);
     }
