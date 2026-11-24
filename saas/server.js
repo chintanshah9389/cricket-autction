@@ -17,6 +17,7 @@ const { handleOrgRoutes } = require("./routes/orgs");
 const { handleMediaRoutes } = require("./routes/media");
 const { handleSuperAdminRoutes } = require("./routes/superadmin");
 const { handleTournamentRoutes } = require("./routes/tournaments");
+const { handleBidderRoutes } = require("./routes/bidder");
 const { tryPrettyHtml } = require("../server");
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -69,6 +70,7 @@ const server = http.createServer(async (req, res) => {
     if (await handleOrgRoutes(req, res, url)) return;
     if (await handleMediaRoutes(req, res, url)) return;
     if (await handleSuperAdminRoutes(req, res, url)) return;
+    if (await handleBidderRoutes(req, res, url)) return;
     if (await handleTournamentRoutes(req, res, url)) return;
 
     // Default entry: login page (auction desk remains at /index.html)

@@ -446,6 +446,7 @@ function startMainApplication() {
     enterAuctionDesk();
     renderUI();
     updateUndoRedoButtons();
+    startAuctionRevisionPolling();
 }
 
 function requireServerOnline(actionLabel = "continue") {
@@ -1870,6 +1871,73 @@ async function saveAuctionProgress({ awaitDisk = false, critical = false } = {})
 function saveData() {
     // Fire-and-forget for normal UI paths; disk-first under the hood
     saveAuctionProgress({ awaitDisk: false, critical: false });
+}
+
+/** Optional phone-bidder sync: adopt newer Postgres auction revision onto the desk. */
+let auctionRevisionPollTimer = null;
+let auctionRevisionPollBusy = false;
+
+function stopAuctionRevisionPolling() {
+    if (auctionRevisionPollTimer) {
+        clearInterval(auctionRevisionPollTimer);
+        auctionRevisionPollTimer = null;
+    }
+}
+
+function startAuctionRevisionPolling() {
+    stopAuctionRevisionPolling();
+    if (typeof fetchDivisionAuction !== "function") return;
+    if (typeof usesTournamentDb === "function" && !usesTournamentDb()) return;
+    auctionRevisionPollTimer = setInterval(() => {
+        pollAuctionRevisionFromDb().catch(() => {});
+    }, 1400);
+}
+
+async function pollAuctionRevisionFromDb() {
+    if (auctionRevisionPollBusy) return;
+    if (typeof fetchDivisionAuction !== "function") return;
+    if (typeof usesTournamentDb === "function" && !usesTournamentDb()) return;
+    if (!state?.players?.length) return;
+    if (document.hidden) return;
+    // Skip while local overlays / edits would fight a remote apply
+    if (typeof isOverlayBlockingBids === "function" && isOverlayBlockingBids()) return;
+    if (directBidModal && directBidModal.style.display === "flex") return;
+
+    auctionRevisionPollBusy = true;
+    try {
+        const divisionId =
+            state.divisionId ||
+            (typeof getActiveDivisionId === "function" ? getActiveDivisionId(state.config) : null) ||
+            "div_1";
+        const payload = await fetchDivisionAuction(divisionId);
+        const remoteRev = Number(payload?.revision) || 0;
+        const localRev = Number(window.__auctionRevision);
+        if (!Number.isFinite(localRev)) {
+            window.__auctionRevision = remoteRev;
+            return;
+        }
+        if (remoteRev <= localRev) return;
+
+        const remoteAuction = payload.auction;
+        const nextState = remoteAuction?.auctionState || remoteAuction;
+        if (!nextState || !Array.isArray(nextState.players)) return;
+
+        const prevConfig = state.config;
+        const prevTournament = state.tournament;
+        state = nextState;
+        if (!state.config && prevConfig) state.config = prevConfig;
+        if (!state.tournament && prevTournament) state.tournament = prevTournament;
+        if (!state.allPlayers) state.allPlayers = (state.players || []).slice();
+        window.__auctionRevision = remoteRev;
+
+        if (typeof ensureIconCaptionAssignments === "function") {
+            ensureIconCaptionAssignments(state, state.config || welcomeConfigCache);
+        }
+        renderUI();
+        if (typeof updateUndoRedoButtons === "function") updateUndoRedoButtons();
+    } finally {
+        auctionRevisionPollBusy = false;
+    }
 }
 
 async function flushAuctionProgressToDisk() {

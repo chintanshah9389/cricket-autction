@@ -1,0 +1,67 @@
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+
+function accessSecret() {
+  return process.env.JWT_ACCESS_SECRET || "dev-access-secret-change-me";
+}
+
+function hashPin(pin) {
+  return bcrypt.hash(String(pin), 10);
+}
+
+function verifyPin(pin, pinHash) {
+  if (!pinHash) return Promise.resolve(false);
+  return bcrypt.compare(String(pin || ""), String(pinHash || ""));
+}
+
+function signBidderToken({ tournamentId, divisionId, divisionCode, teamId, teamName }) {
+  return jwt.sign(
+    {
+      typ: "bidder",
+      tournamentId,
+      divisionId,
+      divisionCode,
+      teamId,
+      teamName
+    },
+    accessSecret(),
+    { expiresIn: process.env.BIDDER_TOKEN_TTL || "12h" }
+  );
+}
+
+function verifyBidderToken(token) {
+  try {
+    const payload = jwt.verify(String(token || ""), accessSecret());
+    if (payload?.typ !== "bidder") return null;
+    if (!payload.tournamentId || !payload.divisionId || payload.teamId == null) return null;
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+function authenticateBidderRequest(req) {
+  const header = String(req.headers.authorization || "");
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  return verifyBidderToken(match[1]);
+}
+
+function randomBidderCode() {
+  return crypto.randomBytes(3).toString("hex").toUpperCase();
+}
+
+function randomBidderPin() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+module.exports = {
+  hashPin,
+  verifyPin,
+  signBidderToken,
+  verifyBidderToken,
+  authenticateBidderRequest,
+  randomBidderCode,
+  randomBidderPin
+};

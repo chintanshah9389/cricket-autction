@@ -92,7 +92,15 @@ async function putDivisionAuction(divisionId, auction) {
         method: "PUT",
         body: { auction: auction || null, status: "live" }
     });
+    if (payload?.revision != null && typeof window !== "undefined") {
+        window.__auctionRevision = Number(payload.revision) || 0;
+    }
     return payload.auction;
+}
+
+async function fetchDivisionAuction(divisionId) {
+    const id = encodeURIComponent(divisionId || "div_1");
+    return projectApiFetch(`${tournamentApiBase()}/divisions/${id}/auction`);
 }
 
 async function deleteDivisionAuction(divisionId) {

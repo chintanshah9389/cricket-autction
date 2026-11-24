@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bidder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;600;700&family=Sora:wght@700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+    <main class="bidder-shell">
+        <header class="bidder-top">
+            <div>
+                <p class="eyebrow">Live bidder</p>
+                <h1 id="team-title">Team</h1>
+                <p class="meta" id="division-title">—</p>
+            </div>
+            <button type="button" class="ghost-btn" id="logout-btn">Logout</button>
+        </header>
+
+        <section class="panel" id="player-panel">
+            <div class="player-now">
+                <img id="player-photo" src="../assets/placeholder.png" alt="">
+                <div>
+                    <h2 id="player-name">Waiting for auction…</h2>
+                    <p class="meta" id="player-meta">—</p>
+                    <div class="bid-amount" id="current-bid">—</div>
+                    <p class="meta" id="leading-team">No bids yet</p>
+                </div>
+            </div>
+            <button type="button" class="bid-btn" id="bid-btn" disabled>BID</button>
+            <p class="status" id="bid-status" aria-live="polite"></p>
+        </section>
+
+        <section class="panel">
+            <h3 style="margin:0 0 10px;font-family:var(--font-ui);">Team purse</h3>
+            <div class="purse-grid">
+                <div><em>Purse</em><strong id="purse">—</strong></div>
+                <div><em>Reserved</em><strong id="reserved">—</strong></div>
+                <div><em>Spendable</em><strong id="spendable">—</strong></div>
+                <div><em>Pending</em><strong id="pending">—</strong></div>
+                <div><em>Bought</em><strong id="bought">—</strong></div>
+                <div><em>Spend</em><strong id="spent">—</strong></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h3 style="margin:0 0 10px;font-family:var(--font-ui);">Categories</h3>
+            <div class="tabs" id="category-tabs"></div>
+            <div class="list" id="category-list"></div>
+        </section>
+
+        <section class="panel">
+            <h3 style="margin:0 0 10px;font-family:var(--font-ui);">My squad</h3>
+            <div class="list" id="squad-list"></div>
+        </section>
+    </main>
+    <script src="../js/money.js?v=8"></script>
+    <script src="app.js?v=1"></script>
+</body>
+</html>

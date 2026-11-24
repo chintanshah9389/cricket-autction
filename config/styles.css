@@ -1014,7 +1014,8 @@ textarea:focus {
 }
 
 .team-config-logo-row,
-.team-config-video-row {
+.team-config-video-row,
+.team-bidder-box {
     grid-column: 1 / -1;
     display: flex;
     flex-wrap: wrap;
@@ -1022,7 +1023,42 @@ textarea:focus {
     align-items: center;
 }
 
+.team-bidder-box {
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 4px;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px dashed var(--line);
+    background: color-mix(in srgb, var(--paper) 70%, #fff);
+}
+
+.team-bidder-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.team-bidder-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.team-bidder-fields input {
+    min-width: 0;
+}
+
 .team-video-status { margin: 0; }
+
+@media (max-width: 720px) {
+    .team-bidder-fields {
+        grid-template-columns: 1fr 1fr;
+    }
+}
 
 .team-config-card input[type="color"],
 #new-team-color {

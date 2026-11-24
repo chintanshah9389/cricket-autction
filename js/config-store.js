@@ -520,6 +520,8 @@ function normalizeTeams(rawTeams) {
             const videoKey = String(team?.videoKey || team?.video_key || "").trim() || null;
             const iconPlayerId = normalizeAssignablePlayerId(team?.iconPlayerId);
             const captionPlayerId = normalizeAssignablePlayerId(team?.captionPlayerId);
+            const bidderCode = String(team?.bidderCode || team?.bidder_code || "").trim();
+            const bidderPin = String(team?.bidderPin || team?.bidder_pin || "").trim();
             return {
                 team_id: teamId,
                 team_name: teamName || `Team ${index + 1}`,
@@ -529,7 +531,11 @@ function normalizeTeams(rawTeams) {
                 ...(logoKey ? { logoKey } : {}),
                 ...(videoKey ? { videoKey } : {}),
                 ...(iconPlayerId != null ? { iconPlayerId } : {}),
-                ...(captionPlayerId != null ? { captionPlayerId } : {})
+                ...(captionPlayerId != null ? { captionPlayerId } : {}),
+                bidderEnabled: Boolean(team?.bidderEnabled),
+                ...(bidderCode ? { bidderCode } : {}),
+                ...(bidderPin ? { bidderPin } : {}),
+                bidderPinSet: Boolean(team?.bidderPinSet)
             };
         })
         .filter((team) => team.team_name);

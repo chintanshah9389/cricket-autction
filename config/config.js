@@ -465,7 +465,32 @@ function syncDraftFromTeamCards() {
         const name = String(nameInput?.value || "").trim();
         if (name) draftTeams[index].team_name = name;
         if (colorInput?.value) draftTeams[index].color = colorInput.value;
+
+        const enabled = card.querySelector(".team-bidder-enabled");
+        const codeInput = card.querySelector(".team-bidder-code");
+        const pinInput = card.querySelector(".team-bidder-pin");
+        draftTeams[index].bidderEnabled = Boolean(enabled?.checked);
+        const code = String(codeInput?.value || "").trim();
+        if (code) draftTeams[index].bidderCode = code;
+        else delete draftTeams[index].bidderCode;
+        const pin = String(pinInput?.value || "").trim();
+        if (pin) draftTeams[index].bidderPin = pin;
+        else delete draftTeams[index].bidderPin;
     });
+}
+
+function randomBidderCode() {
+    return Math.random().toString(16).slice(2, 8).toUpperCase();
+}
+
+function randomBidderPin() {
+    return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+function bidderPortalLink(divisionId) {
+    const origin = window.location.origin;
+    const div = encodeURIComponent(divisionId || activeDivisionId || "div_1");
+    return `${origin}/bidder/?div=${div}`;
 }
 
 function removeTeam(index) {
@@ -504,10 +529,52 @@ function renderTeamCards() {
                     <button type="button" class="team-logo-clear-btn" data-clear-video="${index}" ${team.video ? "" : "disabled"}>Clear video</button>
                     <span class="help team-video-status">${team.video ? "Video attached" : "No video"}</span>
                 </div>
+                <div class="team-bidder-box">
+                    <label class="team-bidder-toggle">
+                        <input type="checkbox" class="team-bidder-enabled" ${team.bidderEnabled ? "checked" : ""}>
+                        <span>Bidder phone login</span>
+                    </label>
+                    <div class="team-bidder-fields">
+                        <input class="team-bidder-code" type="text" placeholder="Code" value="${team.bidderCode || ""}" aria-label="Bidder code" autocomplete="off">
+                        <input class="team-bidder-pin" type="text" placeholder="${team.bidderPinSet ? "PIN set — type to change" : "PIN"}" value="" aria-label="Bidder PIN" autocomplete="off">
+                        <button type="button" class="secondary-btn" data-generate-bidder="${index}">Generate</button>
+                        <button type="button" class="ghost-btn" data-copy-bidder-link="${index}">Copy link</button>
+                    </div>
+                    <p class="help tight">Optional. Team opens /bidder, enters code + PIN, and can bid from their phone.</p>
+                </div>
             </div>
             <button type="button" class="link-danger" data-remove-team="${index}">Remove</button>
         `;
         teamList.appendChild(card);
+    });
+
+    teamList.querySelectorAll("[data-generate-bidder]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const index = parseInt(button.dataset.generateBidder, 10);
+            if (!draftTeams[index]) return;
+            syncDraftFromTeamCards();
+            draftTeams[index].bidderEnabled = true;
+            draftTeams[index].bidderCode = randomBidderCode();
+            draftTeams[index].bidderPin = randomBidderPin();
+            draftTeams[index].bidderPinSet = false;
+            saveStatus.textContent = `Generated bidder login for ${draftTeams[index].team_name}: code ${draftTeams[index].bidderCode}, PIN ${draftTeams[index].bidderPin}. Click Save.`;
+            renderTeamCards();
+            const card = teamList.querySelectorAll(".team-config-card")[index];
+            const pinInput = card?.querySelector(".team-bidder-pin");
+            if (pinInput) pinInput.value = draftTeams[index].bidderPin;
+        });
+    });
+
+    teamList.querySelectorAll("[data-copy-bidder-link]").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const link = bidderPortalLink(activeDivisionId);
+            try {
+                await navigator.clipboard.writeText(link);
+                saveStatus.textContent = `Copied bidder link: ${link}`;
+            } catch (_) {
+                saveStatus.textContent = `Bidder link: ${link}`;
+            }
+        });
     });
 
     teamList.querySelectorAll("[data-remove-team]").forEach((button) => {

@@ -63,6 +63,10 @@ function mapTeamRow(row) {
     row.caption_external_id ||
     row.caption_player_code ||
     null;
+  const bidderCode =
+    row.bidder_code != null && String(row.bidder_code).trim() !== ""
+      ? String(row.bidder_code).trim()
+      : "";
   return {
     id: row.team_key,
     team_id: row.team_key,
@@ -75,6 +79,9 @@ function mapTeamRow(row) {
     videoKey: row.video_key || null,
     ...(iconRef != null && iconRef !== "" ? { iconPlayerId: iconRef } : {}),
     ...(captionRef != null && captionRef !== "" ? { captionPlayerId: captionRef } : {}),
+    bidderEnabled: Boolean(row.bidder_enabled),
+    bidderCode,
+    bidderPinSet: Boolean(row.bidder_pin_hash),
     dbId: row.id
   };
 }
@@ -260,9 +267,11 @@ async function resolvePlayerIdByRef(client, divisionDbId, ref) {
 }
 
 async function syncTeamsForDivision(client, divisionDbId, teams) {
+  const { hashPin } = require("../lib/bidder-auth");
   const list = Array.isArray(teams) ? teams : [];
   const existing = await client.query(
-    `SELECT team_key, logo_key, video_key FROM teams WHERE division_id = $1`,
+    `SELECT team_key, logo_key, video_key, bidder_enabled, bidder_code, bidder_pin_hash
+     FROM teams WHERE division_id = $1`,
     [divisionDbId]
   );
   const existingByKey = new Map(
@@ -294,12 +303,27 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
       await deleteObjectQuiet(prev.video_key);
       await client.query(`DELETE FROM media_objects WHERE object_key = $1`, [prev.video_key]);
     }
+
+    const bidderEnabled = Boolean(team.bidderEnabled);
+    const bidderCodeRaw = String(team.bidderCode || team.bidder_code || "").trim();
+    const bidderCode = bidderEnabled && bidderCodeRaw ? bidderCodeRaw : null;
+    const plainPin = String(team.bidderPin || team.bidder_pin || "").trim();
+    let bidderPinHash = prev?.bidder_pin_hash || null;
+    if (!bidderEnabled) {
+      bidderPinHash = null;
+    } else if (plainPin) {
+      bidderPinHash = await hashPin(plainPin);
+    } else if (team.clearBidderPin) {
+      bidderPinHash = null;
+    }
+
     await client.query(
       `INSERT INTO teams (
          division_id, team_key, team_name, color, logo_key, video_key,
-         icon_player_id, caption_player_id, icon_player_ref, caption_player_ref
+         icon_player_id, caption_player_id, icon_player_ref, caption_player_ref,
+         bidder_enabled, bidder_code, bidder_pin_hash
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (division_id, team_key) DO UPDATE SET
          team_name = EXCLUDED.team_name,
          color = EXCLUDED.color,
@@ -309,6 +333,9 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
          caption_player_id = EXCLUDED.caption_player_id,
          icon_player_ref = EXCLUDED.icon_player_ref,
          caption_player_ref = EXCLUDED.caption_player_ref,
+         bidder_enabled = EXCLUDED.bidder_enabled,
+         bidder_code = EXCLUDED.bidder_code,
+         bidder_pin_hash = EXCLUDED.bidder_pin_hash,
          updated_at = NOW()`,
       [
         divisionDbId,
@@ -320,7 +347,10 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
         iconPlayerId,
         captionPlayerId,
         iconRef,
-        captionRef
+        captionRef,
+        bidderEnabled,
+        bidderCode,
+        bidderPinHash
       ]
     );
   }
@@ -861,6 +891,34 @@ async function handleTournamentRoutes(req, res, url) {
   const auctionMatch = url.pathname.match(
     /^\/api\/v1\/tournaments\/([^/]+)\/divisions\/([^/]+)\/auction$/
   );
+  if (auctionMatch && req.method === "GET") {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+    const tournamentId = auctionMatch[1];
+    const divisionKey = decodeURIComponent(auctionMatch[2]);
+    const ctx = await requireTournamentAccess(user, tournamentId, READ_ROLES);
+    if (!ctx) {
+      sendJson(res, 403, { error: "Forbidden" });
+      return true;
+    }
+    const division = await resolveDivision(tournamentId, divisionKey);
+    if (!division) {
+      sendJson(res, 404, { error: "Division not found" });
+      return true;
+    }
+    const session = await query(
+      `SELECT snapshot, status, revision, updated_at FROM auction_sessions WHERE division_id = $1 LIMIT 1`,
+      [division.id]
+    );
+    const row = session.rows[0];
+    sendJson(res, 200, {
+      auction: row?.snapshot || null,
+      status: row?.status || "idle",
+      revision: Number(row?.revision) || 0,
+      updatedAt: row?.updated_at || null
+    });
+    return true;
+  }
   if (auctionMatch && req.method === "PUT") {
     const user = await requireUser(req, res);
     if (!user) return true;

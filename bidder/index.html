@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bidder Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;600;700&family=Sora:wght@700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body class="bidder-login-page">
+    <main class="bidder-shell">
+        <header class="bidder-hero">
+            <p class="eyebrow">Team bidder</p>
+            <h1>Login</h1>
+            <p class="subtitle">Enter your team code and PIN from Config to bid from this phone.</p>
+        </header>
+
+        <form id="bidder-login-form" class="bidder-card">
+            <label>
+                Division (optional)
+                <input id="bidder-division" type="text" placeholder="div_1" autocomplete="off">
+            </label>
+            <label>
+                Team code
+                <input id="bidder-code" type="text" required placeholder="e.g. A1B2C3" autocomplete="username">
+            </label>
+            <label>
+                PIN
+                <input id="bidder-pin" type="password" required inputmode="numeric" placeholder="4+ digits" autocomplete="current-password">
+            </label>
+            <p id="bidder-login-status" class="status" aria-live="polite"></p>
+            <button type="submit" class="primary-btn">Enter auction</button>
+        </form>
+    </main>
+    <script src="login.js?v=1"></script>
+</body>
+</html>
