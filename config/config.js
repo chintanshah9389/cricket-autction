@@ -1516,8 +1516,8 @@ document.getElementById("reset-project-btn")?.addEventListener("click", async ()
         "Reset ENTIRE project?\n\nThis clears all divisions, teams, players, auction progress, and offline photos.\nBlank project = no teams."
     );
     if (!confirmed) return;
-    const securityKey = prompt("Enter the security key: (rezwan19)");
-    if (securityKey !== "rezwan19") {
+    const securityKey = prompt("Enter the security key: (chintan)");
+    if (securityKey !== "chintan") {
         saveStatus.textContent = "Wrong security key.";
         return;
     }

@@ -3695,9 +3695,9 @@ async function resetAll() {
     );
     if (!confirmed) return;
 
-    const securityKey = prompt("Enter the security key to clear the auction file: (rezwan19)");
+    const securityKey = prompt("Enter the security key to clear the auction file: (chintan)");
 
-    if (securityKey !== "rezwan19") {
+    if (securityKey !== "chintan") {
         alert("Wrong security key!");
         return;
     }
@@ -3736,8 +3736,8 @@ async function resetEntireProjectFlow() {
     );
     if (!confirmed) return;
 
-    const securityKey = prompt("Enter the security key to reset the whole project: (rezwan19)");
-    if (securityKey !== "rezwan19") {
+    const securityKey = prompt("Enter the security key to reset the whole project: (chintan)");
+    if (securityKey !== "chintan") {
         alert("Wrong security key!");
         return;
     }
