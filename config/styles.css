@@ -1048,8 +1048,31 @@ textarea:focus {
     align-items: center;
 }
 
-.team-bidder-fields input {
+.team-bidder-fields input,
+.team-bidder-url {
     min-width: 0;
+}
+
+.team-bidder-url-label {
+    display: grid;
+    gap: 6px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+}
+
+.team-bidder-url-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.team-bidder-url {
+    width: 100%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    background: #fff;
 }
 
 .team-video-status { margin: 0; }

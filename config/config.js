@@ -540,7 +540,14 @@ function renderTeamCards() {
                         <button type="button" class="secondary-btn" data-generate-bidder="${index}">Generate</button>
                         <button type="button" class="ghost-btn" data-copy-bidder-link="${index}">Copy link</button>
                     </div>
-                    <p class="help tight">Optional. Team opens /bidder, enters code + PIN, and can bid from their phone.</p>
+                    <label class="team-bidder-url-label">
+                        Bidder URL (share this link)
+                        <div class="team-bidder-url-row">
+                            <input class="team-bidder-url" type="text" readonly value="${bidderPortalLink(activeDivisionId)}" aria-label="Bidder login URL">
+                            <button type="button" class="ghost-btn" data-copy-bidder-link="${index}">Copy</button>
+                        </div>
+                    </label>
+                    <p class="help tight">Optional. Share the URL + this team’s code/PIN. Team opens the link, logs in, and can bid from their phone.</p>
                 </div>
             </div>
             <button type="button" class="link-danger" data-remove-team="${index}">Remove</button>
@@ -567,12 +574,22 @@ function renderTeamCards() {
 
     teamList.querySelectorAll("[data-copy-bidder-link]").forEach((button) => {
         button.addEventListener("click", async () => {
-            const link = bidderPortalLink(activeDivisionId);
+            const card = button.closest(".team-config-card");
+            const urlInput = card?.querySelector(".team-bidder-url");
+            const link = urlInput?.value || bidderPortalLink(activeDivisionId);
             try {
                 await navigator.clipboard.writeText(link);
+                if (urlInput) {
+                    urlInput.focus();
+                    urlInput.select();
+                }
                 saveStatus.textContent = `Copied bidder link: ${link}`;
             } catch (_) {
-                saveStatus.textContent = `Bidder link: ${link}`;
+                if (urlInput) {
+                    urlInput.focus();
+                    urlInput.select();
+                }
+                saveStatus.textContent = `Select and copy this bidder link: ${link}`;
             }
         });
     });
