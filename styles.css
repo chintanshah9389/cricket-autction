@@ -1037,7 +1037,8 @@ body:not(.welcome-active) #welcome-menu-overlay {
 
 .current-bid-team-stats {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    /* Always 3-up so long labels never collide; Pending/Slots wrap to row 2 */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     width: 100%;
     min-width: 0;
@@ -1056,38 +1057,53 @@ body:not(.welcome-active) #welcome-menu-overlay {
 }
 
 .bid-team-stat {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     gap: 2px;
-    padding: 6px 4px;
+    padding: 6px 6px;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.16);
     border: 1px solid rgba(255, 255, 255, 0.22);
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
+    box-sizing: border-box;
 }
 
 .bid-team-stat em {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     font-style: normal;
     font-family: var(--font-body);
-    font-size: clamp(0.5rem, 0.7vw, 0.62rem);
-    letter-spacing: 0.04em;
+    font-size: 0.58rem;
+    letter-spacing: 0.02em;
     text-transform: uppercase;
-    opacity: 0.9;
+    opacity: 0.92;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.1;
+    text-align: center;
 }
 
 .bid-team-stat strong {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     font-family: var(--font-display);
-    font-size: clamp(0.78rem, 1vw, 1rem);
+    font-size: clamp(0.82rem, 1vw, 1.05rem);
     font-weight: 700;
     color: #fff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.15;
+    text-align: center;
 }
 
 #current-bid-section[data-has-bidder="true"] .current-bid-team {
@@ -1160,21 +1176,19 @@ body.teams-drawer-locked .current-bid-team {
 }
 
 body.teams-drawer-locked .current-bid-team-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 5px;
 }
 
 body.teams-drawer-locked .bid-team-stat {
-    padding: 5px 4px;
+    padding: 5px 5px;
 }
 
 body.teams-drawer-locked .bid-team-stat em {
-    font-size: 0.52rem;
-    letter-spacing: 0.03em;
+    font-size: 0.54rem;
 }
 
 body.teams-drawer-locked .bid-team-stat strong {
-    font-size: 0.86rem;
+    font-size: 0.9rem;
 }
 
 body.teams-drawer-locked .custom-bid-button {
