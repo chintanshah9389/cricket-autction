@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=23">
+    <link rel="stylesheet" href="styles.css?v=24">
 </head>
 <body>
     <div class="desk-shell">
@@ -160,6 +160,16 @@
                     <span class="panel-chevron" aria-hidden="true"></span>
                 </button>
                 <div class="panel-body" hidden>
+                    <div class="bidder-portal-banner" id="bidder-portal-banner">
+                        <div>
+                            <strong>Bidder login URL</strong>
+                            <p class="help tight">Share this link with teams. Each team still needs its own Code + PIN from the card below.</p>
+                        </div>
+                        <div class="team-bidder-url-row">
+                            <input id="bidder-portal-url" type="text" readonly value="" aria-label="Bidder login URL">
+                            <button type="button" class="secondary-btn" id="copy-bidder-portal-url-btn">Copy URL</button>
+                        </div>
+                    </div>
                     <div class="team-config-list" id="team-config-list"></div>
                     <p class="help team-empty-hint" id="team-empty-hint" hidden>No teams in this division yet. Add teams below.</p>
 
@@ -339,7 +349,7 @@
     <script src="../js/project-store.js?v=29"></script>
     <script src="../js/players-store.js?v=34"></script>
     <script src="../js/offline-store.js?v=26"></script>
-    <script src="config.js?v=43"></script>
+    <script src="config.js?v=44"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

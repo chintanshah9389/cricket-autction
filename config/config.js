@@ -493,6 +493,31 @@ function bidderPortalLink(divisionId) {
     return `${origin}/bidder/?div=${div}`;
 }
 
+function refreshBidderPortalBanner() {
+    const input = document.getElementById("bidder-portal-url");
+    const link = bidderPortalLink(activeDivisionId);
+    if (input) input.value = link;
+}
+
+document.getElementById("copy-bidder-portal-url-btn")?.addEventListener("click", async () => {
+    const input = document.getElementById("bidder-portal-url");
+    const link = input?.value || bidderPortalLink(activeDivisionId);
+    try {
+        await navigator.clipboard.writeText(link);
+        if (input) {
+            input.focus();
+            input.select();
+        }
+        if (saveStatus) saveStatus.textContent = `Copied bidder URL: ${link}`;
+    } catch (_) {
+        if (input) {
+            input.focus();
+            input.select();
+        }
+        if (saveStatus) saveStatus.textContent = `Select and copy this bidder URL: ${link}`;
+    }
+});
+
 function removeTeam(index) {
     syncDraftFromTeamCards();
     const removed = draftTeams[index];
@@ -504,6 +529,7 @@ function removeTeam(index) {
 }
 
 function renderTeamCards() {
+    refreshBidderPortalBanner();
     teamList.innerHTML = "";
     draftTeams.forEach((team, index) => {
         const logoSrc = getTeamLogoSrc(team, "../assets/teams-logo");

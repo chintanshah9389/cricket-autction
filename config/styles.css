@@ -981,11 +981,39 @@ textarea:focus {
     margin-top: 8px;
 }
 
+.bidder-portal-banner {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--pitch, #1f6b4a) 35%, var(--line));
+    background: color-mix(in srgb, var(--pitch, #1f6b4a) 8%, #fff);
+}
+
+.bidder-portal-banner strong {
+    display: block;
+    color: var(--ink);
+    font-size: 1rem;
+}
+
+#bidder-portal-url {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    color: var(--ink);
+}
+
 .team-config-card {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 14px 16px;
-    align-items: center;
+    align-items: start;
     padding: 14px 16px;
     border: 1px solid var(--line);
     border-radius: 16px;
