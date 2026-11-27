@@ -1154,6 +1154,8 @@ function orderPlayersForAuction(players, config) {
 /**
  * Keep finished players in place; re-queue everyone from auctionCount onward
  * by category sequence so Rising Star cannot mix with later categories.
+ * Never reshuffle the current player away — bidder/viewer read the DB snapshot
+ * and must keep seeing the same person the desk is auctioning.
  */
 function reorderRemainingPlayersByCategory(state, config) {
     if (!state || !Array.isArray(state.players)) return state;
@@ -1161,9 +1163,29 @@ function reorderRemainingPlayersByCategory(state, config) {
     if (normalized.auctionOrder === "RANDOM") return state;
 
     const index = Math.max(0, Number(state.auctionCount) || 0);
+    const current = state.players[index] || null;
+    const currentKey = current
+        ? String(current.code || current.id || "").trim()
+        : "";
     const completed = state.players.slice(0, index);
     const remaining = state.players.slice(index);
-    state.players = completed.concat(orderPlayersForAuction(remaining, normalized));
+    // Stable order only — shuffling here swaps the live player under phone clients.
+    const orderedRemaining = orderPlayersForAuction(remaining, {
+        ...normalized,
+        shuffleWithinCategory: false
+    });
+    if (currentKey) {
+        const at = orderedRemaining.findIndex(
+            (player) => String(player?.code || player?.id || "").trim() === currentKey
+        );
+        if (at > 0) {
+            const [player] = orderedRemaining.splice(at, 1);
+            orderedRemaining.unshift(player);
+        } else if (at < 0 && current) {
+            orderedRemaining.unshift(current);
+        }
+    }
+    state.players = completed.concat(orderedRemaining);
     return state;
 }
 

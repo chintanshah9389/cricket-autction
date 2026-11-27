@@ -1239,20 +1239,8 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         }
 
         // Re-bind Icon/Caption from Config so category quota setting still applies after DB resume
-        let iconEnsured = false;
         if (typeof ensureIconCaptionAssignments === "function") {
-            const queueBefore = (state.players || []).length;
-            const beforeBought = (state.teams || []).reduce(
-                (sum, team) => sum + (Number(team.player_bought) || 0),
-                0
-            );
             ensureIconCaptionAssignments(state, auctionConfig);
-            const afterBought = (state.teams || []).reduce(
-                (sum, team) => sum + (Number(team.player_bought) || 0),
-                0
-            );
-            iconEnsured =
-                afterBought !== beforeBought || (state.players || []).length !== queueBefore;
         }
 
         if (!state.activeAuctionCategory) {
@@ -1264,7 +1252,6 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
             setActiveAuctionCategory(state.activeAuctionCategory);
         }
 
-        const auctionCountBeforeAdvance = Number(state.auctionCount) || 0;
         if (state.auctionCount < (state.players || []).length) {
             const lastPlayerStatus = state.players[state.auctionCount]?.status;
             if (lastPlayerStatus === "sold" || lastPlayerStatus === "unsold" || lastPlayerStatus === "skipped") {
@@ -1276,8 +1263,11 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
                 if (nextSame >= 0) state.auctionCount = nextSame;
             }
         }
-        const advancedPastSettled =
-            (Number(state.auctionCount) || 0) !== auctionCountBeforeAdvance;
+
+        const currentBeforeRepair = state.players?.[Number(state.auctionCount) || 0] || null;
+        const currentKeyBefore = currentBeforeRepair
+            ? String(currentBeforeRepair.code || currentBeforeRepair.id || "").trim()
+            : "";
 
         // Re-apply category sequence to the remaining queue (fixes mixed categories on resume)
         if (typeof reorderRemainingPlayersByCategory === "function") {
@@ -1287,13 +1277,21 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         // Repair truncated queues (waiting players still in allPlayers but missing from players)
         ensureAuctionQueueFromMaster();
 
-        // Persist desk repairs + auto-advance so phone bidders never stay on a settled player
-        if (iconEnsured || advancedPastSettled) {
-            try {
-                await saveAuctionProgress({ awaitDisk: true, critical: false });
-            } catch (_) {
-                // desk can continue; next bid will save
-            }
+        // After any queue repair, keep auctionCount on the same live player.
+        if (currentKeyBefore && Array.isArray(state.players)) {
+            const matched = state.players.findIndex(
+                (player) =>
+                    String(player?.code || player?.id || "").trim() === currentKeyBefore
+            );
+            if (matched >= 0) state.auctionCount = matched;
+        }
+
+        // Always persist after resume so desk/bidder/viewer share the same live player
+        // (queue repairs used to stay in desk memory only).
+        try {
+            await saveAuctionProgress({ awaitDisk: true, critical: false });
+        } catch (_) {
+            // desk can continue; next bid will save
         }
     } else {
         state.players = await getPlayersData(division.id);
@@ -2518,13 +2516,33 @@ function rebuildAuctionQueueFromMaster() {
     if (!master.length) return false;
 
     const config = getActiveConfig(state);
+    const previous = state.players?.[Number(state.auctionCount) || 0] || null;
+    const previousKey = previous
+        ? String(previous.code || previous.id || "").trim()
+        : "";
+    // Stable rebuild — never reshuffle the live player under bidder/viewer.
     const ordered =
         typeof orderPlayersForAuction === "function"
-            ? orderPlayersForAuction(master, config)
+            ? orderPlayersForAuction(master, {
+                  ...(config || {}),
+                  shuffleWithinCategory: false,
+                  auctionOrder:
+                      config?.auctionOrder === "RANDOM" ? "CATEGORY" : config?.auctionOrder
+              })
             : master.slice();
 
     state.allPlayers = master;
     state.players = ordered;
+
+    if (previousKey) {
+        const matched = ordered.findIndex(
+            (player) => String(player?.code || player?.id || "").trim() === previousKey
+        );
+        if (matched >= 0 && !isAuctionSettledStatus(ordered[matched]?.status)) {
+            state.auctionCount = matched;
+            return true;
+        }
+    }
 
     const locked = state.activeAuctionCategory
         ? normalizeCategoryName(state.activeAuctionCategory)
