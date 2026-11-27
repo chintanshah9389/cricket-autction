@@ -1219,6 +1219,20 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         (state.players || []).forEach(normalizeSavedPlayer);
         (state.allPlayers || []).forEach(normalizeSavedPlayer);
 
+        // Same player photo everywhere: overlay latest DB roster photos onto live session.
+        if (typeof syncLiveAuctionPhotosFromRoster === "function") {
+            let roster =
+                typeof loadStoredPlayers === "function" ? loadStoredPlayers(division.id) : [];
+            if (saasMode && typeof resolveAuctionPlayers === "function") {
+                try {
+                    roster = await resolveAuctionPlayers(null, division.id);
+                } catch (_) {
+                    // keep whatever roster we have
+                }
+            }
+            syncLiveAuctionPhotosFromRoster(state, roster);
+        }
+
         // Latest Config base prices / category max (do not keep stale 20L defaults)
         if (typeof syncLiveAuctionPricingFromConfig === "function") {
             syncLiveAuctionPricingFromConfig(state, auctionConfig);
@@ -1419,6 +1433,17 @@ function showPlayerDetails(i) {
     applyAuctionPlayerFieldVisibility();
 
     const player = state.players[i];
+    // Align desk photo with the same roster URL bidder/viewer use (photoKey / DB).
+    try {
+        const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
+        const roster =
+            typeof loadStoredPlayers === "function" ? loadStoredPlayers(divisionId) : [];
+        if (roster?.length && typeof syncLiveAuctionPhotosFromRoster === "function") {
+            syncLiveAuctionPhotosFromRoster(state, roster);
+        }
+    } catch (_) {
+        // keep existing photo
+    }
     syncPlayerPhotoFrameStatus(player);
     updateSoldTeamBadge(player);
     playerName.innerText = player.name;
@@ -1893,6 +1918,22 @@ function writeLeanAuctionBrowserMirror(divisionId, data) {
  */
 async function saveAuctionProgress({ awaitDisk = false, critical = false } = {}) {
     const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
+    // Keep desk photos aligned with DB roster before writing the live session.
+    if (typeof syncLiveAuctionPhotosFromRoster === "function") {
+        try {
+            let roster =
+                typeof loadStoredPlayers === "function" ? loadStoredPlayers(divisionId) : [];
+            if (
+                (typeof usesTournamentDb === "function" ? usesTournamentDb() : false) &&
+                typeof resolveAuctionPlayers === "function"
+            ) {
+                roster = await resolveAuctionPlayers(null, divisionId);
+            }
+            syncLiveAuctionPhotosFromRoster(state, roster);
+        } catch (_) {
+            // continue with current in-memory photos
+        }
+    }
     const data = buildAuctionSavePayload();
     const saasMode =
         typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);

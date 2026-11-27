@@ -176,9 +176,17 @@ function syncAuctionSnapshotPhotos(snapshot, playerRows) {
       byCode.get(String(player.code || "")) ||
       byExternal.get(String(player.id || "")) ||
       null;
-    if (!meta?.photo) return;
-    player.photo = meta.photo;
+    if (!meta) return;
     if (meta.photoKey) player.photoKey = meta.photoKey;
+    if (meta.photo) {
+      player.photo = meta.photo;
+      return;
+    }
+    // Rebuild public URL from key when fields.photo is empty but key exists.
+    if (meta.photoKey) {
+      const rebuilt = publicUrlForKey(meta.photoKey);
+      if (rebuilt) player.photo = rebuilt;
+    }
   };
 
   const state =
@@ -1079,9 +1087,14 @@ async function handleTournamentRoutes(req, res, url) {
       return true;
     }
     const body = await readJson(req);
-    const auction = body.auction ?? body;
+    let auction = body.auction ?? body;
     const status = String(body.status || "live");
     const safeStatus = ["idle", "live", "finished"].includes(status) ? status : "live";
+    // Always overlay current DB photos so desk/bidder/viewer never diverge on images.
+    if (auction && typeof auction === "object") {
+      const players = await query(`SELECT * FROM players WHERE division_id = $1`, [division.id]);
+      auction = syncAuctionSnapshotPhotos(auction, players.rows);
+    }
     const result = await query(
       `INSERT INTO auction_sessions (division_id, status, snapshot, revision, updated_at)
        VALUES ($1, $2, $3::jsonb, 1, NOW())

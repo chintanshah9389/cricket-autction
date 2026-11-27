@@ -1933,6 +1933,65 @@ function canTeamAffordBid(state, teamId, amount, options = {}) {
 }
 
 /**
+ * Keep live auction player photos aligned with the current roster (DB).
+ * Desk + phone bidder + viewer must show the same image for the same player.
+ */
+function syncLiveAuctionPhotosFromRoster(state, roster) {
+    if (!state || !Array.isArray(roster) || !roster.length) return state;
+    const byCode = new Map();
+    const byId = new Map();
+    roster.forEach((player) => {
+        if (!player) return;
+        const photo = String(player.photo || "").trim();
+        const photoKey = player.photoKey || player.photo_key || null;
+        if (!photo && !photoKey) return;
+        const meta = { photo, photoKey };
+        const code = String(player.code || "").trim();
+        const id = String(player.id || "").trim();
+        if (code) byCode.set(code, meta);
+        if (id) byId.set(id, meta);
+    });
+
+    const apply = (player) => {
+        if (!player || typeof player !== "object") return;
+        const meta =
+            byCode.get(String(player.code || "").trim()) ||
+            byId.get(String(player.id || "").trim()) ||
+            null;
+        if (!meta) return;
+        if (meta.photoKey) player.photoKey = meta.photoKey;
+        if (meta.photo) {
+            player.photo = meta.photo;
+        } else if (
+            meta.photoKey &&
+            String(player.photo || "").trim() &&
+            !String(player.photo).includes(String(meta.photoKey))
+        ) {
+            // Stale URL that does not match the current key — rebuild from key.
+            const baseMatch = String(player.photo).match(/^(https?:\/\/[^/]+)\//i);
+            if (baseMatch) {
+                player.photo = `${baseMatch[1]}/${String(meta.photoKey).replace(/^\//, "")}`;
+            }
+        }
+    };
+
+    ["players", "allPlayers", "soldPlayers", "unsoldPlayers", "skippedPlayers"].forEach((key) => {
+        if (!Array.isArray(state[key])) return;
+        state[key].forEach(apply);
+    });
+    (state.teams || []).forEach((team) => {
+        ["players", "squad"].forEach((listKey) => {
+            if (!Array.isArray(team?.[listKey])) return;
+            // team.players is often id list; only patch object entries
+            team[listKey].forEach((entry) => {
+                if (entry && typeof entry === "object") apply(entry);
+            });
+        });
+    });
+    return state;
+}
+
+/**
  * Re-apply category base prices from the latest Config (DB) onto the live roster.
  * Resume / Config edits must not keep stale baked prices (e.g. default Evergreen 20L).
  */

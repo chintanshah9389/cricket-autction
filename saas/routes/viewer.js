@@ -41,12 +41,11 @@ function findTeam(teams, id) {
 
 function mapPlayer(player) {
   if (!player) return null;
+  const key = player.photoKey || player.photo_key || null;
   const photo =
+    (key ? publicUrlForKey(key) : "") ||
     player.photo ||
     player.photoUrl ||
-    (player.photoKey || player.photo_key
-      ? publicUrlForKey(player.photoKey || player.photo_key)
-      : "") ||
     "";
   return {
     id: player.id,
