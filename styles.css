@@ -1049,6 +1049,10 @@ body:not(.welcome-active) #welcome-menu-overlay {
     color: #fff6c8;
 }
 
+#current-bid-team-spent {
+    color: #cce4ff;
+}
+
 #current-bid-team-reserved {
     color: #ffe0c2;
 }

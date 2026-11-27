@@ -1629,6 +1629,7 @@ function updateCurrentBidPanel(player) {
     const teamPanel = document.getElementById("current-bid-team-panel");
     const teamStats = document.getElementById("current-bid-team-stats");
     const purseEl = document.getElementById("current-bid-team-purse");
+    const spentEl = document.getElementById("current-bid-team-spent");
     const reservedEl = document.getElementById("current-bid-team-reserved");
     const spendableEl = document.getElementById("current-bid-team-spendable");
     const pendingEl = document.getElementById("current-bid-team-pending");
@@ -1642,6 +1643,7 @@ function updateCurrentBidPanel(player) {
         if (bidSection) bidSection.dataset.hasBidder = "false";
         if (teamStats) teamStats.hidden = true;
         if (purseEl) purseEl.textContent = "—";
+        if (spentEl) spentEl.textContent = "—";
         if (reservedEl) reservedEl.textContent = "—";
         if (spendableEl) spendableEl.textContent = "—";
         if (pendingEl) pendingEl.textContent = "—";
@@ -1676,6 +1678,11 @@ function updateCurrentBidPanel(player) {
     if (purseEl) {
         purseEl.textContent = team ? showAmount(team.remaining_budget) : "—";
         purseEl.title = team ? `Remaining purse: ${formatMoney(team.remaining_budget)}` : "";
+    }
+    if (spentEl) {
+        const spent = Number(team?.total_cost) || 0;
+        spentEl.textContent = team ? showAmount(spent) : "—";
+        spentEl.title = team ? `Already spent on squad: ${formatMoney(spent)}` : "";
     }
     if (reservedEl) {
         reservedEl.textContent = budget ? showAmount(budget.reserve) : "—";
