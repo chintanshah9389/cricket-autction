@@ -362,6 +362,10 @@ body {
     font-size: 1.35rem;
 }
 
+.purse-grid strong.is-spent {
+    color: #1f6feb;
+}
+
 .purse-grid strong.is-rsvd {
     color: #c45c12;
 }

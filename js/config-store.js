@@ -1882,14 +1882,12 @@ function canTeamBuyCategory(state, teamId, categoryName) {
 /**
  * Kitty that must stay reserved so the team can still fill remaining category
  * slots at each category's base price.
- * When fillingCategory is set, that category's remaining need is reduced by 1
- * (this purchase would fill one slot).
+ * Rsvd = remaining open category slots × that category's base (e.g. 10 × 3L = 30L).
+ * Do not subtract the live player slot — Pend/Slots on the desk match this total.
  */
 function getTeamCategoryReserve(state, teamId, options = {}) {
     const config = getActiveConfig(state);
-    const fillingCategory = options.fillingCategory
-        ? normalizeCategoryName(options.fillingCategory)
-        : null;
+    void options;
     const sequence = getCategorySequence(config);
     const names = sequence.length
         ? sequence.map((name) => normalizeCategoryName(name))
@@ -1905,10 +1903,7 @@ function getTeamCategoryReserve(state, teamId, options = {}) {
         if (maxPlayers <= 0) return;
 
         const owned = countTeamPlayersInCategory(state, teamId, name);
-        let need = Math.max(0, maxPlayers - owned);
-        if (fillingCategory && name === fillingCategory) {
-            need = Math.max(0, need - 1);
-        }
+        const need = Math.max(0, maxPlayers - owned);
         const basePrice = Number(category.basePrice) || 0;
         const amount = need * basePrice;
         reserve += amount;

@@ -40,6 +40,7 @@ const els = {
     bidStatus: document.getElementById("bid-status"),
     bidBlockBanner: document.getElementById("bid-block-banner"),
     purse: document.getElementById("purse"),
+    spent: document.getElementById("spent"),
     reserved: document.getElementById("reserved"),
     spendable: document.getElementById("spendable"),
     pending: document.getElementById("pending"),
@@ -174,6 +175,10 @@ function renderPurse(team, player) {
     if (!team) return;
     els.teamTitle.textContent = team.teamName || "Team";
     els.purse.textContent = money(team.purse);
+    if (els.spent) {
+        els.spent.textContent = money(team.totalCost || 0);
+        els.spent.title = `Already spent on squad: ${money(team.totalCost || 0)}`;
+    }
     els.reserved.textContent = money(team.reserved);
     els.spendable.textContent = money(team.spendable);
     els.pending.textContent = String(team.pending ?? "—");

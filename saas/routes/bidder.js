@@ -189,15 +189,15 @@ function getCategorySequence(state) {
 function getSpendable(state, teamId, fillingCategory) {
   const team = (state.teams || []).find((entry) => Number(entry.team_id) === Number(teamId));
   const purse = Number(team?.remaining_budget) || 0;
-  const filling = fillingCategory ? normalizeCategory(fillingCategory) : null;
+  void fillingCategory;
   let reserve = 0;
   let remainingSlots = 0;
+  // Same rule as desk: reserve every open category slot at base (no -1 for live player).
   getCategorySequence(state).forEach((name) => {
     const maxPlayers = getCategoryMax(state, name);
     if (maxPlayers <= 0) return;
     const owned = countTeamCategory(state, teamId, name);
-    let need = Math.max(0, maxPlayers - owned);
-    if (filling && name === filling) need = Math.max(0, need - 1);
+    const need = Math.max(0, maxPlayers - owned);
     const basePrice = getCategoryBase(state, name);
     reserve += need * basePrice;
     remainingSlots += need;
