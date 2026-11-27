@@ -123,12 +123,6 @@ function setOfflineStatus(message, isError = false) {
     offlineStatus.style.color = isError ? "#b42318" : "";
 }
 
-function getAuctionDataStorageKey(divisionId = activeDivisionId) {
-    return typeof getDivisionAuctionDataKey === "function"
-        ? getDivisionAuctionDataKey(divisionId)
-        : `auctionData:${divisionId}`;
-}
-
 /** Counts must come from that division's own storage — never reuse another tab's cache. */
 function getPlayersCountForDivision(divisionId) {
     try {
@@ -198,11 +192,26 @@ function setStatus(message, isError = false) {
     importStatus.style.color = isError ? "#b42318" : "";
 }
 
-function loadAuctionTeamLookup() {
+async function loadLiveAuctionState() {
+    try {
+        if (typeof loadLiveAuctionStateForDivision === "function") {
+            return await loadLiveAuctionStateForDivision(activeDivisionId);
+        }
+        if (typeof fetchDivisionAuction === "function") {
+            const remote = await fetchDivisionAuction(activeDivisionId);
+            return remote?.auction?.auctionState || null;
+        }
+    } catch (_) {
+        // ignore
+    }
+    return null;
+}
+
+async function loadAuctionTeamLookup() {
     const map = new Map();
     try {
-        const saved = JSON.parse(localStorage.getItem(getAuctionDataStorageKey(activeDivisionId)) || "null");
-        const teams = saved?.auctionState?.teams || [];
+        const auctionState = await loadLiveAuctionState();
+        const teams = auctionState?.teams || [];
         teams.forEach((team) => {
             map.set(String(team.team_id), {
                 id: team.team_id,
@@ -216,8 +225,15 @@ function loadAuctionTeamLookup() {
 
     if (!map.size) {
         try {
-            const config = JSON.parse(localStorage.getItem("auctionConfig") || "null");
+            // Prefer divisions already loaded for this page; config mirror is only a fallback.
+            let config = null;
+            try {
+                config = JSON.parse(localStorage.getItem("auctionConfig") || "null");
+            } catch (_) {
+                config = null;
+            }
             const division =
+                divisionsCache.find((item) => item.id === activeDivisionId) ||
                 (config?.divisions || []).find((item) => item.id === activeDivisionId) ||
                 (config?.divisions || [])[0];
             const teams =
@@ -240,10 +256,10 @@ function loadAuctionTeamLookup() {
     return map;
 }
 
-function loadAuctionPlayerOverlay() {
+async function loadAuctionPlayerOverlay() {
     try {
-        const saved = JSON.parse(localStorage.getItem(getAuctionDataStorageKey()) || "null");
-        const allPlayers = saved?.auctionState?.allPlayers || saved?.auctionState?.players || [];
+        const auctionState = await loadLiveAuctionState();
+        const allPlayers = auctionState?.allPlayers || auctionState?.players || [];
         const byKey = new Map();
         allPlayers.forEach((player) => {
             if (!player) return;
@@ -257,7 +273,7 @@ function loadAuctionPlayerOverlay() {
 }
 
 function mergeAuctionOutcome(player, overlay = null) {
-    const liveMap = overlay || loadAuctionPlayerOverlay();
+    const liveMap = overlay || new Map();
     const live = liveMap.get(String(player.id)) || liveMap.get(String(player.code));
     if (!live) {
         return {
@@ -291,9 +307,9 @@ function getTeamColor(teamId) {
     return teamLookup.get(String(teamId))?.color || "#16325c";
 }
 
-function enrichPlayers(list) {
-    teamLookup = loadAuctionTeamLookup();
-    const overlay = loadAuctionPlayerOverlay();
+async function enrichPlayers(list) {
+    teamLookup = await loadAuctionTeamLookup();
+    const overlay = await loadAuctionPlayerOverlay();
     return (list || []).map((player) => mergeAuctionOutcome(normalizePlayerRecord(player), overlay));
 }
 
@@ -869,7 +885,7 @@ async function persistAndRefreshToDisk(list, message, options = {}) {
         typeof saveStoredPlayersToDisk === "function"
             ? await saveStoredPlayersToDisk(list, activeDivisionId, options)
             : saveStoredPlayers(list, activeDivisionId, { ...options, awaitDisk: true });
-    playersCache = enrichPlayers(saved);
+    playersCache = await enrichPlayers(saved);
     updateFilterOptions();
     renderPlayersTable();
     renderPlayersDivisionTabs();
@@ -918,7 +934,7 @@ async function refreshPlayers({ preferFile = false } = {}) {
 
         // Always use this division's own list (including empty). Never borrow Main's file pool.
         const stored = loadStoredPlayers(activeDivisionId);
-        playersCache = enrichPlayers(Array.isArray(stored) ? stored : []);
+        playersCache = await enrichPlayers(Array.isArray(stored) ? stored : []);
         // Do not rewrite Config player-field toggles from roster on every refresh.
         // Excel import is the only path that auto-updates Show-on-auction fields.
         updateFilterOptions();
@@ -1075,7 +1091,7 @@ async function runImport(mode) {
                     : false
         );
 
-        playersCache = enrichPlayers(saved);
+        playersCache = await enrichPlayers(saved);
         updateFilterOptions();
         renderPlayersTable();
         applyPlayersFormFieldPolicy();
@@ -1117,7 +1133,7 @@ async function runImport(mode) {
                     }
                 });
                 saved = await saveStoredPlayersToDisk(result.players, activeDivisionId);
-                playersCache = enrichPlayers(saved);
+                playersCache = await enrichPlayers(saved);
                 renderPlayersTable();
                 setStatus(
                     `Imported ${saved.length} players (${mode}). ${formatCategoryBreakdown(saved)}. ` +

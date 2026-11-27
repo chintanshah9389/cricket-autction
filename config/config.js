@@ -58,11 +58,18 @@ const iconCaptionCountQuota = document.getElementById("icon-caption-count-quota"
 const iconCaptionTeamList = document.getElementById("icon-caption-team-list");
 const iconCaptionHeading = document.getElementById("icon-caption-heading");
 const iconCaptionHelp = document.getElementById("icon-caption-help");
+const maxBidderDevicesSelect = document.getElementById("max-bidder-devices");
 
 let draftCategories = {};
 let draftSequence = [];
 let draftTeams = [];
-let draftTournament = { name: "ABCD Super League", year: "2025" };
+let draftTournament = {
+    name: "ABCD Super League",
+    year: "2025",
+    maxBidderDevices: 2,
+    viewerEnabled: true,
+    viewerAccessKey: ""
+};
 let draftDivisionPlayers = [];
 let draftDivisions = [];
 let draftActiveDivisionId = "div_1";
@@ -311,6 +318,20 @@ function handleRemoveDivision() {
 function refreshTournamentPreview() {
     draftTournament.name = String(tournamentNameInput.value || "").trim() || "ABCD Super League";
     draftTournament.year = String(tournamentYearInput.value || "").trim();
+    draftTournament.viewerEnabled = viewerEnabledInput
+        ? Boolean(viewerEnabledInput.checked)
+        : draftTournament.viewerEnabled !== false;
+    if (cachedViewerAccessKey) {
+        draftTournament.viewerAccessKey = cachedViewerAccessKey;
+    }
+    const devices = Number(maxBidderDevicesSelect?.value || draftTournament.maxBidderDevices || 2);
+    draftTournament.maxBidderDevices =
+        typeof clampMaxBidderDevices === "function"
+            ? clampMaxBidderDevices(devices)
+            : Math.min(20, Math.max(1, Math.round(devices) || 2));
+    if (maxBidderDevicesSelect) {
+        maxBidderDevicesSelect.value = String(draftTournament.maxBidderDevices);
+    }
     tournamentTitlePreview.textContent = getTournamentTitle(draftTournament);
 
     const logoSrc = getTournamentLogoSrc(draftTournament, "../assets/tournament-logo.png");
@@ -474,8 +495,8 @@ function syncDraftFromTeamCards() {
         if (code) draftTeams[index].bidderCode = code;
         else delete draftTeams[index].bidderCode;
         const pin = String(pinInput?.value || "").trim();
+        // Keep a freshly generated PIN in memory until Save even if the input was wiped by a re-render.
         if (pin) draftTeams[index].bidderPin = pin;
-        else delete draftTeams[index].bidderPin;
     });
 }
 
@@ -487,16 +508,89 @@ function randomBidderPin() {
     return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+let cachedTournamentSlug = "";
+let cachedViewerAccessKey = "";
+const viewerEnabledInput = document.getElementById("viewer-enabled");
+const viewerLinkStatus = document.getElementById("viewer-link-status");
+
 function bidderPortalLink(divisionId) {
     const origin = window.location.origin || "";
     const div = encodeURIComponent(divisionId || draftActiveDivisionId || "div_1");
     return `${origin}/bidder/?div=${div}`;
 }
 
+function viewerPortalLink(divisionId) {
+    const origin = window.location.origin || "";
+    const div = encodeURIComponent(divisionId || draftActiveDivisionId || "div_1");
+    const tournamentRef =
+        cachedTournamentSlug ||
+        (typeof getSaasTournamentId === "function" ? getSaasTournamentId() : "") ||
+        "";
+    const key =
+        cachedViewerAccessKey ||
+        String(draftTournament?.viewerAccessKey || "").trim();
+    const t = encodeURIComponent(tournamentRef);
+    if (!t) return `${origin}/viewer/?div=${div}`;
+    const params = new URLSearchParams({ t: tournamentRef, div: divisionId || draftActiveDivisionId || "div_1" });
+    if (key) params.set("k", key);
+    return `${origin}/viewer/?${params.toString()}`;
+}
+
+async function ensureTournamentSlugCached() {
+    try {
+        if (typeof fetchProjectSnapshot === "function") {
+            const snapshot = await fetchProjectSnapshot();
+            cachedTournamentSlug =
+                snapshot?.tournament?.slug ||
+                snapshot?.tournament?.id ||
+                cachedTournamentSlug ||
+                "";
+            if (snapshot?.tournament?.viewerAccessKey) {
+                cachedViewerAccessKey = String(snapshot.tournament.viewerAccessKey);
+                draftTournament.viewerAccessKey = cachedViewerAccessKey;
+            }
+            if (typeof snapshot?.tournament?.viewerEnabled === "boolean") {
+                draftTournament.viewerEnabled = snapshot.tournament.viewerEnabled;
+            }
+        }
+    } catch (_) {
+        /* keep cache */
+    }
+    if (!cachedTournamentSlug && typeof getSaasTournamentId === "function") {
+        cachedTournamentSlug = getSaasTournamentId() || "";
+    }
+    if (!cachedViewerAccessKey && draftTournament?.viewerAccessKey) {
+        cachedViewerAccessKey = String(draftTournament.viewerAccessKey);
+    }
+    return cachedTournamentSlug;
+}
+
 function refreshBidderPortalBanner() {
-    const input = document.getElementById("bidder-portal-url");
-    const link = bidderPortalLink(draftActiveDivisionId);
-    if (input) input.value = link;
+    const bidderInput = document.getElementById("bidder-portal-url");
+    const viewerInput = document.getElementById("viewer-portal-url");
+    const enabled = draftTournament.viewerEnabled !== false;
+    if (viewerEnabledInput) viewerEnabledInput.checked = enabled;
+    if (bidderInput) bidderInput.value = bidderPortalLink(draftActiveDivisionId);
+    if (viewerInput) {
+        viewerInput.value = enabled
+            ? viewerPortalLink(draftActiveDivisionId)
+            : "Viewer disabled — enable or create a new link";
+        viewerInput.disabled = !enabled;
+    }
+    document.getElementById("copy-viewer-portal-url-btn")?.toggleAttribute("disabled", !enabled);
+    document.getElementById("revoke-viewer-link-btn")?.toggleAttribute("disabled", false);
+    document.getElementById("disable-viewer-link-btn")?.toggleAttribute("disabled", !enabled);
+}
+
+async function postViewerLinkAction(action) {
+    if (typeof requireTournamentDb !== "function" || typeof window.SaasAuth?.api !== "function") {
+        throw new Error("Sign in and select a tournament first.");
+    }
+    const tournamentId = requireTournamentDb();
+    return window.SaasAuth.api(`/api/v1/tournaments/${encodeURIComponent(tournamentId)}/viewer-link`, {
+        method: "POST",
+        body: { action }
+    });
 }
 
 document.getElementById("copy-bidder-portal-url-btn")?.addEventListener("click", async () => {
@@ -518,6 +612,93 @@ document.getElementById("copy-bidder-portal-url-btn")?.addEventListener("click",
     }
 });
 
+document.getElementById("copy-viewer-portal-url-btn")?.addEventListener("click", async () => {
+    await ensureTournamentSlugCached();
+    refreshBidderPortalBanner();
+    if (draftTournament.viewerEnabled === false) {
+        if (saveStatus) saveStatus.textContent = "Viewer is disabled. Enable it or create a new link first.";
+        return;
+    }
+    const input = document.getElementById("viewer-portal-url");
+    const link = input?.value || viewerPortalLink(draftActiveDivisionId);
+    try {
+        await navigator.clipboard.writeText(link);
+        if (input) {
+            input.focus();
+            input.select();
+        }
+        if (saveStatus) saveStatus.textContent = `Copied viewer URL: ${link}`;
+    } catch (_) {
+        if (input) {
+            input.focus();
+            input.select();
+        }
+        if (saveStatus) saveStatus.textContent = `Select and copy this viewer URL: ${link}`;
+    }
+});
+
+viewerEnabledInput?.addEventListener("change", async () => {
+    try {
+        const enabled = Boolean(viewerEnabledInput.checked);
+        const result = await postViewerLinkAction(enabled ? "enable" : "disable");
+        draftTournament.viewerEnabled = enabled;
+        if (result.viewerAccessKey) {
+            draftTournament.viewerAccessKey = result.viewerAccessKey;
+            cachedViewerAccessKey = result.viewerAccessKey;
+        }
+        refreshBidderPortalBanner();
+        if (viewerLinkStatus) {
+            viewerLinkStatus.textContent = enabled
+                ? "Viewer enabled. Share the URL above."
+                : "Viewer disabled. Old links will not open.";
+        }
+        if (saveStatus) {
+            saveStatus.textContent = enabled
+                ? "Public viewer enabled."
+                : "Public viewer disabled. Shared links no longer work.";
+        }
+    } catch (error) {
+        viewerEnabledInput.checked = draftTournament.viewerEnabled !== false;
+        if (saveStatus) saveStatus.textContent = error.message || "Could not update viewer link.";
+    }
+});
+
+document.getElementById("revoke-viewer-link-btn")?.addEventListener("click", async () => {
+    const ok = window.confirm(
+        "Revoke the current viewer link? Anyone with the old URL will lose access, and a new link will be created."
+    );
+    if (!ok) return;
+    try {
+        const result = await postViewerLinkAction("revoke");
+        draftTournament.viewerEnabled = true;
+        draftTournament.viewerAccessKey = result.viewerAccessKey || "";
+        cachedViewerAccessKey = draftTournament.viewerAccessKey;
+        refreshBidderPortalBanner();
+        if (viewerLinkStatus) {
+            viewerLinkStatus.textContent =
+                "Old link revoked. Copy the new viewer URL and share it again.";
+        }
+        if (saveStatus) saveStatus.textContent = "Viewer link revoked. New URL is ready to copy.";
+    } catch (error) {
+        if (saveStatus) saveStatus.textContent = error.message || "Could not revoke viewer link.";
+    }
+});
+
+document.getElementById("disable-viewer-link-btn")?.addEventListener("click", async () => {
+    try {
+        await postViewerLinkAction("disable");
+        draftTournament.viewerEnabled = false;
+        if (viewerEnabledInput) viewerEnabledInput.checked = false;
+        refreshBidderPortalBanner();
+        if (viewerLinkStatus) {
+            viewerLinkStatus.textContent = "Viewer disabled. Old links will not open.";
+        }
+        if (saveStatus) saveStatus.textContent = "Public viewer disabled.";
+    } catch (error) {
+        if (saveStatus) saveStatus.textContent = error.message || "Could not disable viewer.";
+    }
+});
+
 function removeTeam(index) {
     syncDraftFromTeamCards();
     const removed = draftTeams[index];
@@ -528,6 +709,14 @@ function removeTeam(index) {
     renderDivisionTabs();
 }
 
+function escapeAttr(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
 function renderTeamCards() {
     if (!teamList) return;
     try {
@@ -535,21 +724,31 @@ function renderTeamCards() {
     } catch (error) {
         console.warn("Bidder URL banner:", error);
     }
+    try {
     teamList.innerHTML = "";
-    const portalUrl = bidderPortalLink(draftActiveDivisionId);
+    if (teamEmptyHint) {
+        teamEmptyHint.hidden = draftTeams.length > 0;
+    }
+    const portalUrl = bidderPortalLink(draftActiveDivisionId || "div_1");
     draftTeams.forEach((team, index) => {
         const logoSrc = getTeamLogoSrc(team, "../assets/teams-logo");
         const hasUpload = Boolean(team.logo);
+        const teamName = escapeAttr(team.team_name || `Team ${index + 1}`);
+        const teamColor = escapeAttr(team.color || "#3498db");
+        const bidderCode = escapeAttr(team.bidderCode || "");
+        const pendingPin = String(team.bidderPin || "").trim();
+        const bidderOn = Boolean(team.bidderEnabled);
+        const pinPlaceholder = "PIN";
         const card = document.createElement("article");
         card.className = "team-config-card";
         card.innerHTML = `
             <div class="team-config-badge">
-                <img class="team-logo-preview ${hasUpload ? "" : "is-empty"}" src="${logoSrc}" alt="${team.team_name} logo" onerror="this.classList.add('is-empty'); this.removeAttribute('src');">
+                <img class="team-logo-preview ${hasUpload ? "" : "is-empty"}" src="${escapeAttr(logoSrc)}" alt="${teamName} logo" onerror="this.classList.add('is-empty'); this.removeAttribute('src');">
                 <span class="team-config-id">#${team.team_id}</span>
             </div>
             <div class="team-config-main">
-                <input class="team-name-input" type="text" value="${team.team_name}" aria-label="Team name">
-                <input class="team-color-input" type="color" value="${team.color || "#3498db"}" title="Team color">
+                <input class="team-name-input" type="text" value="${teamName}" aria-label="Team name">
+                <input class="team-color-input" type="color" value="${teamColor}" title="Team color">
                 <div class="team-config-logo-row">
                     <button type="button" class="team-logo-upload-btn" data-upload-logo="${index}">Upload logo</button>
                     <input class="team-logo-file" type="file" accept="image/*" data-logo-file="${index}">
@@ -561,30 +760,39 @@ function renderTeamCards() {
                     <button type="button" class="team-logo-clear-btn" data-clear-video="${index}" ${team.video ? "" : "disabled"}>Clear video</button>
                     <span class="help team-video-status">${team.video ? "Video attached" : "No video"}</span>
                 </div>
-                <div class="team-bidder-box">
+                <div class="team-bidder-box${bidderOn ? " is-enabled" : ""}">
                     <label class="team-bidder-toggle">
-                        <input type="checkbox" class="team-bidder-enabled" ${team.bidderEnabled ? "checked" : ""}>
-                        <span>Bidder phone login</span>
+                        <input type="checkbox" class="team-bidder-enabled" ${bidderOn ? "checked" : ""}>
+                        <span>Bidder phone login${bidderOn && team.bidderCode ? ` · code ${escapeAttr(team.bidderCode)}` : ""}${bidderOn && pendingPin ? ` · PIN ${escapeAttr(pendingPin)}` : ""}</span>
                     </label>
-                    <div class="team-bidder-fields">
-                        <input class="team-bidder-code" type="text" placeholder="Code" value="${team.bidderCode || ""}" aria-label="Bidder code" autocomplete="off">
-                        <input class="team-bidder-pin" type="text" placeholder="${team.bidderPinSet ? "PIN set — type to change" : "PIN"}" value="" aria-label="Bidder PIN" autocomplete="off">
-                        <button type="button" class="secondary-btn" data-generate-bidder="${index}">Generate</button>
-                        <button type="button" class="ghost-btn" data-copy-bidder-link="${index}">Copy link</button>
-                    </div>
-                    <label class="team-bidder-url-label">
-                        Bidder URL (share this link)
-                        <div class="team-bidder-url-row">
-                            <input class="team-bidder-url" type="text" readonly value="${portalUrl}" aria-label="Bidder login URL">
-                            <button type="button" class="ghost-btn" data-copy-bidder-link="${index}">Copy</button>
+                    <div class="team-bidder-details">
+                        <div class="team-bidder-fields">
+                            <input class="team-bidder-code" type="text" placeholder="Code" value="${bidderCode}" aria-label="Bidder code" autocomplete="off">
+                            <input class="team-bidder-pin" type="text" placeholder="${pinPlaceholder}" value="${escapeAttr(pendingPin)}" aria-label="Bidder PIN" autocomplete="off">
+                            <button type="button" class="secondary-btn" data-generate-bidder="${index}">Generate</button>
+                            <button type="button" class="ghost-btn" data-copy-bidder-creds="${index}">Copy login</button>
                         </div>
-                    </label>
-                    <p class="help tight">Optional. Share the URL + this team code/PIN. Team opens the link, logs in, and can bid from their phone.</p>
+                        <label class="team-bidder-url-label">
+                            Bidder URL (share this link)
+                            <div class="team-bidder-url-row">
+                                <input class="team-bidder-url" type="text" readonly value="${escapeAttr(portalUrl)}" aria-label="Bidder login URL">
+                                <button type="button" class="ghost-btn" data-copy-bidder-creds="${index}">Copy login</button>
+                            </div>
+                        </label>
+                        <p class="help tight">Generate → <strong>Save Configuration</strong>. Code and PIN stay visible after refresh so you can share or log in again. Only click Generate when you want a new PIN.</p>
+                    </div>
                 </div>
             </div>
             <button type="button" class="link-danger" data-remove-team="${index}">Remove</button>
         `;
         teamList.appendChild(card);
+    });
+
+    teamList.querySelectorAll(".team-bidder-enabled").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+            const box = checkbox.closest(".team-bidder-box");
+            if (box) box.classList.toggle("is-enabled", checkbox.checked);
+        });
     });
 
     teamList.querySelectorAll("[data-generate-bidder]").forEach((button) => {
@@ -596,32 +804,43 @@ function renderTeamCards() {
             draftTeams[index].bidderCode = randomBidderCode();
             draftTeams[index].bidderPin = randomBidderPin();
             draftTeams[index].bidderPinSet = false;
-            saveStatus.textContent = `Generated bidder login for ${draftTeams[index].team_name}: code ${draftTeams[index].bidderCode}, PIN ${draftTeams[index].bidderPin}. Click Save.`;
+            saveStatus.textContent = `Generated ${draftTeams[index].team_name}: code ${draftTeams[index].bidderCode}, PIN ${draftTeams[index].bidderPin}. Click Save Configuration to store in DB, then share with Copy login.`;
             renderTeamCards();
-            const card = teamList.querySelectorAll(".team-config-card")[index];
-            const pinInput = card?.querySelector(".team-bidder-pin");
-            if (pinInput) pinInput.value = draftTeams[index].bidderPin;
         });
     });
 
-    teamList.querySelectorAll("[data-copy-bidder-link]").forEach((button) => {
+    teamList.querySelectorAll("[data-copy-bidder-creds]").forEach((button) => {
         button.addEventListener("click", async () => {
+            const index = parseInt(button.dataset.copyBidderCreds, 10);
+            syncDraftFromTeamCards();
+            const team = draftTeams[index];
             const card = button.closest(".team-config-card");
             const urlInput = card?.querySelector(".team-bidder-url");
             const link = urlInput?.value || bidderPortalLink(draftActiveDivisionId);
+            const code = String(team?.bidderCode || card?.querySelector(".team-bidder-code")?.value || "").trim();
+            const pin = String(team?.bidderPin || card?.querySelector(".team-bidder-pin")?.value || "").trim();
+            if (!code) {
+                saveStatus.textContent = "Generate a code/PIN first, then Copy login.";
+                return;
+            }
+            if (!pin && !team?.bidderPinSet) {
+                saveStatus.textContent = "Generate a PIN first (or enter one), then Copy login.";
+                return;
+            }
+            const lines = [
+                `Bidder login: ${link}`,
+                `Team: ${team?.team_name || ""}`,
+                `Code: ${code}`,
+                pin ? `PIN: ${pin}` : "PIN: (already saved — use the PIN you shared after Generate)"
+            ];
+            const text = lines.join("\n");
             try {
-                await navigator.clipboard.writeText(link);
-                if (urlInput) {
-                    urlInput.focus();
-                    urlInput.select();
-                }
-                saveStatus.textContent = `Copied bidder link: ${link}`;
+                await navigator.clipboard.writeText(text);
+                saveStatus.textContent = pin
+                    ? `Copied login for ${team?.team_name || "team"} (URL + code + PIN). Save Configuration if you have not yet.`
+                    : `Copied login for ${team?.team_name || "team"} (URL + code). PIN was saved earlier — use the PIN you shared before.`;
             } catch (_) {
-                if (urlInput) {
-                    urlInput.focus();
-                    urlInput.select();
-                }
-                saveStatus.textContent = `Select and copy this bidder link: ${link}`;
+                saveStatus.textContent = text;
             }
         });
     });
@@ -733,6 +952,16 @@ function renderTeamCards() {
             renderTeamCards();
         });
     });
+    } catch (error) {
+        console.error("renderTeamCards failed:", error);
+        if (saveStatus) {
+            saveStatus.textContent = `Could not render teams: ${error.message || error}`;
+        }
+        if (teamEmptyHint) {
+            teamEmptyHint.hidden = false;
+            teamEmptyHint.textContent = `Teams failed to render (${error.message || error}). Hard-refresh and try again.`;
+        }
+    }
 }
 
 function addTeam() {
@@ -1227,6 +1456,7 @@ function renderAll() {
     renderPlayerFieldsEditor(getDraftActiveDivision());
     refreshOrderUI();
     refreshDivisionScopedLabels();
+    refreshBidderPortalBanner();
     void refreshIconCaptionPlayersAndRender();
 }
 
@@ -1305,13 +1535,20 @@ async function loadForm() {
     // Do NOT re-sync from roster here — that was wiping saved toggles on every refresh.
     tournamentNameInput.value = draftTournament.name || "";
     tournamentYearInput.value = draftTournament.year || "";
+    if (maxBidderDevicesSelect) {
+        maxBidderDevicesSelect.value = String(
+            Number(draftTournament.maxBidderDevices) || 2
+        );
+    }
     applyDivisionFieldsToForm(getDraftActiveDivision());
+    await ensureTournamentSlugCached();
     renderAll();
     if (saveStatus && !String(saveStatus.textContent || "").includes("Could not load")) {
         const teamCount = (getDraftActiveDivision()?.teams || []).length;
         const activeFields = getDraftActiveDivision()?.playerFields || {};
         const visibleCount = Object.values(activeFields).filter((f) => f && f.visible !== false).length;
-        saveStatus.textContent = `Loaded from database: ${getTournamentTitle(draftTournament)} · ${draftDivisions.length} division(s) · ${teamCount} teams · ${visibleCount} player field(s) shown on auction.`;
+        const deviceNote = ` · ${draftTournament.maxBidderDevices || 2} bidder device(s)/team`;
+        saveStatus.textContent = `Loaded from database: ${getTournamentTitle(draftTournament)} · ${draftDivisions.length} division(s) · ${teamCount} teams · ${visibleCount} player field(s) shown on auction.${deviceNote}`;
     }
 }
 
@@ -1366,6 +1603,19 @@ async function saveForm() {
             saveStatus.textContent = `Every team in ${division.name} needs a name.`;
             return;
         }
+        for (const team of division.teams || []) {
+            if (!team?.bidderEnabled) continue;
+            const code = String(team.bidderCode || "").trim();
+            const pin = String(team.bidderPin || "").trim();
+            if (!code) {
+                saveStatus.textContent = `${team.team_name || "A team"} has bidder login on but no code. Click Generate, then Save.`;
+                return;
+            }
+            if (!pin && !team.bidderPinSet) {
+                saveStatus.textContent = `${team.team_name || "A team"} needs a PIN before Save. Click Generate (or type a PIN), then Save.`;
+                return;
+            }
+        }
         if (!Number.isFinite(division.teamKitty) || division.teamKitty <= 0) {
             saveStatus.textContent = `Enter a valid team kitty for ${division.name}.`;
             return;
@@ -1397,6 +1647,11 @@ async function saveForm() {
         draftActiveDivisionId = saved.activeDivisionId || draftDivisions[0]?.id || "div_1";
         tournamentNameInput.value = draftTournament.name || "";
         tournamentYearInput.value = draftTournament.year || "";
+        if (maxBidderDevicesSelect) {
+            maxBidderDevicesSelect.value = String(
+                Number(draftTournament.maxBidderDevices) || 2
+            );
+        }
         applyDivisionFieldsToForm(getDraftActiveDivision());
         const active = getActiveDivision(saved);
         const teamCount = (active.teams || []).length;
@@ -1414,7 +1669,22 @@ async function saveForm() {
             active.iconCaption?.enabled || iconAssigned || captionAssigned
                 ? ` Icon/Caption on (${iconAssigned} icon, ${captionAssigned} caption).`
                 : "";
-        saveStatus.textContent = `Saved in database. ${getTournamentTitle(saved.tournament)}. ${saved.divisions.length} division(s). Active: ${active.name} (${teamCount} teams). Order: ${orderLabel}. Kitty ${formatMoney(active.teamKitty)}.${iconNote}`;
+        const bidderSaved = (active.teams || []).filter((team) => team.bidderEnabled && team.bidderCode);
+        const bidderNote = bidderSaved.length
+            ? ` Bidder login saved for ${bidderSaved.length} team(s): ${bidderSaved
+                  .map((team) => `${team.team_name} (${team.bidderCode}${team.bidderPinSet ? ", PIN in DB" : ""})`)
+                  .join(", ")}.`
+            : "";
+        const justSavedPins = (draft.divisions || [])
+            .flatMap((division) => division.teams || [])
+            .filter((team) => team.bidderEnabled && String(team.bidderPin || "").trim());
+        const pinShareNote = justSavedPins.length
+            ? ` Share these PINs now (shown once): ${justSavedPins
+                  .map((team) => `${team.team_name} code ${team.bidderCode} PIN ${team.bidderPin}`)
+                  .join(" · ")}.`
+            : "";
+        const deviceNote = ` Bidder devices/team: ${saved.tournament?.maxBidderDevices || 2}.`;
+        saveStatus.textContent = `Saved in database. ${getTournamentTitle(saved.tournament)}. ${saved.divisions.length} division(s). Active: ${active.name} (${teamCount} teams). Order: ${orderLabel}. Kitty ${formatMoney(active.teamKitty)}.${iconNote}${bidderNote}${pinShareNote}${deviceNote}`;
         renderAll();
     } catch (error) {
         saveStatus.textContent = error.message || "Could not save configuration to database.";
@@ -1435,6 +1705,8 @@ document.addEventListener("click", (event) => {
 });
 tournamentNameInput.addEventListener("input", refreshTournamentPreview);
 tournamentYearInput.addEventListener("input", refreshTournamentPreview);
+maxBidderDevicesSelect?.addEventListener("input", refreshTournamentPreview);
+maxBidderDevicesSelect?.addEventListener("change", refreshTournamentPreview);
 tournamentLogoUploadBtn.addEventListener("click", () => tournamentLogoFile.click());
 tournamentLogoFile.addEventListener("change", async () => {
     const file = tournamentLogoFile.files && tournamentLogoFile.files[0];

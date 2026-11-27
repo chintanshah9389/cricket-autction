@@ -239,7 +239,7 @@
     </div>
   </div>
 
-  <script src="/app/js/saas-auth.js"></script>
+  <script src="/app/js/saas-auth.js?v=4"></script>
   <script>
     let meUser = null;
     let orgCache = [];
@@ -607,7 +607,7 @@
         if (action === "open-tournament") {
           SaasAuth.setActiveOrgId(btn.getAttribute("data-org-id"));
           SaasAuth.setActiveTournamentId(id);
-          window.location.href = "/index.html";
+          window.location.href = `/index.html?tournament=${encodeURIComponent(id)}`;
           return;
         }
         if (action === "view-org") return viewOrg(id);

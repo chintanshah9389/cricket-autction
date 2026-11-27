@@ -1,10 +1,60 @@
 /**
  * Project sync — SaaS only (Postgres + R2).
- * localStorage is a fast cache. No data-project / offline file server.
+ * Auction progress + roster always come from Postgres.
+ * localStorage is never the source of truth for auctionData / live desk state.
  */
 
 let projectApiReadyCache = null;
 let projectApiReadyAt = 0;
+/** In-memory mirror of last DB snapshot (not localStorage). */
+const dbDivisionRuntime = new Map();
+
+function rememberDivisionRuntimeFromSnapshot(snapshot) {
+    dbDivisionRuntime.clear();
+    (snapshot?.divisions || []).forEach((division) => {
+        const id = division?.id || "div_1";
+        const players = Array.isArray(division.players) ? division.players : [];
+        dbDivisionRuntime.set(id, {
+            playerCount: players.length,
+            hasAuction: isMeaningfulAuctionSnapshot(division.auction),
+            players
+        });
+    });
+}
+
+function getDbDivisionRuntime(divisionId) {
+    return dbDivisionRuntime.get(divisionId || "div_1") || null;
+}
+
+function divisionHasDbAuction(divisionId) {
+    return Boolean(getDbDivisionRuntime(divisionId)?.hasAuction);
+}
+
+function getDbPlayerCount(divisionId) {
+    return Number(getDbDivisionRuntime(divisionId)?.playerCount) || 0;
+}
+
+function clearAuctionDataBrowserCaches() {
+    const keysToRemove = [];
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (key === "auctionData" || key.startsWith("auctionData:")) {
+                keysToRemove.push(key);
+            }
+        }
+    } catch (_) {
+        return;
+    }
+    keysToRemove.forEach((key) => {
+        try {
+            localStorage.removeItem(key);
+        } catch (_) {
+            // ignore
+        }
+    });
+}
 
 function getSaasTournamentId() {
     try {
@@ -103,6 +153,41 @@ async function fetchDivisionAuction(divisionId) {
     return projectApiFetch(`${tournamentApiBase()}/divisions/${id}/auction`);
 }
 
+/**
+ * Live auction state for squads / roster / teamsheet.
+ * SaaS: always Postgres. Legacy: localStorage mirror only.
+ */
+async function loadLiveAuctionStateForDivision(divisionId) {
+    const id = divisionId || "div_1";
+    if (usesTournamentDb()) {
+        const remote = await fetchDivisionAuction(id);
+        if (remote?.revision != null && typeof window !== "undefined") {
+            window.__auctionRevision = Number(remote.revision) || 0;
+        }
+        const auction = remote?.auction;
+        if (!auction || typeof auction !== "object") return null;
+        if (auction.auctionState && typeof auction.auctionState === "object") {
+            return auction.auctionState;
+        }
+        if (Array.isArray(auction.teams) || Array.isArray(auction.players)) {
+            return auction;
+        }
+        return null;
+    }
+    try {
+        const key =
+            typeof getDivisionAuctionDataKey === "function"
+                ? getDivisionAuctionDataKey(id)
+                : `auctionData:${id}`;
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed?.auctionState || null;
+    } catch (_) {
+        return null;
+    }
+}
+
 async function deleteDivisionAuction(divisionId) {
     const id = encodeURIComponent(divisionId || "div_1");
     await projectApiFetch(`${tournamentApiBase()}/divisions/${id}/auction`, {
@@ -141,16 +226,20 @@ function readLocalAuctionSnapshot(divisionId) {
 }
 
 /**
- * Apply DB snapshot to localStorage cache.
- * Config + players + partners: DB wins.
- * Auction: DB wins when present; if DB has no auction yet, keep a meaningful
- * local mid-auction cache so refresh does not wipe Resume.
+ * Apply DB snapshot into working browser mirrors.
+ * SaaS: never persist auctionData in localStorage — live desk always reads Postgres.
+ * Players/config mirrors are overwritten from DB on every hydrate/reload.
  */
 function applyProjectSnapshotToLocalStorage(snapshot, options = {}) {
     if (!snapshot) return { preservedAuctionIds: [] };
 
-    const wipeMissingAuction = options.wipeMissingAuction === true;
+    const saasMode =
+        typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);
+    const wipeMissingAuction = options.wipeMissingAuction === true || saasMode;
     const preservedAuctionIds = [];
+
+    rememberDivisionRuntimeFromSnapshot(snapshot);
+    if (saasMode) clearAuctionDataBrowserCaches();
 
     if (snapshot.project) {
         const project =
@@ -164,13 +253,19 @@ function applyProjectSnapshotToLocalStorage(snapshot, options = {}) {
     (snapshot.divisions || []).forEach((division) => {
         const id = division.id || "div_1";
         seen.add(id);
-        localStorage.setItem(`auctionPlayers:${id}`, JSON.stringify(division.players || []));
-        if (isMeaningfulAuctionSnapshot(division.auction)) {
+        const players = Array.isArray(division.players) ? division.players : [];
+        localStorage.setItem(`auctionPlayers:${id}`, JSON.stringify(players));
+        // Never store live auction progress in localStorage for SaaS.
+        if (saasMode) {
+            localStorage.removeItem(`auctionData:${id}`);
+            return;
+        }
+        const hasDbAuction = isMeaningfulAuctionSnapshot(division.auction);
+        if (hasDbAuction && players.length > 0) {
             localStorage.setItem(`auctionData:${id}`, JSON.stringify(division.auction));
         } else {
             const localAuction = readLocalAuctionSnapshot(id);
-            if (!wipeMissingAuction && localAuction) {
-                // Keep browser mid-auction progress when disk has no auction.json yet
+            if (!wipeMissingAuction && localAuction && players.length > 0) {
                 preservedAuctionIds.push(id);
             } else {
                 localStorage.removeItem(`auctionData:${id}`);
@@ -265,26 +360,14 @@ async function hydrateLocalStorageFromProjectFolder() {
         return { ok: true, blank: true, root: snapshot.root, snapshot };
     }
 
-    // Config/players/partners: Postgres wins. Auction: keep local mid-progress if DB empty.
-    const applied = applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: false });
-    const preservedAuctionIds = applied?.preservedAuctionIds || [];
-
-    // Heal DB so the next refresh also finds Resume (auction snapshot was missing).
-    for (const id of preservedAuctionIds) {
-        const auction = readLocalAuctionSnapshot(id);
-        if (!auction) continue;
-        try {
-            await persistAuctionToProjectFolder(id, auction);
-        } catch (error) {
-            console.warn("Could not restore auction snapshot for", id, error?.message || error);
-        }
-    }
+    // Config/players/partners/auction: Postgres wins. Do not push stale browser auction back to DB.
+    const applied = applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: true });
 
     return {
         ok: true,
         migrated: false,
         root: snapshot.root,
-        preservedAuctionIds,
+        preservedAuctionIds: applied?.preservedAuctionIds || [],
         snapshot
     };
 }
@@ -317,6 +400,9 @@ async function pushLocalStorageToProjectFolder() {
             players = [];
         }
         await putDivisionPlayers(id, players);
+
+        // SaaS: never push/delete live auction from browser mirrors (desk saves DB directly).
+        if (usesTournamentDb()) continue;
 
         let auction = null;
         try {
@@ -398,10 +484,31 @@ async function persistAuctionToProjectFolder(divisionId, auction) {
         if (generation !== projectPersistGeneration) return false;
         await requireProjectApiReady({ force: true });
         if (generation !== projectPersistGeneration) return false;
+        const id = divisionId || "div_1";
         if (auction == null) {
-            await deleteDivisionAuction(divisionId).catch(() => {});
+            await deleteDivisionAuction(id).catch(() => {});
+            const prev = getDbDivisionRuntime(id) || { playerCount: 0, players: [] };
+            dbDivisionRuntime.set(id, {
+                ...prev,
+                hasAuction: false
+            });
+            clearAuctionDataBrowserCaches();
         } else {
-            await putDivisionAuction(divisionId, auction);
+            await putDivisionAuction(id, auction);
+            const prev = getDbDivisionRuntime(id) || { playerCount: 0, players: [] };
+            dbDivisionRuntime.set(id, {
+                ...prev,
+                hasAuction: isMeaningfulAuctionSnapshot(auction)
+            });
+            // SaaS never keeps a browser auction mirror.
+            if (usesTournamentDb()) {
+                try {
+                    localStorage.removeItem(`auctionData:${id}`);
+                    if (id === "div_1") localStorage.removeItem("auctionData");
+                } catch (_) {
+                    // ignore
+                }
+            }
         }
         return true;
     });
@@ -414,7 +521,7 @@ async function reloadTournamentFromDb() {
     if (!snapshot?.project) {
         throw new Error("Could not load tournament configuration from database.");
     }
-    applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: false });
+    applyProjectSnapshotToLocalStorage(snapshot, { wipeMissingAuction: true });
     return snapshot;
 }
 

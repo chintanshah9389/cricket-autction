@@ -188,18 +188,17 @@ function runSquadsPage() {
         if (typeof migrateLegacyDivisionStorage === "function") {
             migrateLegacyDivisionStorage(divisionId);
         }
-        const dataKey =
-            typeof getDivisionAuctionDataKey === "function"
-                ? getDivisionAuctionDataKey(divisionId)
-                : `auctionData:${divisionId}`;
-        // Only this division's auction — do not fall back to legacy shared auctionData
-        const savedDataJSON = localStorage.getItem(dataKey);
 
-        if (savedDataJSON) {
-            const savedData = JSON.parse(savedDataJSON);
-            state = savedData.auctionState;
-            console.log("Data loaded successfully.");
-        } else {
+        // Always load live auction from DB (SaaS). localStorage is not used.
+        try {
+            if (typeof loadLiveAuctionStateForDivision === "function") {
+                state = await loadLiveAuctionStateForDivision(divisionId);
+            }
+        } catch (_) {
+            state = null;
+        }
+
+        if (!state || !Array.isArray(state.teams) || !state.teams.length) {
             document.querySelector(".king-container").innerHTML = `
                 <div class="no-data">AUCTION HAS NOT STARTED</div>
                 <style>

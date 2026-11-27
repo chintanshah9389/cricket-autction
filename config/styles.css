@@ -997,6 +997,38 @@ textarea:focus {
     font-size: 1rem;
 }
 
+.viewer-enabled-row {
+    margin: 2px 0 4px;
+}
+
+.viewer-link-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.bidder-device-limit {
+    display: grid;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.bidder-device-limit span {
+    font-weight: 700;
+    color: var(--ink-soft, #3d5470);
+    font-size: 0.9rem;
+}
+
+.bidder-device-limit input[type="number"] {
+    width: min(160px, 100%);
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    font: inherit;
+    font-weight: 700;
+}
+
 #bidder-portal-url {
     width: 100%;
     min-width: 0;
@@ -1055,7 +1087,7 @@ textarea:focus {
     flex-direction: column;
     align-items: stretch;
     margin-top: 4px;
-    padding: 12px;
+    padding: 10px 12px;
     border-radius: 14px;
     border: 1px dashed var(--line);
     background: color-mix(in srgb, var(--paper) 70%, #fff);
@@ -1067,6 +1099,17 @@ textarea:focus {
     gap: 8px;
     font-weight: 700;
     color: var(--ink);
+}
+
+.team-bidder-details {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.team-bidder-box.is-enabled .team-bidder-details {
+    display: flex;
 }
 
 .team-bidder-fields {

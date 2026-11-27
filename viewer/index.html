@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Live Auction Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;600;700&family=Sora:wght@700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=17">
+</head>
+<body>
+    <div class="viewer-bg" aria-hidden="true"></div>
+    <main class="viewer-shell">
+        <header class="viewer-top">
+            <div class="brand">
+                <img id="tournament-logo" class="tournament-logo" alt="" hidden>
+                <div class="brand-copy">
+                    <p class="eyebrow">Live auction</p>
+                    <h1 id="tournament-title">Live Auction</h1>
+                    <p class="meta" id="division-title">—</p>
+                </div>
+            </div>
+            <div class="viewer-top-actions">
+                <div class="view-count" id="view-count" title="People watching right now">
+                    <span class="view-count-dot" aria-hidden="true"></span>
+                    <strong id="view-count-value">1</strong>
+                </div>
+                <div class="view-tabs" role="tablist">
+                    <button type="button" class="is-active" data-view="live">Live</button>
+                    <button type="button" data-view="squads">Squads</button>
+                </div>
+            </div>
+        </header>
+
+        <section class="sponsor-ad" id="sponsor-ad" hidden>
+            <div class="sponsor-ad-media" id="sponsor-ad-media">
+                <video
+                    id="sponsor-video"
+                    class="sponsor-video"
+                    muted
+                    loop
+                    playsinline
+                    webkit-playsinline
+                    preload="auto"
+                    autoplay
+                ></video>
+                <img id="sponsor-logo" class="sponsor-fallback-logo" alt="" hidden>
+                <button type="button" class="sponsor-play-overlay" id="sponsor-play-overlay" hidden>
+                    <span>▶</span>
+                </button>
+                <img id="sponsor-brand-logo" class="sponsor-brand-logo" alt="" hidden>
+                <div class="sponsor-ad-copy">
+                    <div class="sponsor-ad-text">
+                        <p class="sponsor-ad-label" id="sponsor-ad-label">Title sponsor</p>
+                        <h2 id="sponsor-ad-name">—</h2>
+                        <p class="sponsor-ad-tagline" id="sponsor-ad-tagline"></p>
+                    </div>
+                    <div class="sponsor-ad-actions">
+                        <button type="button" class="sponsor-play-btn" id="sponsor-play-btn" hidden>Play</button>
+                        <a class="sponsor-ad-link" id="sponsor-ad-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Visit</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <p class="status" id="status" aria-live="polite"></p>
+
+        <section class="panel view-panel live-panel is-active" id="live-panel" data-panel="live">
+            <div class="live-stage" id="live-hero" data-status="idle">
+                <div class="live-photo">
+                    <img id="player-photo" src="../assets/placeholder.png" alt="">
+                    <span class="live-pill" id="live-pill">LIVE</span>
+                    <div class="live-photo-meta">
+                        <p class="live-kicker" id="live-kicker">Now on the block</p>
+                        <h2 id="player-name">Waiting for auction…</h2>
+                        <p class="live-photo-sub meta" id="player-meta">—</p>
+                    </div>
+                </div>
+                <div class="live-copy">
+                    <div class="live-stat-grid">
+                        <div class="bid-block">
+                            <span class="bid-label">Current bid</span>
+                            <div class="bid-amount" id="current-bid">—</div>
+                        </div>
+                        <div class="leading-row" id="leading-row">
+                            <span class="bid-label">Leading</span>
+                            <div class="leading-main">
+                                <img id="leading-logo" alt="" hidden>
+                                <p class="meta" id="leading-text">No bids yet</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="sold-result" id="sold-result" hidden>
+                <img id="sold-logo" alt="" hidden>
+                <div class="sold-copy">
+                    <span class="sold-label">Won by</span>
+                    <strong id="sold-team-name"></strong>
+                    <em id="sold-price"></em>
+                </div>
+            </div>
+            <section class="recent-sold" id="recent-sold-wrap">
+                <div class="section-head">
+                    <h3 class="panel-title">Recent sold</h3>
+                    <span class="section-note" id="sold-count-note"></span>
+                </div>
+                <div class="recent-list" id="recent-sold"></div>
+            </section>
+        </section>
+
+        <section class="panel view-panel squads-panel" id="squads-panel" data-panel="squads" hidden>
+            <div class="team-rail" id="team-tabs"></div>
+            <div class="squad-hero" id="squad-hero">
+                <div class="squad-hero-brand">
+                    <img id="squad-team-logo" alt="" hidden>
+                    <div>
+                        <p class="eyebrow" id="squad-team-label">Squad</p>
+                        <h2 id="squad-team-name">Select a team</h2>
+                    </div>
+                </div>
+                <div class="squad-summary" id="squad-summary"></div>
+            </div>
+            <div class="squad-body" id="squad-list"></div>
+        </section>
+    </main>
+    <script src="../js/money.js?v=8"></script>
+    <script src="app.js?v=17"></script>
+</body>
+</html>

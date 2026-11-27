@@ -711,19 +711,36 @@ async function loadDivisionPlayersFromProject(divisionId) {
 }
 
 async function loadDivisionAuctionFromProject(divisionId) {
+    const id = divisionId || "div_1";
+    const saasMode =
+        typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);
+
+    // SaaS: always return the live Postgres auction wrapper (never localStorage).
+    if (saasMode && typeof fetchDivisionAuction === "function") {
+        try {
+            const remote = await fetchDivisionAuction(id);
+            return remote?.auction || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
     try {
         if (typeof fetchProjectSnapshot === "function") {
             const snapshot = await fetchProjectSnapshot();
-            const match = (snapshot.divisions || []).find((item) => item.id === divisionId);
+            const match = (snapshot.divisions || []).find((item) => item.id === id);
             if (match?.auction) return match.auction;
         }
     } catch (_) {
         // fall through
     }
+
+    if (saasMode) return null;
+
     const dataKey =
         typeof getDivisionAuctionDataKey === "function"
-            ? getDivisionAuctionDataKey(divisionId)
-            : `auctionData:${divisionId}`;
+            ? getDivisionAuctionDataKey(id)
+            : `auctionData:${id}`;
     try {
         return JSON.parse(localStorage.getItem(dataKey) || "null");
     } catch (_) {

@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=47">
+    <link rel="stylesheet" href="styles.css?v=51">
     <link rel="stylesheet" href="animations.css?v=18">
     <script>
         // Block welcome chrome until we know the server is up.
@@ -17,7 +17,15 @@
         (function () {
             document.documentElement.classList.add("boot-pending");
             var tournamentId = null;
-            try { tournamentId = localStorage.getItem("ca_saas_tournament_id"); } catch (e) {}
+            try {
+                var params = new URLSearchParams(window.location.search || "");
+                tournamentId = params.get("tournament") || params.get("t");
+            } catch (e) {}
+            if (!tournamentId) {
+                try { tournamentId = localStorage.getItem("ca_saas_tournament_id"); } catch (e) {}
+            } else {
+                try { localStorage.setItem("ca_saas_tournament_id", tournamentId); } catch (e) {}
+            }
             var token = null;
             try { token = localStorage.getItem("ca_saas_access"); } catch (e) {}
             if (!token || !tournamentId) {
@@ -191,7 +199,6 @@
                                 <div class="sold-seal-logo-ring">
                                     <img id="sold-team-badge-logo" alt="" class="sold-team-badge-logo">
                                 </div>
-                                <span class="seal-label">SOLD</span>
                             </div>
                             <div class="sold-team-badge" id="sold-team-badge" hidden>
                                 <span id="sold-team-badge-name" class="sold-team-badge-name"></span>
@@ -277,7 +284,7 @@
                                         <strong id="current-bid-team-reserved">—</strong>
                                     </div>
                                     <div class="bid-team-stat" title="Max you can bid now after category reserves">
-                                        <em>Spend</em>
+                                        <em>MAX SPEND</em>
                                         <strong id="current-bid-team-spendable">—</strong>
                                     </div>
                                     <div class="bid-team-stat" title="Players still to buy in this category">
@@ -571,12 +578,12 @@
     </div>
 
     <script src="js/money.js?v=17"></script>
-    <script src="js/config-store.js?v=37"></script>
-    <script src="/app/js/saas-auth.js?v=3"></script>
+    <script src="js/config-store.js?v=38"></script>
+    <script src="/app/js/saas-auth.js?v=4"></script>
     <script src="js/project-store.js?v=31"></script>
     <script src="js/players-store.js?v=34"></script>
     <script src="js/offline-store.js?v=27"></script>
-    <script src="app.js?v=68"></script>
+    <script src="app.js?v=71"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

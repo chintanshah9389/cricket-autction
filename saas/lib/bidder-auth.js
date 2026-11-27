@@ -6,6 +6,23 @@ function accessSecret() {
   return process.env.JWT_ACCESS_SECRET || "dev-access-secret-change-me";
 }
 
+function bidderTokenTtl() {
+  return process.env.BIDDER_TOKEN_TTL || "12h";
+}
+
+function ttlToMs(ttl) {
+  const raw = String(ttl || "12h").trim();
+  const match = raw.match(/^(\d+)\s*([smhd])$/i);
+  if (!match) return 12 * 60 * 60 * 1000;
+  const amount = Number(match[1]) || 12;
+  const unit = match[2].toLowerCase();
+  if (unit === "s") return amount * 1000;
+  if (unit === "m") return amount * 60 * 1000;
+  if (unit === "h") return amount * 60 * 60 * 1000;
+  if (unit === "d") return amount * 24 * 60 * 60 * 1000;
+  return 12 * 60 * 60 * 1000;
+}
+
 function hashPin(pin) {
   return bcrypt.hash(String(pin), 10);
 }
@@ -15,7 +32,20 @@ function verifyPin(pin, pinHash) {
   return bcrypt.compare(String(pin || ""), String(pinHash || ""));
 }
 
-function signBidderToken({ tournamentId, divisionId, divisionCode, teamId, teamName }) {
+function clampMaxBidderDevices(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 2;
+  return Math.min(20, Math.max(1, Math.round(n)));
+}
+
+function signBidderToken({
+  tournamentId,
+  divisionId,
+  divisionCode,
+  teamId,
+  teamName,
+  sessionId
+}) {
   return jwt.sign(
     {
       typ: "bidder",
@@ -23,10 +53,11 @@ function signBidderToken({ tournamentId, divisionId, divisionCode, teamId, teamN
       divisionId,
       divisionCode,
       teamId,
-      teamName
+      teamName,
+      sid: sessionId
     },
     accessSecret(),
-    { expiresIn: process.env.BIDDER_TOKEN_TTL || "12h" }
+    { expiresIn: bidderTokenTtl() }
   );
 }
 
@@ -35,6 +66,7 @@ function verifyBidderToken(token) {
     const payload = jwt.verify(String(token || ""), accessSecret());
     if (payload?.typ !== "bidder") return null;
     if (!payload.tournamentId || !payload.divisionId || payload.teamId == null) return null;
+    if (!payload.sid) return null;
     return payload;
   } catch (_) {
     return null;
@@ -63,5 +95,8 @@ module.exports = {
   verifyBidderToken,
   authenticateBidderRequest,
   randomBidderCode,
-  randomBidderPin
+  randomBidderPin,
+  clampMaxBidderDevices,
+  bidderTokenTtl,
+  ttlToMs
 };

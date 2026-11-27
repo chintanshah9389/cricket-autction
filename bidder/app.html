@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;600;700&family=Sora:wght@700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1">
+    <link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
     <main class="bidder-shell">
@@ -20,44 +20,91 @@
             <button type="button" class="ghost-btn" id="logout-btn">Logout</button>
         </header>
 
-        <section class="panel" id="player-panel">
-            <div class="player-now">
-                <img id="player-photo" src="../assets/placeholder.png" alt="">
-                <div>
+        <section class="panel player-panel" id="player-panel" data-status="idle">
+            <div class="player-hero">
+                <div class="player-hero-photo">
+                    <img id="player-photo" src="../assets/placeholder.png" alt="">
+                    <span class="live-pill" id="live-pill">LIVE</span>
+                </div>
+                <div class="player-hero-copy">
                     <h2 id="player-name">Waiting for auction…</h2>
                     <p class="meta" id="player-meta">—</p>
                     <div class="bid-amount" id="current-bid">—</div>
-                    <p class="meta" id="leading-team">No bids yet</p>
+                    <div class="leading-row" id="leading-row">
+                        <img id="leading-team-logo" alt="" hidden>
+                        <p class="meta" id="leading-team">No bids yet</p>
+                    </div>
+                    <p class="quota-chip" id="quota-chip" hidden></p>
                 </div>
             </div>
+            <div class="sold-result" id="sold-result" hidden>
+                <img id="sold-team-logo" alt="" hidden>
+                <div class="sold-result-copy">
+                    <strong id="sold-team-name"></strong>
+                    <em id="sold-price"></em>
+                </div>
+            </div>
+            <div class="bid-stepper" id="bid-stepper" hidden>
+                <button type="button" class="step-btn" id="bid-minus" aria-label="Decrease bid">−</button>
+                <div class="step-value">
+                    <em>Your bid</em>
+                    <strong id="selected-bid">—</strong>
+                    <span class="meta" id="bid-step-hint">Step —</span>
+                </div>
+                <button type="button" class="step-btn" id="bid-plus" aria-label="Increase bid">+</button>
+            </div>
             <button type="button" class="bid-btn" id="bid-btn" disabled>BID</button>
+            <div class="bid-block-banner" id="bid-block-banner" hidden role="alert"></div>
             <p class="status" id="bid-status" aria-live="polite"></p>
         </section>
 
-        <section class="panel">
-            <h3 style="margin:0 0 10px;font-family:var(--font-ui);">Team purse</h3>
-            <div class="purse-grid">
-                <div><em>Purse</em><strong id="purse">—</strong></div>
-                <div><em>Reserved</em><strong id="reserved">—</strong></div>
-                <div><em>Spendable</em><strong id="spendable">—</strong></div>
-                <div><em>Pending</em><strong id="pending">—</strong></div>
-                <div><em>Bought</em><strong id="bought">—</strong></div>
-                <div><em>Spend</em><strong id="spent">—</strong></div>
+        <section class="panel purse-panel">
+            <h3 class="panel-title">Team purse</h3>
+            <div class="purse-grid desk-purse">
+                <div title="Total remaining purse">
+                    <em>Purse</em>
+                    <strong id="purse">—</strong>
+                </div>
+                <div title="Reserved for remaining category minimums">
+                    <em>Rsvd</em>
+                    <strong id="reserved" class="is-rsvd">—</strong>
+                </div>
+                <div title="Max you can bid now after category reserves">
+                    <em>MAX SPEND</em>
+                    <strong id="spendable" class="is-spend">—</strong>
+                </div>
+                <div title="Players still to buy in the current player category">
+                    <em>Pend</em>
+                    <strong id="pending">—</strong>
+                </div>
+                <div title="Total squad slots left">
+                    <em>Slots</em>
+                    <strong id="slots">—</strong>
+                </div>
             </div>
         </section>
 
         <section class="panel">
-            <h3 style="margin:0 0 10px;font-family:var(--font-ui);">Categories</h3>
+            <h3 class="panel-title">Search players</h3>
+            <label class="search-label">
+                <span class="sr-only">Search players</span>
+                <input id="player-search" type="search" placeholder="Name, mobile, club, category…" autocomplete="off">
+            </label>
+            <div class="list" id="search-list"></div>
+        </section>
+
+        <section class="panel">
+            <h3 class="panel-title">Categories</h3>
             <div class="tabs" id="category-tabs"></div>
             <div class="list" id="category-list"></div>
         </section>
 
         <section class="panel">
-            <h3 style="margin:0 0 10px;font-family:var(--font-ui);">My squad</h3>
+            <h3 class="panel-title">My squad</h3>
             <div class="list" id="squad-list"></div>
         </section>
     </main>
     <script src="../js/money.js?v=8"></script>
-    <script src="app.js?v=1"></script>
+    <script src="app.js?v=10"></script>
 </body>
 </html>

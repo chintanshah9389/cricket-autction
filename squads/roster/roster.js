@@ -15,20 +15,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof migrateLegacyDivisionStorage === "function") {
         migrateLegacyDivisionStorage(divisionId);
     }
-    const dataKey =
-        typeof getDivisionAuctionDataKey === "function"
-            ? getDivisionAuctionDataKey(divisionId)
-            : `auctionData:${divisionId}`;
-
-    // 1. Load all data from localStorage (active division only)
-    const savedDataJSON = localStorage.getItem(dataKey);
-    if (!savedDataJSON) {
+    let state = null;
+    try {
+        if (typeof loadLiveAuctionStateForDivision === "function") {
+            state = await loadLiveAuctionStateForDivision(divisionId);
+        }
+    } catch (_) {
+        state = null;
+    }
+    if (!state || !Array.isArray(state.teams)) {
         document.body.innerHTML = '<h1>Error: Auction data not found.</h1>';
         return;
     }
-
-    const savedData = JSON.parse(savedDataJSON);
-    const state = savedData.auctionState;
     // Use the "master list" of all players
     const allPlayers = state.allPlayers || state.players; 
     const allTeams = state.teams;

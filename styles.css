@@ -72,7 +72,7 @@ body {
 }
 
 body.teams-drawer-locked .big-container {
-    padding-right: 492px;
+    padding-right: calc(min(400px, 100%) + 28px);
 }
 
 .sections {
@@ -778,7 +778,7 @@ body:not(.welcome-active) #welcome-menu-overlay {
 }
 
 .player-status-chip[data-status="sold"] {
-    background: linear-gradient(135deg, #2dce89, #149e63);
+    display: none !important;
 }
 
 .player-status-chip[data-status="unsold"],
@@ -1090,6 +1090,11 @@ body:not(.welcome-active) #welcome-menu-overlay {
     text-align: center;
 }
 
+.bid-team-stat:has(#current-bid-team-spendable) em {
+    font-size: 0.5rem;
+    letter-spacing: 0.01em;
+}
+
 .bid-team-stat strong {
     display: block;
     width: 100%;
@@ -1263,14 +1268,20 @@ body.teams-drawer-locked .custom-bid-button {
     display: grid;
     grid-template-columns: 76px 0fr;
     width: auto;
+    max-width: 100vw;
     height: 100vh;
     pointer-events: none;
-    transition: grid-template-columns 0.28s ease;
+    transition: grid-template-columns 0.28s ease, width 0.28s ease;
 }
 
 .teams-drawer[data-open="true"] {
-    grid-template-columns: 76px minmax(340px, 400px);
+    /* Rail collapses — sheet takes the full drawer width.
+       Prefer 100% over 100vw so the OS scrollbar doesn't force a horizontal page scroll. */
+    width: 400px;
+    max-width: 100%;
+    grid-template-columns: 0fr 1fr;
     pointer-events: auto;
+    overflow: hidden;
 }
 
 .teams-drawer[data-open="false"] {
@@ -1279,6 +1290,15 @@ body.teams-drawer-locked .custom-bid-button {
 
 .teams-drawer[data-open="false"] .teams-rail {
     pointer-events: auto;
+}
+
+.teams-drawer[data-open="true"] .teams-rail {
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .teams-rail {
@@ -1391,9 +1411,13 @@ body.teams-drawer-locked .custom-bid-button {
     color: #fff;
 }
 
+.teams-drawer-head {
+    flex-wrap: wrap;
+}
+
 .teams-drawer-head > div:first-child {
     min-width: 0;
-    flex: 1 1 auto;
+    flex: 1 1 140px;
 }
 
 .teams-drawer-head strong {
@@ -1418,8 +1442,8 @@ body.teams-drawer-locked .custom-bid-button {
     flex-wrap: wrap;
     gap: 6px;
     justify-content: flex-end;
-    flex: 0 0 auto;
-    max-width: 58%;
+    flex: 1 1 auto;
+    max-width: 100%;
 }
 
 .drawer-tool-btn {
@@ -1480,12 +1504,14 @@ body.teams-drawer-locked .custom-bid-button {
     --team-rows: 12;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 8px;
     min-height: 0;
     height: 100%;
     padding: 8px 12px 16px;
     overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .team-container {
@@ -1495,10 +1521,11 @@ body.teams-drawer-locked .custom-bid-button {
     grid-template-columns: 56px minmax(0, 1fr);
     align-items: start;
     gap: 10px;
+    flex: 0 0 auto;
     width: 100%;
-    min-height: 0;
+    min-height: auto;
     margin: 0;
-    padding: 10px 12px 10px 12px;
+    padding: 10px 12px;
     overflow: hidden;
     border: 1px solid rgba(22, 50, 92, 0.1);
     border-radius: 16px;
@@ -1912,56 +1939,6 @@ body.teams-drawer-locked .custom-bid-button {
     line-height: 1;
 }
 
-.money-remaining {
-    display: grid;
-    gap: 6px;
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    padding: 9px 10px;
-    border-radius: 12px;
-    background: linear-gradient(180deg, #fff7e4, #ffe4a8);
-    color: #8a5600;
-    text-align: left;
-}
-
-.money-remaining-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    min-width: 0;
-}
-
-.money-remaining .stat-label {
-    color: #b07a18;
-    font-family: var(--font-body);
-    font-size: 0.66rem;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    line-height: 1.2;
-    text-transform: uppercase;
-}
-
-.money-remaining .stat-amount {
-    font-family: var(--font-display);
-    font-size: 1.25rem;
-    font-weight: 700;
-    line-height: 1;
-    white-space: nowrap;
-}
-
-.money-remaining .stat-sub {
-    display: block;
-    color: #a06a12;
-    font-family: var(--font-body);
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    line-height: 1.3;
-    white-space: normal;
-}
-
 .stat-label {
     color: var(--muted);
     font-family: var(--font-body);
@@ -2056,9 +2033,9 @@ body.teams-drawer-locked .custom-bid-button {
     width: auto;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
-    gap: 12px;
-    padding: 22px 18px 18px;
+    justify-content: center;
+    gap: 14px;
+    padding: 28px 18px 72px;
     border: none;
     background: transparent;
     box-shadow: none;
@@ -2101,11 +2078,9 @@ body.teams-drawer-locked .custom-bid-button {
     position: relative;
     z-index: 2;
     display: grid;
-    grid-template-rows: 1fr auto;
     place-items: center;
-    gap: 10px;
-    width: min(86%, 300px);
-    margin-top: 4%;
+    width: min(72%, 260px);
+    margin-top: 0;
     filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.45));
 }
 
@@ -2156,30 +2131,7 @@ body.teams-drawer-locked .custom-bid-button {
 }
 
 .sold-seal .seal-label {
-    position: relative;
-    left: auto;
-    top: auto;
-    z-index: 3;
-    width: min(100%, 240px);
-    min-width: 0;
-    margin-top: -6px;
-    padding: 12px 14px 10px;
-    border-radius: 12px;
-    border: 4px solid #fff;
-    outline: 2px dashed rgba(255, 255, 255, 0.55);
-    outline-offset: -8px;
-    background: linear-gradient(145deg, #22c57a, #0f8f56 55%, #0a6844);
-    color: #fff;
-    font-size: clamp(1.8rem, 3.6vw, 2.5rem);
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    line-height: 1;
-    text-align: center;
-    box-shadow:
-        0 16px 34px rgba(0, 0, 0, 0.45),
-        inset 0 1px 0 rgba(255, 255, 255, 0.45);
-    transform: rotate(-8deg);
-    text-shadow: 0 3px 0 rgba(0, 0, 0, 0.25);
+    display: none !important;
 }
 
 .sold-team-badge {
@@ -2219,7 +2171,7 @@ body.teams-drawer-locked .custom-bid-button {
     z-index: 2;
     color: #ffe08a;
     font-family: var(--font-display);
-    font-size: clamp(1.35rem, 2.6vw, 1.75rem);
+    font-size: clamp(1.55rem, 3vw, 2.1rem);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-shadow: 0 8px 18px rgba(0, 0, 0, 0.55);
@@ -3492,6 +3444,10 @@ body.server-offline-only #big-container {
 @media (max-width: 980px) {
     body { overflow: auto; }
 
+    body.teams-drawer-open {
+        overflow: hidden;
+    }
+
     .big-container {
         height: auto;
         min-height: 100vh;
@@ -3513,18 +3469,21 @@ body.server-offline-only #big-container {
         min-height: clamp(380px, 54vh, 520px);
     }
 
-    body.teams-drawer-locked .big-container,
     .big-container {
-        padding-right: 18px;
+        padding-right: 84px;
+    }
+
+    body.teams-drawer-locked .big-container {
+        padding-right: calc(min(400px, 100% - 280px) + 24px);
     }
 
     .teams-drawer {
-        width: min(100vw, 420px);
         grid-template-columns: 68px 0fr;
     }
 
     .teams-drawer[data-open="true"] {
-        grid-template-columns: 68px 1fr;
+        width: min(400px, 100%);
+        grid-template-columns: 0fr 1fr;
     }
 }
 

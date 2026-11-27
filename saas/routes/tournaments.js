@@ -67,6 +67,10 @@ function mapTeamRow(row) {
     row.bidder_code != null && String(row.bidder_code).trim() !== ""
       ? String(row.bidder_code).trim()
       : "";
+  const bidderPin =
+    row.bidder_pin != null && String(row.bidder_pin).trim() !== ""
+      ? String(row.bidder_pin).trim()
+      : "";
   return {
     id: row.team_key,
     team_id: row.team_key,
@@ -81,7 +85,8 @@ function mapTeamRow(row) {
     ...(captionRef != null && captionRef !== "" ? { captionPlayerId: captionRef } : {}),
     bidderEnabled: Boolean(row.bidder_enabled),
     bidderCode,
-    bidderPinSet: Boolean(row.bidder_pin_hash),
+    ...(bidderPin ? { bidderPin } : {}),
+    bidderPinSet: Boolean(row.bidder_pin_hash) || Boolean(bidderPin),
     dbId: row.id
   };
 }
@@ -150,9 +155,64 @@ function mapDivisionSettings(row) {
   };
 }
 
+/**
+ * Live auction snapshots can keep deleted R2 URLs after photos are re-uploaded.
+ * Overlay current players.photo_key / fields.photo onto every player list in the session.
+ */
+function syncAuctionSnapshotPhotos(snapshot, playerRows) {
+  if (!snapshot || typeof snapshot !== "object") return snapshot;
+  const byCode = new Map();
+  const byExternal = new Map();
+  for (const row of playerRows || []) {
+    const mapped = mapPlayerRow(row);
+    const meta = { photo: mapped.photo || "", photoKey: mapped.photoKey || null };
+    if (mapped.code) byCode.set(String(mapped.code), meta);
+    if (mapped.id != null && mapped.id !== "") byExternal.set(String(mapped.id), meta);
+  }
+
+  const apply = (player) => {
+    if (!player || typeof player !== "object") return;
+    const meta =
+      byCode.get(String(player.code || "")) ||
+      byExternal.get(String(player.id || "")) ||
+      null;
+    if (!meta?.photo) return;
+    player.photo = meta.photo;
+    if (meta.photoKey) player.photoKey = meta.photoKey;
+  };
+
+  const state =
+    snapshot.auctionState && typeof snapshot.auctionState === "object"
+      ? snapshot.auctionState
+      : snapshot;
+  for (const key of ["players", "allPlayers", "soldPlayers", "unsoldPlayers", "skippedPlayers"]) {
+    if (!Array.isArray(state[key])) continue;
+    state[key].forEach(apply);
+  }
+  for (const team of state.teams || []) {
+    for (const listKey of ["players", "squad"]) {
+      if (!Array.isArray(team?.[listKey])) continue;
+      team[listKey].forEach(apply);
+    }
+  }
+  return snapshot;
+}
+
 async function buildSnapshot(tournamentId) {
   const tournament = await loadTournament(tournamentId);
   if (!tournament) return null;
+
+  if (!String(tournament.viewer_access_key || "").trim()) {
+    const crypto = require("crypto");
+    const key = crypto.randomBytes(9).toString("hex");
+    await query(
+      `UPDATE tournaments
+       SET viewer_access_key = $2, updated_at = NOW()
+       WHERE id = $1`,
+      [tournamentId, key]
+    );
+    tournament.viewer_access_key = key;
+  }
 
   const divisionsResult = await query(
     `SELECT * FROM divisions WHERE tournament_id = $1 ORDER BY sort_order ASC, created_at ASC`,
@@ -187,6 +247,9 @@ async function buildSnapshot(tournamentId) {
     );
     const settings = mapDivisionSettings(division);
     const mappedTeams = teams.rows.map(mapTeamRow);
+    const auctionSnapshot = session.rows[0]?.snapshot
+      ? syncAuctionSnapshotPhotos(session.rows[0].snapshot, players.rows)
+      : null;
     projectDivisions.push({
       ...settings,
       teams: mappedTeams
@@ -195,7 +258,7 @@ async function buildSnapshot(tournamentId) {
       id: settings.id,
       dbId: division.id,
       players: players.rows.map(mapPlayerRow),
-      auction: session.rows[0]?.snapshot || null,
+      auction: auctionSnapshot,
       auctionStatus: session.rows[0]?.status || "idle",
       auctionRevision: session.rows[0]?.revision || 0
     });
@@ -231,6 +294,12 @@ async function buildSnapshot(tournamentId) {
       slug: tournament.slug,
       logoKey: tournament.logo_key,
       logo: tournament.logo_key ? publicUrlForKey(tournament.logo_key) : null,
+      maxBidderDevices: Math.min(
+        20,
+        Math.max(1, Number(tournament.max_bidder_devices) || 2)
+      ),
+      viewerEnabled: tournament.viewer_enabled !== false,
+      viewerAccessKey: tournament.viewer_access_key || "",
       activeDivisionId
     },
     project: {
@@ -238,7 +307,13 @@ async function buildSnapshot(tournamentId) {
         name: tournament.name,
         year: tournament.year,
         logoKey: tournament.logo_key || null,
-        logo: tournament.logo_key ? publicUrlForKey(tournament.logo_key) || "" : ""
+        logo: tournament.logo_key ? publicUrlForKey(tournament.logo_key) || "" : "",
+        maxBidderDevices: Math.min(
+          20,
+          Math.max(1, Number(tournament.max_bidder_devices) || 2)
+        ),
+        viewerEnabled: tournament.viewer_enabled !== false,
+        viewerAccessKey: tournament.viewer_access_key || ""
       },
       activeDivisionId,
       divisions: projectDivisions,
@@ -270,7 +345,7 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
   const { hashPin } = require("../lib/bidder-auth");
   const list = Array.isArray(teams) ? teams : [];
   const existing = await client.query(
-    `SELECT team_key, logo_key, video_key, bidder_enabled, bidder_code, bidder_pin_hash
+    `SELECT team_key, logo_key, video_key, bidder_enabled, bidder_code, bidder_pin_hash, bidder_pin
      FROM teams WHERE division_id = $1`,
     [divisionDbId]
   );
@@ -309,21 +384,42 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
     const bidderCode = bidderEnabled && bidderCodeRaw ? bidderCodeRaw : null;
     const plainPin = String(team.bidderPin || team.bidder_pin || "").trim();
     let bidderPinHash = prev?.bidder_pin_hash || null;
+    let bidderPinPlain =
+      prev?.bidder_pin != null && String(prev.bidder_pin).trim() !== ""
+        ? String(prev.bidder_pin).trim()
+        : null;
     if (!bidderEnabled) {
       bidderPinHash = null;
+      bidderPinPlain = null;
     } else if (plainPin) {
       bidderPinHash = await hashPin(plainPin);
+      bidderPinPlain = plainPin;
     } else if (team.clearBidderPin) {
       bidderPinHash = null;
+      bidderPinPlain = null;
+    }
+    if (bidderEnabled && bidderCode && !bidderPinHash) {
+      const err = new Error(
+        `Team "${String(team.teamName || team.team_name || team.name || teamKey)}" has bidder login enabled but no PIN. Generate a PIN in Config and Save again.`
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+    if (bidderEnabled && !bidderCode) {
+      const err = new Error(
+        `Team "${String(team.teamName || team.team_name || team.name || teamKey)}" has bidder login enabled but no code. Generate credentials in Config and Save again.`
+      );
+      err.statusCode = 400;
+      throw err;
     }
 
     await client.query(
       `INSERT INTO teams (
          division_id, team_key, team_name, color, logo_key, video_key,
          icon_player_id, caption_player_id, icon_player_ref, caption_player_ref,
-         bidder_enabled, bidder_code, bidder_pin_hash
+         bidder_enabled, bidder_code, bidder_pin_hash, bidder_pin
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        ON CONFLICT (division_id, team_key) DO UPDATE SET
          team_name = EXCLUDED.team_name,
          color = EXCLUDED.color,
@@ -336,6 +432,7 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
          bidder_enabled = EXCLUDED.bidder_enabled,
          bidder_code = EXCLUDED.bidder_code,
          bidder_pin_hash = EXCLUDED.bidder_pin_hash,
+         bidder_pin = EXCLUDED.bidder_pin,
          updated_at = NOW()`,
       [
         divisionDbId,
@@ -350,7 +447,8 @@ async function syncTeamsForDivision(client, divisionDbId, teams) {
         captionRef,
         bidderEnabled,
         bidderCode,
-        bidderPinHash
+        bidderPinHash,
+        bidderEnabled ? bidderPinPlain : null
       ]
     );
   }
@@ -527,12 +625,37 @@ async function handleTournamentRoutes(req, res, url) {
         keepCodes[0] ||
         null;
 
+      const maxBidderDevices = Math.min(
+        20,
+        Math.max(
+          1,
+          Math.round(
+            Number(
+              tournamentMeta.maxBidderDevices ??
+                tournamentMeta.max_bidder_devices ??
+                2
+            ) || 2
+          )
+        )
+      );
+      const viewerEnabled = tournamentMeta.viewerEnabled !== false;
+      let viewerAccessKey = String(
+        tournamentMeta.viewerAccessKey || tournamentMeta.viewer_access_key || ""
+      ).trim();
+      if (!viewerAccessKey) {
+        const crypto = require("crypto");
+        viewerAccessKey = crypto.randomBytes(9).toString("hex");
+      }
+
       await client.query(
         `UPDATE tournaments
          SET name = COALESCE(NULLIF($2, ''), name),
              year = COALESCE(NULLIF($3, ''), year),
              logo_key = $4,
              active_division_code = $5,
+             max_bidder_devices = $6,
+             viewer_enabled = $7,
+             viewer_access_key = $8,
              updated_at = NOW()
          WHERE id = $1`,
         [
@@ -540,7 +663,10 @@ async function handleTournamentRoutes(req, res, url) {
           String(tournamentMeta.name || "").trim(),
           String(tournamentMeta.year || "").trim(),
           nextLogoKey,
-          activeDivisionCode
+          activeDivisionCode,
+          maxBidderDevices,
+          viewerEnabled,
+          viewerAccessKey
         ]
       );
 
@@ -876,6 +1002,19 @@ async function handleTournamentRoutes(req, res, url) {
           ]);
         }
       }
+      // Empty roster (or full replace) must not leave a live auction showing deleted players.
+      if (players.length === 0) {
+        await client.query(
+          `INSERT INTO auction_sessions (division_id, status, snapshot, revision, updated_at)
+           VALUES ($1, 'idle', '{}'::jsonb, 1, NOW())
+           ON CONFLICT (division_id) DO UPDATE SET
+             status = 'idle',
+             snapshot = '{}'::jsonb,
+             revision = auction_sessions.revision + 1,
+             updated_at = NOW()`,
+          [division.id]
+        );
+      }
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -911,8 +1050,13 @@ async function handleTournamentRoutes(req, res, url) {
       [division.id]
     );
     const row = session.rows[0];
+    let auction = row?.snapshot || null;
+    if (auction) {
+      const players = await query(`SELECT * FROM players WHERE division_id = $1`, [division.id]);
+      auction = syncAuctionSnapshotPhotos(auction, players.rows);
+    }
     sendJson(res, 200, {
-      auction: row?.snapshot || null,
+      auction,
       status: row?.status || "idle",
       revision: Number(row?.revision) || 0,
       updatedAt: row?.updated_at || null
@@ -983,6 +1127,78 @@ async function handleTournamentRoutes(req, res, url) {
       [division.id]
     );
     sendJson(res, 200, { ok: true });
+    return true;
+  }
+
+  const viewerLinkMatch = url.pathname.match(
+    /^\/api\/v1\/tournaments\/([^/]+)\/viewer-link$/
+  );
+  if (viewerLinkMatch && req.method === "POST") {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+    const tournamentId = viewerLinkMatch[1];
+    const ctx = await requireTournamentAccess(user, tournamentId, WRITE_ROLES);
+    if (!ctx) {
+      sendJson(res, 403, { error: "Forbidden" });
+      return true;
+    }
+    const body = await readJson(req);
+    const action = String(body.action || "revoke").toLowerCase();
+    const crypto = require("crypto");
+
+    if (action === "disable") {
+      await query(
+        `UPDATE tournaments
+         SET viewer_enabled = FALSE, updated_at = NOW()
+         WHERE id = $1`,
+        [tournamentId]
+      );
+      sendJson(res, 200, { ok: true, viewerEnabled: false });
+      return true;
+    }
+    if (action === "enable") {
+      const existing = await query(
+        `SELECT viewer_access_key FROM tournaments WHERE id = $1 LIMIT 1`,
+        [tournamentId]
+      );
+      let key = String(existing.rows[0]?.viewer_access_key || "").trim();
+      if (!key) key = crypto.randomBytes(9).toString("hex");
+      await query(
+        `UPDATE tournaments
+         SET viewer_enabled = TRUE,
+             viewer_access_key = $2,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [tournamentId, key]
+      );
+      sendJson(res, 200, {
+        ok: true,
+        viewerEnabled: true,
+        viewerAccessKey: key
+      });
+      return true;
+    }
+
+    // revoke / rotate: old shared URLs stop working
+    const key = crypto.randomBytes(9).toString("hex");
+    await query(
+      `UPDATE tournaments
+       SET viewer_enabled = TRUE,
+           viewer_access_key = $2,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [tournamentId, key]
+    );
+    // Drop current live watchers so count resets with the new link
+    await query(`DELETE FROM viewer_presence WHERE tournament_id = $1`, [
+      tournamentId
+    ]).catch(() => {});
+    sendJson(res, 200, {
+      ok: true,
+      viewerEnabled: true,
+      viewerAccessKey: key,
+      revoked: true
+    });
     return true;
   }
 

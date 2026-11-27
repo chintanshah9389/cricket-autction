@@ -14,7 +14,10 @@ const DEFAULT_TEAM_COLORS = [
 const DEFAULT_TOURNAMENT = {
     name: "New Auction",
     year: "2026",
-    logo: ""
+    logo: "",
+    maxBidderDevices: 2,
+    viewerEnabled: true,
+    viewerAccessKey: ""
 };
 
 /**
@@ -462,6 +465,12 @@ function getTeamVideoSrc(team, fromPrefix = "") {
     return `${fromPrefix}${video}`;
 }
 
+function clampMaxBidderDevices(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 2;
+    return Math.min(20, Math.max(1, Math.round(n)));
+}
+
 function normalizeTournament(raw) {
     const name =
         String(raw?.name ?? DEFAULT_TOURNAMENT.name).trim() || DEFAULT_TOURNAMENT.name;
@@ -469,9 +478,19 @@ function normalizeTournament(raw) {
         String(raw?.year ?? DEFAULT_TOURNAMENT.year).trim() || DEFAULT_TOURNAMENT.year;
     const logo = normalizeTeamLogo(raw?.logo);
     const logoKey = String(raw?.logoKey || raw?.logo_key || "").trim() || null;
+    const maxBidderDevices = clampMaxBidderDevices(
+        raw?.maxBidderDevices ?? raw?.max_bidder_devices ?? DEFAULT_TOURNAMENT.maxBidderDevices
+    );
+    const viewerEnabled = raw?.viewerEnabled !== false && raw?.viewer_enabled !== false;
+    const viewerAccessKey = String(
+        raw?.viewerAccessKey || raw?.viewer_access_key || ""
+    ).trim();
     return {
         name,
         year,
+        maxBidderDevices,
+        viewerEnabled,
+        ...(viewerAccessKey ? { viewerAccessKey } : {}),
         ...(logo ? { logo } : {}),
         ...(logoKey ? { logoKey } : {})
     };
@@ -535,7 +554,7 @@ function normalizeTeams(rawTeams) {
                 bidderEnabled: Boolean(team?.bidderEnabled),
                 ...(bidderCode ? { bidderCode } : {}),
                 ...(bidderPin ? { bidderPin } : {}),
-                bidderPinSet: Boolean(team?.bidderPinSet)
+                bidderPinSet: Boolean(team?.bidderPinSet) || Boolean(bidderPin)
             };
         })
         .filter((team) => team.team_name);
@@ -1300,28 +1319,12 @@ async function saveAuctionConfigToDisk(config) {
  */
 function syncIconCaptionIdsIntoLiveAuctions(config) {
     const normalized = normalizeConfig(config || {});
-    (normalized.divisions || []).forEach((division) => {
-        if (!division?.id) return;
-        const dataKey =
-            typeof getDivisionAuctionDataKey === "function"
-                ? getDivisionAuctionDataKey(division.id)
-                : `auctionData:${division.id}`;
-        let raw = null;
-        try {
-            raw = localStorage.getItem(dataKey);
-        } catch (_) {
-            raw = null;
-        }
-        if (!raw) return;
+    const saasMode =
+        typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);
 
-        let payload = null;
-        try {
-            payload = JSON.parse(raw);
-        } catch (_) {
-            return;
-        }
+    const patchPayload = (division, payload) => {
         const state = payload?.auctionState;
-        if (!state || !Array.isArray(state.teams)) return;
+        if (!state || !Array.isArray(state.teams)) return null;
 
         const configTeams = Array.isArray(division.teams) ? division.teams : [];
         const byId = new Map(configTeams.map((team) => [Number(team.team_id), team]));
@@ -1364,6 +1367,52 @@ function syncIconCaptionIdsIntoLiveAuctions(config) {
             payload.config = normalized;
         }
         payload.auctionState = state;
+        return payload;
+    };
+
+    (normalized.divisions || []).forEach((division) => {
+        if (!division?.id) return;
+
+        if (saasMode && typeof fetchDivisionAuction === "function") {
+            Promise.resolve(fetchDivisionAuction(division.id))
+                .then((remote) => {
+                    if (!remote?.auction) return;
+                    if (
+                        typeof isMeaningfulAuctionSnapshot === "function" &&
+                        !isMeaningfulAuctionSnapshot(remote.auction)
+                    ) {
+                        return;
+                    }
+                    const payload = patchPayload(division, remote.auction);
+                    if (!payload) return;
+                    if (typeof persistAuctionToProjectFolder === "function") {
+                        persistAuctionToProjectFolder(division.id, payload);
+                    }
+                })
+                .catch(() => {});
+            return;
+        }
+
+        const dataKey =
+            typeof getDivisionAuctionDataKey === "function"
+                ? getDivisionAuctionDataKey(division.id)
+                : `auctionData:${division.id}`;
+        let raw = null;
+        try {
+            raw = localStorage.getItem(dataKey);
+        } catch (_) {
+            raw = null;
+        }
+        if (!raw) return;
+
+        let payload = null;
+        try {
+            payload = JSON.parse(raw);
+        } catch (_) {
+            return;
+        }
+        payload = patchPayload(division, payload);
+        if (!payload) return;
 
         try {
             localStorage.setItem(dataKey, JSON.stringify(payload));

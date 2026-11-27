@@ -1067,6 +1067,29 @@ function getPlayersTemplateCsv(config = null) {
 
 async function resolveAuctionPlayers(fallbackLoader, divisionId = getActivePlayersDivisionId()) {
     const id = divisionId || getActivePlayersDivisionId();
+    const saasMode =
+        typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);
+
+    // SaaS: always pull the latest roster from Postgres (never trust a stale browser mirror first).
+    if (saasMode && typeof fetchProjectSnapshot === "function") {
+        try {
+            const ready =
+                typeof checkProjectApiReady === "function" ? await checkProjectApiReady() : true;
+            if (ready) {
+                const snapshot = await fetchProjectSnapshot();
+                if (typeof rememberDivisionRuntimeFromSnapshot === "function") {
+                    rememberDivisionRuntimeFromSnapshot(snapshot);
+                }
+                const division = (snapshot.divisions || []).find((item) => item.id === id);
+                const players = Array.isArray(division?.players) ? division.players : [];
+                localStorage.setItem(resolvePlayersStorageKey(id), JSON.stringify(players));
+                return players.map((player, index) => normalizePlayerRecord(player, index));
+            }
+        } catch (_) {
+            // fall through to local mirror / fallback
+        }
+    }
+
     let stored = loadStoredPlayers(id);
 
     // Disk fallback when browser cache is missing (hydrate missed / other tab wrote players.json)

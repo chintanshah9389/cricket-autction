@@ -61,12 +61,127 @@
     storageSet(ORG_KEY, orgId || null);
   }
 
+  function readTournamentIdFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      return (
+        String(params.get("tournament") || params.get("t") || "").trim() || null
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function isTournamentScopedPage() {
+    try {
+      const path = String(window.location.pathname || "");
+      if (path.startsWith("/app/")) return false;
+      if (path.includes("/viewer") || path.includes("/bidder")) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function syncTournamentIdToUrl(tournamentId) {
+    if (!isTournamentScopedPage()) return;
+    try {
+      const url = new URL(window.location.href);
+      const next = String(tournamentId || "").trim();
+      if (!next) {
+        url.searchParams.delete("tournament");
+        url.searchParams.delete("t");
+      } else {
+        url.searchParams.set("tournament", next);
+        url.searchParams.delete("t");
+      }
+      const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+      const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextUrl !== current) {
+        window.history.replaceState({}, "", nextUrl);
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
   function getActiveTournamentId() {
+    const fromUrl = readTournamentIdFromUrl();
+    if (fromUrl) {
+      // URL is source of truth for this tab.
+      if (storageGet(TOURNAMENT_KEY) !== fromUrl) {
+        storageSet(TOURNAMENT_KEY, fromUrl);
+      }
+      return fromUrl;
+    }
     return storageGet(TOURNAMENT_KEY);
   }
 
   function setActiveTournamentId(tournamentId) {
-    storageSet(TOURNAMENT_KEY, tournamentId || null);
+    const next = String(tournamentId || "").trim() || null;
+    storageSet(TOURNAMENT_KEY, next);
+    syncTournamentIdToUrl(next);
+  }
+
+  /**
+   * Keep tabs honest: if another tab switches tournament, reload this page
+   * onto that tournament instead of silently mixing data.
+   */
+  function bindTournamentTabGuard() {
+    if (!isTournamentScopedPage()) return;
+    if (window.__caTournamentGuardBound) return;
+    window.__caTournamentGuardBound = true;
+
+    let known = getActiveTournamentId();
+    if (known) syncTournamentIdToUrl(known);
+
+    window.addEventListener("storage", (event) => {
+      if (event.key !== TOURNAMENT_KEY) return;
+      const next = String(event.newValue || "").trim();
+      if (!next || next === known) return;
+      known = next;
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("tournament", next);
+        url.searchParams.delete("t");
+        window.location.replace(`${url.pathname}${url.search}${url.hash}`);
+      } catch (_) {
+        window.location.reload();
+      }
+    });
+
+    const recheck = () => {
+      const stored = String(storageGet(TOURNAMENT_KEY) || "").trim();
+      const urlId = readTournamentIdFromUrl();
+      if (urlId && stored && urlId !== stored) {
+        // This tab's URL wins.
+        storageSet(TOURNAMENT_KEY, urlId);
+        known = urlId;
+        return;
+      }
+      if (stored && known && stored !== known) {
+        known = stored;
+        window.location.reload();
+      }
+    };
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recheck();
+    });
+    window.addEventListener("focus", recheck);
+  }
+
+  // Align URL/storage as soon as auth helper loads on desk/config/squads pages.
+  try {
+    const bootUrlId = readTournamentIdFromUrl();
+    if (bootUrlId) storageSet(TOURNAMENT_KEY, bootUrlId);
+    if (isTournamentScopedPage()) {
+      const active = getActiveTournamentId();
+      if (active) syncTournamentIdToUrl(active);
+      bindTournamentTabGuard();
+    }
+  } catch (_) {
+    // ignore
   }
 
   function saveSession({ user, memberships, accessToken, refreshToken, organization }) {

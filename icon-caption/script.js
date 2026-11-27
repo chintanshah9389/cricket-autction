@@ -60,7 +60,15 @@ function findPlayer(list, playerId) {
 async function loadDivisionPlayers(divisionId) {
     if (rosterByDivision.has(divisionId)) return rosterByDivision.get(divisionId);
 
-    let players = typeof loadStoredPlayers === "function" ? loadStoredPlayers(divisionId) || [] : [];
+    let players = [];
+    // Always prefer fresh DB roster in SaaS.
+    if (typeof resolveAuctionPlayers === "function") {
+        try {
+            players = await resolveAuctionPlayers(null, divisionId);
+        } catch (_) {
+            players = [];
+        }
+    }
     if (!players.length && typeof fetchProjectSnapshot === "function") {
         try {
             const snapshot = await fetchProjectSnapshot();
@@ -70,6 +78,9 @@ async function loadDivisionPlayers(divisionId) {
             players = [];
         }
     }
+    if (!players.length && typeof loadStoredPlayers === "function") {
+        players = loadStoredPlayers(divisionId) || [];
+    }
     rosterByDivision.set(divisionId, players);
     return players;
 }
@@ -77,26 +88,17 @@ async function loadDivisionPlayers(divisionId) {
 async function loadDivisionAuction(divisionId) {
     if (auctionByDivision.has(divisionId)) return auctionByDivision.get(divisionId);
     let auctionState = null;
-    if (typeof loadDivisionAuctionFromProject === "function") {
-        try {
-            const payload = await loadDivisionAuctionFromProject(divisionId);
-            auctionState = payload?.auctionState || null;
-        } catch (_) {
-            auctionState = null;
+    try {
+        if (typeof loadLiveAuctionStateForDivision === "function") {
+            auctionState = await loadLiveAuctionStateForDivision(divisionId);
+        } else if (typeof fetchDivisionAuction === "function") {
+            const remote = await fetchDivisionAuction(divisionId);
+            auctionState = remote?.auction?.auctionState || null;
         }
+    } catch (_) {
+        auctionState = null;
     }
-    if (!auctionState) {
-        try {
-            const key =
-                typeof getDivisionAuctionDataKey === "function"
-                    ? getDivisionAuctionDataKey(divisionId)
-                    : `auctionData:${divisionId}`;
-            const raw = localStorage.getItem(key);
-            auctionState = raw ? JSON.parse(raw)?.auctionState || null : null;
-        } catch (_) {
-            auctionState = null;
-        }
-    }
+    // No localStorage fallback — stale browser auction mirrors caused wrong UI.
     auctionByDivision.set(divisionId, auctionState);
     return auctionState;
 }
@@ -284,6 +286,10 @@ function bindViewTabs() {
 }
 
 async function refreshPage({ keepStatus = false } = {}) {
+    // Always re-fetch DB roster/auction for the active division (no stale page cache).
+    rosterByDivision.delete(activeDivisionId);
+    auctionByDivision.delete(activeDivisionId);
+
     const division = (configCache?.divisions || []).find((item) => item.id === activeDivisionId);
     if (!division) {
         board.innerHTML = `<div class="empty-state">No division found.</div>`;

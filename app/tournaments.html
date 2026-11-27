@@ -60,7 +60,7 @@
       </form>
     </section>
   </div>
-  <script src="/app/js/saas-auth.js"></script>
+  <script src="/app/js/saas-auth.js?v=4"></script>
   <script>
     let orgId = null;
 
@@ -88,8 +88,9 @@
       `).join("");
       body.querySelectorAll("[data-open-desk]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          SaasAuth.setActiveTournamentId(btn.getAttribute("data-open-desk"));
-          window.location.href = "/index.html";
+          const id = btn.getAttribute("data-open-desk");
+          SaasAuth.setActiveTournamentId(id);
+          window.location.href = `/index.html?tournament=${encodeURIComponent(id)}`;
         });
       });
     }

@@ -33,6 +33,13 @@ function getAuctionDataStorageKey(divisionId) {
 }
 
 function divisionHasSavedAuction(divisionId) {
+    // SaaS: presence comes from the last DB snapshot, never localStorage auctionData.
+    if (typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api)) {
+        if (typeof divisionHasDbAuction === "function") {
+            return divisionHasDbAuction(divisionId);
+        }
+        return false;
+    }
     try {
         if (typeof migrateLegacyDivisionStorage === "function") {
             migrateLegacyDivisionStorage(divisionId);
@@ -963,12 +970,14 @@ function refreshWelcomeDivisionActions() {
     if (welcomeDivisionNote) {
         const teamCount = (active.teams || []).length;
         const playerCount =
-            typeof loadStoredPlayers === "function"
-                ? (loadStoredPlayers(active.id) || []).length
-                : 0;
+            typeof getDbPlayerCount === "function"
+                ? getDbPlayerCount(active.id)
+                : typeof loadStoredPlayers === "function"
+                  ? (loadStoredPlayers(active.id) || []).length
+                  : 0;
         welcomeDivisionNote.textContent = hasSaved
             ? `Saved auction found for ${active.name}. Resume to continue, or Start New to reload the latest Excel roster.`
-            : `No saved auction for ${active.name}. Start New to begin with the current roster.`;
+            : `No saved auction for ${active.name}. Start New to begin with the current roster (${playerCount} players in DB).`;
     }
 }
 
@@ -983,8 +992,9 @@ function renderWelcomeDivisions() {
             division.id === welcomeConfigCache.activeDivisionId ? " is-active" : ""
         }`;
         const teamCount = Array.isArray(division.teams) ? division.teams.length : 0;
-        let playerCount = 0;
-        if (typeof loadStoredPlayers === "function") {
+        let playerCount =
+            typeof getDbPlayerCount === "function" ? getDbPlayerCount(division.id) : 0;
+        if (!playerCount && typeof loadStoredPlayers === "function") {
             const stored = loadStoredPlayers(division.id);
             playerCount = Array.isArray(stored) ? stored.length : 0;
         }
@@ -1069,16 +1079,59 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         divisionName: division.name
     };
 
-    // Prefer disk auction.json, then lean browser mirror
+    // Prefer live Postgres auction session. When DB answers, never fall back to stale browser cache.
     let savedData = null;
-    if (typeof loadDivisionAuctionFromProject === "function") {
+    let remoteAuctionResolved = false;
+    if (typeof fetchDivisionAuction === "function") {
         try {
-            savedData = await loadDivisionAuctionFromProject(division.id);
+            const remote = await fetchDivisionAuction(division.id);
+            remoteAuctionResolved = true;
+            if (remote?.revision != null) {
+                window.__auctionRevision = Number(remote.revision) || 0;
+            }
+            if (
+                remote?.auction &&
+                (typeof isMeaningfulAuctionSnapshot !== "function" ||
+                    isMeaningfulAuctionSnapshot(remote.auction))
+            ) {
+                savedData = remote.auction;
+            } else {
+                // Empty / idle DB session is authoritative — clear local leftovers.
+                savedData = null;
+                localStorage.removeItem(getAuctionDataStorageKey(division.id));
+                if (typeof invalidateDivisionAuctionProgress === "function") {
+                    invalidateDivisionAuctionProgress(division.id);
+                }
+            }
         } catch (_) {
             savedData = null;
+            remoteAuctionResolved = false;
         }
     }
-    if (!savedData || (typeof isMeaningfulAuctionSnapshot === "function" && !isMeaningfulAuctionSnapshot(savedData))) {
+    if (
+        !remoteAuctionResolved &&
+        (!savedData ||
+            (typeof isMeaningfulAuctionSnapshot === "function" &&
+                !isMeaningfulAuctionSnapshot(savedData)))
+    ) {
+        if (typeof loadDivisionAuctionFromProject === "function") {
+            try {
+                savedData = await loadDivisionAuctionFromProject(division.id);
+            } catch (_) {
+                savedData = null;
+            }
+        }
+    }
+    // SaaS: never resume from browser auctionData. Offline/legacy only may use localStorage.
+    const saasMode =
+        typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);
+    if (
+        !saasMode &&
+        !remoteAuctionResolved &&
+        (!savedData ||
+            (typeof isMeaningfulAuctionSnapshot === "function" &&
+                !isMeaningfulAuctionSnapshot(savedData)))
+    ) {
         try {
             const raw = localStorage.getItem(getAuctionDataStorageKey(division.id));
             savedData = raw ? JSON.parse(raw) : null;
@@ -1086,18 +1139,47 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
             savedData = null;
         }
     }
+    if (saasMode && typeof clearAuctionDataBrowserCaches === "function") {
+        clearAuctionDataBrowserCaches();
+    }
     let useSaved =
         Boolean(savedData) &&
         (typeof isMeaningfulAuctionSnapshot !== "function" || isMeaningfulAuctionSnapshot(savedData));
 
-    // Stale/empty snapshot after Excel upload — prefer live roster over frozen empty state
+    // DB roster is source of truth — drop auction progress that no longer matches players.
     if (useSaved) {
-        const savedPlayers = savedData?.auctionState?.players || [];
-        const roster =
-            typeof loadStoredPlayers === "function" ? loadStoredPlayers(division.id) : null;
-        if ((!Array.isArray(savedPlayers) || savedPlayers.length === 0) &&
-            Array.isArray(roster) &&
-            roster.length > 0) {
+        const savedPlayers = savedData?.auctionState?.players || savedData?.auctionState?.allPlayers || [];
+        let roster =
+            typeof loadStoredPlayers === "function" ? loadStoredPlayers(division.id) : [];
+        if (saasMode && typeof resolveAuctionPlayers === "function") {
+            try {
+                roster = await resolveAuctionPlayers(null, division.id);
+            } catch (_) {
+                // keep mirror if DB fetch fails mid-load
+            }
+        }
+        const rosterCodes = new Set(
+            (Array.isArray(roster) ? roster : [])
+                .map((player) => String(player?.code || player?.id || "").trim())
+                .filter(Boolean)
+        );
+        const savedHasPlayers = Array.isArray(savedPlayers) && savedPlayers.length > 0;
+        const rosterEmpty = !Array.isArray(roster) || roster.length === 0;
+        const savedOnlyOrphans =
+            savedHasPlayers &&
+            rosterCodes.size > 0 &&
+            savedPlayers.every((player) => {
+                const code = String(player?.code || player?.id || "").trim();
+                return code && !rosterCodes.has(code);
+            });
+
+        if (
+            (rosterEmpty && savedHasPlayers) ||
+            ((!Array.isArray(savedPlayers) || savedPlayers.length === 0) &&
+                Array.isArray(roster) &&
+                roster.length > 0) ||
+            savedOnlyOrphans
+        ) {
             useSaved = false;
             localStorage.removeItem(getAuctionDataStorageKey(division.id));
             if (typeof invalidateDivisionAuctionProgress === "function") {
@@ -1168,6 +1250,7 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
             setActiveAuctionCategory(state.activeAuctionCategory);
         }
 
+        const auctionCountBeforeAdvance = Number(state.auctionCount) || 0;
         if (state.auctionCount < (state.players || []).length) {
             const lastPlayerStatus = state.players[state.auctionCount]?.status;
             if (lastPlayerStatus === "sold" || lastPlayerStatus === "unsold" || lastPlayerStatus === "skipped") {
@@ -1179,6 +1262,8 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
                 if (nextSame >= 0) state.auctionCount = nextSame;
             }
         }
+        const advancedPastSettled =
+            (Number(state.auctionCount) || 0) !== auctionCountBeforeAdvance;
 
         // Re-apply category sequence to the remaining queue (fixes mixed categories on resume)
         if (typeof reorderRemainingPlayersByCategory === "function") {
@@ -1188,8 +1273,8 @@ async function loadAuctionStateForActiveDivision(auctionConfig) {
         // Repair truncated queues (waiting players still in allPlayers but missing from players)
         ensureAuctionQueueFromMaster();
 
-        // Persist repaired Icon/Caption counts so the next resume matches the desk
-        if (iconEnsured) {
+        // Persist desk repairs + auto-advance so phone bidders never stay on a settled player
+        if (iconEnsured || advancedPastSettled) {
             try {
                 await saveAuctionProgress({ awaitDisk: true, critical: false });
             } catch (_) {
@@ -1440,7 +1525,8 @@ function showPlayerDetails(i) {
         playSoldSealAnimation();
         if (statusChip) {
             statusChip.dataset.status = "sold";
-            statusChip.textContent = "SOLD";
+            statusChip.textContent = "";
+            statusChip.hidden = true;
         }
 
     } else if (playerStatus === "unsold" || playerStatus === "skipped") {
@@ -1451,6 +1537,7 @@ function showPlayerDetails(i) {
         soldSeal.classList.remove("show", "is-animating");
         unsoldSeal.classList.add("show");
         if (statusChip) {
+            statusChip.hidden = false;
             statusChip.dataset.status = playerStatus;
             statusChip.textContent = playerStatus === "skipped" ? "SKIPPED" : "UNSOLD";
         }
@@ -1460,6 +1547,7 @@ function showPlayerDetails(i) {
         soldSeal.classList.remove("show", "is-animating");
         unsoldSeal.classList.remove("show");
         if (statusChip) {
+            statusChip.hidden = false;
             statusChip.dataset.status = hasBids ? "bidding" : "live";
             statusChip.textContent = hasBids ? "BIDDING" : "LIVE";
         }
@@ -1799,14 +1887,15 @@ function writeLeanAuctionBrowserMirror(divisionId, data) {
 }
 
 /**
- * Expert mid-auction save:
- * 1) Disk auction.json is source of truth
- * 2) Browser cache is only a tiny lean mirror (optional)
- * Never block the desk on browser quota when disk save works.
+ * Mid-auction save:
+ * SaaS → Postgres only (no localStorage auctionData).
+ * Legacy → DB/disk first, optional tiny browser mirror.
  */
 async function saveAuctionProgress({ awaitDisk = false, critical = false } = {}) {
     const divisionId = state.divisionId || welcomeConfigCache?.activeDivisionId || "div_1";
     const data = buildAuctionSavePayload();
+    const saasMode =
+        typeof usesTournamentDb === "function" ? usesTournamentDb() : Boolean(window.SaasAuth?.api);
     let diskOk = false;
     let localOk = false;
 
@@ -1823,44 +1912,60 @@ async function saveAuctionProgress({ awaitDisk = false, critical = false } = {})
                 pending
                     .then((result) => {
                         if (result === false) {
-                            console.warn("auction.json sync skipped (API not ready).");
+                            console.warn("Auction DB sync skipped (API not ready).");
                         }
                     })
                     .catch((error) => {
-                        console.warn("Could not write auction.json:", error?.message || error);
+                        console.warn("Could not save auction to database:", error?.message || error);
                     });
                 diskOk = true; // queued; desk continues
             }
         } catch (error) {
-            console.warn("Could not write auction.json:", error?.message || error);
+            console.warn("Could not save auction to database:", error?.message || error);
             diskOk = false;
         }
     }
 
-    try {
-        writeLeanAuctionBrowserMirror(divisionId, data);
-        localOk = true;
-    } catch (error) {
-        console.warn("Browser auction mirror skipped (quota). Disk remains source of truth.", error);
+    if (saasMode) {
+        // Never keep auction progress in the browser for SaaS.
+        if (typeof clearAuctionDataBrowserCaches === "function") {
+            clearAuctionDataBrowserCaches();
+        } else {
+            try {
+                localStorage.removeItem(getAuctionDataStorageKey(divisionId));
+                if (divisionId === "div_1") localStorage.removeItem("auctionData");
+            } catch (_) {
+                // ignore
+            }
+        }
+        localOk = false;
+    } else {
         try {
-            // Clear old fat cache once, then retry tiny mirror
-            purgeBloatedAuctionBrowserCache();
-            localStorage.removeItem(getAuctionDataStorageKey(divisionId));
             writeLeanAuctionBrowserMirror(divisionId, data);
             localOk = true;
-        } catch (_) {
-            localOk = false;
+        } catch (error) {
+            console.warn("Browser auction mirror skipped (quota). DB remains source of truth.", error);
+            try {
+                purgeBloatedAuctionBrowserCache();
+                localStorage.removeItem(getAuctionDataStorageKey(divisionId));
+                writeLeanAuctionBrowserMirror(divisionId, data);
+                localOk = true;
+            } catch (_) {
+                localOk = false;
+            }
         }
     }
 
     if (critical && !diskOk && !localOk) {
-        alert("Could not save auction progress. Keep node server.js running, then bid/sold again.");
+        alert("Could not save auction progress. Keep the server online, then bid/sold again.");
     }
     console.log(
         diskOk
-            ? localOk
-                ? "Auction saved to disk + browser mirror."
-                : "Auction saved to disk (browser mirror skipped)."
+            ? saasMode
+                ? "Auction saved to database."
+                : localOk
+                  ? "Auction saved to disk + browser mirror."
+                  : "Auction saved to disk (browser mirror skipped)."
             : localOk
               ? "Auction saved to browser mirror only (disk unavailable)."
               : "Auction save failed."
@@ -3601,21 +3706,6 @@ function renderTeams() {
         const categoryChip = quota
             ? `${quota.owned}/${quota.max} ${categoryLabel}`
             : "";
-        const budget =
-            typeof getTeamSpendableBudget === "function"
-                ? getTeamSpendableBudget(state, teamId, {
-                      fillingCategory: categoryName || undefined
-                  })
-                : {
-                      purse: Number(team.remaining_budget) || 0,
-                      reserve: 0,
-                      spendable: Number(team.remaining_budget) || 0,
-                      remainingSlots: 0
-                  };
-        const spendable = budget.spendable;
-        const reserved = budget.reserve;
-        const moneyTitle = `Spendable ${formatMoney(spendable)} · Purse ${formatMoney(budget.purse)} · Reserved ${formatMoney(reserved)} for ${budget.remainingSlots} category slots`;
-
         const teamElement = document.createElement("button");
         teamElement.type = "button";
         teamElement.className = `team-container${isFull ? " category-full" : " category-open"}`;
@@ -3654,13 +3744,6 @@ function renderTeams() {
                                 : ""
                         }
                     </div>
-                </div>
-                <div class="money-remaining" title="${moneyTitle}">
-                    <div class="money-remaining-top">
-                        <span class="stat-label">Spendable</span>
-                        <span class="stat-amount" id="money-remaining-${teamId}">${showAmount(spendable)}</span>
-                    </div>
-                    <span class="stat-sub">Purse ${showAmount(team.remaining_budget)} · Res ${showAmount(reserved)}</span>
                 </div>
             </div>
         `;

@@ -2,7 +2,8 @@ const {
   S3Client,
   HeadBucketCommand,
   PutObjectCommand,
-  DeleteObjectCommand
+  DeleteObjectCommand,
+  GetObjectCommand
 } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
@@ -163,6 +164,43 @@ async function deleteObject(objectKey) {
   );
 }
 
+async function getObjectStream(objectKey, { range } = {}) {
+  if (!objectKey) throw new Error("objectKey required");
+  if (usesWorker()) {
+    const headers = { Authorization: `Bearer ${workerSecret()}` };
+    if (range) headers.Range = range;
+    const response = await fetch(objectWorkerUrl(objectKey), { headers });
+    if (!(response.ok || response.status === 206)) {
+      const error = new Error(`R2 worker get failed: HTTP ${response.status}`);
+      error.statusCode = response.status;
+      throw error;
+    }
+    return {
+      body: response.body,
+      contentType: response.headers.get("content-type") || "application/octet-stream",
+      contentLength: response.headers.get("content-length"),
+      contentRange: response.headers.get("content-range"),
+      acceptRanges: response.headers.get("accept-ranges") || "bytes",
+      statusCode: response.status
+    };
+  }
+  const result = await getR2Client().send(
+    new GetObjectCommand({
+      Bucket: bucket(),
+      Key: objectKey,
+      ...(range ? { Range: range } : {})
+    })
+  );
+  return {
+    body: result.Body,
+    contentType: result.ContentType || "application/octet-stream",
+    contentLength: result.ContentLength != null ? String(result.ContentLength) : null,
+    contentRange: result.ContentRange || null,
+    acceptRanges: "bytes",
+    statusCode: result.ContentRange ? 206 : 200
+  };
+}
+
 function mediaKey({ orgId, tournamentId, purpose, fileName }) {
   const safePurpose = String(purpose || "file").replace(/[^a-z0-9_-]/gi, "");
   const safeName = String(fileName || "file.bin").replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -178,6 +216,7 @@ module.exports = {
   createUploadUrl,
   deleteObject,
   deleteObjectQuiet,
+  getObjectStream,
   publicUrlForKey,
   keyFromPublicUrl,
   resolveMediaKey,

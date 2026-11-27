@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=24">
+    <link rel="stylesheet" href="styles.css?v=28">
 </head>
 <body>
     <div class="desk-shell">
@@ -35,8 +35,8 @@
                 <p class="subtitle">All settings save to the database for this tournament — branding, divisions, teams, kitty, categories, and player fields load again next visit.</p>
             </section>
 
-            <section class="config-panel is-open" data-accordion>
-                <button type="button" class="panel-toggle" aria-expanded="true">
+            <section class="config-panel" data-accordion>
+                <button type="button" class="panel-toggle" aria-expanded="false">
                     <div class="panel-head">
                         <div>
                             <p class="panel-kicker">01 · Brand</p>
@@ -46,7 +46,7 @@
                     </div>
                     <span class="panel-chevron" aria-hidden="true"></span>
                 </button>
-                <div class="panel-body">
+                <div class="panel-body" hidden>
                     <div class="branding-compose">
                         <div class="branding-fields">
                             <div class="branding-grid">
@@ -148,27 +148,49 @@
                 </div>
             </section>
 
-            <section class="config-panel" data-accordion>
-                <button type="button" class="panel-toggle" aria-expanded="false">
+            <section class="config-panel is-open" data-accordion id="teams-panel">
+                <button type="button" class="panel-toggle" aria-expanded="true">
                     <div class="panel-head">
                         <div>
                             <p class="panel-kicker">04 · Roster</p>
                             <h2 id="teams-heading">Teams</h2>
                         </div>
-                        <p class="help" id="teams-help">Roster for the active division only. Switch tabs above to edit another.</p>
+                        <p class="help" id="teams-help">Roster for the active division only. Switch division in section 02 · Divisions.</p>
                     </div>
                     <span class="panel-chevron" aria-hidden="true"></span>
                 </button>
-                <div class="panel-body" hidden>
+                <div class="panel-body">
                     <div class="bidder-portal-banner" id="bidder-portal-banner">
                         <div>
+                            <strong>Public viewer URL</strong>
+                            <p class="help tight">Share this with fans and viewers — live auction + squad lists, no login. Read-only. Disable or revoke anytime to kill old links.</p>
+                        </div>
+                        <label class="checkbox-row viewer-enabled-row">
+                            <input id="viewer-enabled" type="checkbox" checked>
+                            <span>Public viewer link is enabled</span>
+                        </label>
+                        <div class="team-bidder-url-row">
+                            <input id="viewer-portal-url" type="text" readonly value="" aria-label="Public viewer URL">
+                            <button type="button" class="secondary-btn" id="copy-viewer-portal-url-btn">Copy viewer URL</button>
+                        </div>
+                        <div class="team-bidder-url-row viewer-link-actions">
+                            <button type="button" class="ghost-btn" id="revoke-viewer-link-btn">Revoke / new link</button>
+                            <button type="button" class="ghost-btn" id="disable-viewer-link-btn">Disable viewer</button>
+                        </div>
+                        <p class="help tight" id="viewer-link-status">Revoke creates a new secret key — anyone with the old URL loses access.</p>
+                        <div>
                             <strong>Bidder login URL</strong>
-                            <p class="help tight">Share this link with teams. Each team still needs its own Code + PIN from the card below.</p>
+                            <p class="help tight">Share this link with teams. Each team still needs its own Code + PIN — turn on “Bidder phone login” on a team card below.</p>
                         </div>
                         <div class="team-bidder-url-row">
                             <input id="bidder-portal-url" type="text" readonly value="" aria-label="Bidder login URL">
                             <button type="button" class="secondary-btn" id="copy-bidder-portal-url-btn">Copy URL</button>
                         </div>
+                        <label class="bidder-device-limit">
+                            <span>Max devices per team</span>
+                            <input id="max-bidder-devices" type="number" min="1" max="20" step="1" value="2" inputmode="numeric" aria-label="Max bidder devices per team">
+                            <em class="help tight">Enter how many phones can stay logged in per team. Extra logins sign out the oldest device.</em>
+                        </label>
                     </div>
                     <div class="team-config-list" id="team-config-list"></div>
                     <p class="help team-empty-hint" id="team-empty-hint" hidden>No teams in this division yet. Add teams below.</p>
@@ -344,12 +366,12 @@
     </div>
 
     <script src="../js/money.js?v=17"></script>
-    <script src="../js/config-store.js?v=36"></script>
-    <script src="/app/js/saas-auth.js?v=3"></script>
+    <script src="../js/config-store.js?v=40"></script>
+    <script src="/app/js/saas-auth.js?v=4"></script>
     <script src="../js/project-store.js?v=29"></script>
     <script src="../js/players-store.js?v=34"></script>
     <script src="../js/offline-store.js?v=26"></script>
-    <script src="config.js?v=45"></script>
+    <script src="config.js?v=52"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

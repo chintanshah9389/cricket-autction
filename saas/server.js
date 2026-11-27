@@ -18,6 +18,7 @@ const { handleMediaRoutes } = require("./routes/media");
 const { handleSuperAdminRoutes } = require("./routes/superadmin");
 const { handleTournamentRoutes } = require("./routes/tournaments");
 const { handleBidderRoutes } = require("./routes/bidder");
+const { handleViewerRoutes } = require("./routes/viewer");
 const { tryPrettyHtml } = require("../server");
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -71,6 +72,7 @@ const server = http.createServer(async (req, res) => {
     if (await handleMediaRoutes(req, res, url)) return;
     if (await handleSuperAdminRoutes(req, res, url)) return;
     if (await handleBidderRoutes(req, res, url)) return;
+    if (await handleViewerRoutes(req, res, url)) return;
     if (await handleTournamentRoutes(req, res, url)) return;
 
     // Default entry: login page (auction desk remains at /index.html)
@@ -85,7 +87,8 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     console.error(error);
     if (!res.headersSent) {
-      sendJson(res, 500, { error: error.message || "Server error" });
+      const status = Number(error.statusCode) || 500;
+      sendJson(res, status, { error: error.message || "Server error" });
     }
   }
 });
