@@ -4794,15 +4794,38 @@ const initApp = async () => {
         return;
     }
 
-    const online = await updateServerStatusUI();
+    // After Railway deploys the API can flap for a few seconds — retry before locking the desk.
+    let online = false;
+    const banner = document.getElementById("server-status-banner");
+    for (let attempt = 1; attempt <= 8; attempt++) {
+        if (banner) {
+            banner.hidden = false;
+            banner.dataset.state = "checking";
+            banner.textContent =
+                attempt === 1
+                    ? "Connecting to live server…"
+                    : `Connecting to live server… (retry ${attempt}/8)`;
+        }
+        online = await updateServerStatusUI();
+        if (online) break;
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
     if (!online) {
         setOfflineOnlyMode(true);
         if (welcomeTitle) welcomeTitle.innerText = "Cricket Auction";
         // Wire retry early so user can recover without full reload of stale data
         document.getElementById("offline-retry-btn")?.addEventListener("click", async () => {
-            const retryOnline = await updateServerStatusUI();
+            const btn = document.getElementById("offline-retry-btn");
+            if (btn) btn.disabled = true;
+            let retryOnline = false;
+            for (let attempt = 1; attempt <= 5; attempt++) {
+                retryOnline = await updateServerStatusUI();
+                if (retryOnline) break;
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            if (btn) btn.disabled = false;
             if (!retryOnline) {
-                alert("Still offline. Refresh the page, or restart the auction server, then retry.");
+                alert("Still offline. Wait a few seconds after deploy, then retry or refresh.");
                 return;
             }
             window.location.reload();
@@ -4813,7 +4836,7 @@ const initApp = async () => {
             if (nowOnline && document.body.classList.contains("server-offline-only")) {
                 window.location.reload();
             }
-        }, 5000);
+        }, 4000);
         return;
     }
 

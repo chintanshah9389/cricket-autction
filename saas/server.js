@@ -42,19 +42,21 @@ async function runMigrationsQuiet() {
 }
 
 async function handleHealth(req, res) {
-  const checks = { ok: true, db: false, r2: false, mode: "saas", desk: true };
+  const checks = { ok: false, db: false, r2: false, mode: "saas", desk: false };
   try {
     checks.db = await pingDb();
   } catch (error) {
-    checks.ok = false;
     checks.dbError = error.message;
   }
   try {
     checks.r2 = await pingR2();
   } catch (error) {
-    checks.ok = false;
+    // R2 is for media only — never mark the whole service down for R2 blips.
     checks.r2Error = error.message;
   }
+  // Railway + auction desk care about Postgres. R2 outages must not flap deploys.
+  checks.ok = Boolean(checks.db);
+  checks.desk = checks.ok;
   sendJson(res, checks.ok ? 200 : 503, checks);
 }
 

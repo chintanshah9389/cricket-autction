@@ -98,15 +98,28 @@ async function projectApiFetch(path, { method = "GET", body } = {}) {
 
 async function checkProjectApiReady({ force = false } = {}) {
     const now = Date.now();
-    if (!force && projectApiReadyCache !== null && now - projectApiReadyAt < 15000) {
+    if (!force && projectApiReadyCache !== null && now - projectApiReadyAt < 8000) {
         return projectApiReadyCache;
     }
     try {
         if (!usesTournamentDb()) {
             projectApiReadyCache = false;
         } else {
-            const health = await window.SaasAuth.api("/api/v1/health");
-            projectApiReadyCache = Boolean(health?.ok && health?.db);
+            // Plain fetch: no auth (expired token must not look like "server offline"),
+            // and parse body even on brief 503s during Railway cutover.
+            const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+            const timer = controller
+                ? setTimeout(() => controller.abort(), 8000)
+                : null;
+            const response = await fetch("/api/v1/health", {
+                method: "GET",
+                headers: { Accept: "application/json" },
+                cache: "no-store",
+                signal: controller?.signal
+            });
+            if (timer) clearTimeout(timer);
+            const health = await response.json().catch(() => ({}));
+            projectApiReadyCache = Boolean(health?.db === true || (health?.ok && health?.db));
         }
     } catch (_) {
         projectApiReadyCache = false;
