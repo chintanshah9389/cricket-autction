@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Sora:wght@600;700;800&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=51">
+    <link rel="stylesheet" href="styles.css?v=52">
     <link rel="stylesheet" href="animations.css?v=18">
     <script>
         // Block welcome chrome until we know the server is up.
@@ -32,17 +32,36 @@
                 window.location.replace(token ? "/app/tournaments.html" : "/app/login.html");
                 return;
             }
-            fetch("/api/v1/health", { cache: "no-store" })
-                .then(function (res) {
-                    if (!res.ok) throw new Error("offline");
-                    document.documentElement.classList.add("boot-online");
-                })
-                .catch(function () {
-                    document.documentElement.classList.add("boot-offline");
-                })
-                .finally(function () {
-                    document.documentElement.classList.remove("boot-pending");
-                });
+            function markOnline() {
+                document.documentElement.classList.add("boot-online");
+                document.documentElement.classList.remove("boot-offline", "boot-pending");
+            }
+            function markOffline() {
+                document.documentElement.classList.add("boot-offline");
+                document.documentElement.classList.remove("boot-online", "boot-pending");
+            }
+            // Retry during Railway cutover — a single failed health must not lock the desk.
+            (function checkHealth(attempt) {
+                fetch("/api/v1/health", { cache: "no-store" })
+                    .then(function (res) {
+                        return res.json().then(function (body) {
+                            if (body && body.db) {
+                                markOnline();
+                                return;
+                            }
+                            throw new Error("offline");
+                        });
+                    })
+                    .catch(function () {
+                        if (attempt < 6) {
+                            setTimeout(function () {
+                                checkHealth(attempt + 1);
+                            }, 1000);
+                            return;
+                        }
+                        markOffline();
+                    });
+            })(1);
         })();
     </script>
 </head>
@@ -581,12 +600,12 @@
     </div>
 
     <script src="js/money.js?v=17"></script>
-    <script src="js/config-store.js?v=38"></script>
+    <script src="js/config-store.js?v=39"></script>
     <script src="/app/js/saas-auth.js?v=4"></script>
-    <script src="js/project-store.js?v=31"></script>
+    <script src="js/project-store.js?v=32"></script>
     <script src="js/players-store.js?v=34"></script>
-    <script src="js/offline-store.js?v=27"></script>
-    <script src="app.js?v=71"></script>
+    <script src="js/offline-store.js?v=28"></script>
+    <script src="app.js?v=72"></script>
     <script>
         if (typeof registerAuctionServiceWorker === "function") registerAuctionServiceWorker();
     </script>

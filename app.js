@@ -897,6 +897,7 @@ function setOfflineOnlyMode(offline) {
     document.body.classList.toggle("server-offline-only", offline);
     document.documentElement.classList.toggle("boot-offline", offline);
     document.documentElement.classList.toggle("boot-online", !offline);
+    document.documentElement.classList.remove("boot-pending");
     if (panel) panel.hidden = !offline;
     if (brand) brand.hidden = offline;
     if (online) online.hidden = offline;

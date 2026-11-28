@@ -1277,9 +1277,9 @@ function downloadJsonFile(filename, data) {
 }
 
 /**
- * Auction desk must not run from stale PWA/cache when server.js is down.
- * Unregister any old service workers and wipe Cache Storage.
- * Briefly registers the killer sw.js so older installs get replaced, then unregisters.
+ * Auction desk must never use a service worker.
+ * Old SW installs returned fake 503s during Railway deploys and locked the desk
+ * on "Server is offline" even after the API was healthy again.
  */
 async function registerAuctionServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
@@ -1295,17 +1295,8 @@ async function registerAuctionServiceWorker() {
 
     try {
         const regs = await navigator.serviceWorker.getRegistrations();
-        // Install updated sw once so activate handler clears old shell caches
-        const swUrl = `${window.location.origin}/sw.js?v=disabled1`;
-        try {
-            await navigator.serviceWorker.register(swUrl, { scope: "/" });
-        } catch (_) {
-            // ignore
-        }
         await Promise.all(regs.map((reg) => reg.unregister()));
-        const after = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(after.map((reg) => reg.unregister()));
     } catch (_) {
-        // ignore registration failures (file:// etc.)
+        // ignore unregister failures (file:// etc.)
     }
 }

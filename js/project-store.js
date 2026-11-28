@@ -96,30 +96,41 @@ async function projectApiFetch(path, { method = "GET", body } = {}) {
     return window.SaasAuth.api(path, { method, body });
 }
 
+async function probeDeskHealthOnce() {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 6000) : null;
+    try {
+        const response = await fetch("/api/v1/health", {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+            signal: controller?.signal
+        });
+        const health = await response.json().catch(() => ({}));
+        return Boolean(health?.db === true || (health?.ok && health?.db));
+    } catch (_) {
+        return false;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
 async function checkProjectApiReady({ force = false } = {}) {
     const now = Date.now();
-    if (!force && projectApiReadyCache !== null && now - projectApiReadyAt < 8000) {
-        return projectApiReadyCache;
+    if (!force && projectApiReadyCache === true && now - projectApiReadyAt < 8000) {
+        return true;
+    }
+    // Never cache "offline" — deploy cutovers must recover on the next probe.
+    if (!force && projectApiReadyCache === false && now - projectApiReadyAt < 1500) {
+        return false;
     }
     try {
-        if (!usesTournamentDb()) {
+        if (!getSaasTournamentId()) {
             projectApiReadyCache = false;
         } else {
-            // Plain fetch: no auth (expired token must not look like "server offline"),
-            // and parse body even on brief 503s during Railway cutover.
-            const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-            const timer = controller
-                ? setTimeout(() => controller.abort(), 8000)
-                : null;
-            const response = await fetch("/api/v1/health", {
-                method: "GET",
-                headers: { Accept: "application/json" },
-                cache: "no-store",
-                signal: controller?.signal
-            });
-            if (timer) clearTimeout(timer);
-            const health = await response.json().catch(() => ({}));
-            projectApiReadyCache = Boolean(health?.db === true || (health?.ok && health?.db));
+            // Tournament id is enough for desk readiness. Do not require SaasAuth.api
+            // (script order / transient load issues were incorrectly marking offline).
+            projectApiReadyCache = await probeDeskHealthOnce();
         }
     } catch (_) {
         projectApiReadyCache = false;
